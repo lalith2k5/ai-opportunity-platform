@@ -60,3 +60,50 @@ def kg_search(q: str, db: Session = Depends(get_db)):
         models.KnowledgeGraphNode.name.ilike(f"%{q}%")
     ).limit(20).all()
     return [{"name": n.name, "type": n.entity_type} for n in nodes]
+
+@router.get("/entity-types")
+def entity_types(db: Session = Depends(get_db)):
+    """List distinct entity types with counts, for graph visualization."""
+    from sqlalchemy import func
+    rows = db.query(
+        models.KnowledgeGraphNode.entity_type,
+        func.count(models.KnowledgeGraphNode.id),
+    ).group_by(models.KnowledgeGraphNode.entity_type).all()
+    return [{"type": r[0] or "unknown", "count": r[1]} for r in rows]
+
+
+@router.get("/semantic-chain/{name}")
+def semantic_chain(name: str, depth: int = 2, db: Session = Depends(get_db)):
+    """Return the semantic neighborhood around a node (BFS up to `depth`)."""
+    visited = set()
+    queue = [(name, 0)]
+    nodes_out = []
+    edges_out = []
+
+    while queue:
+        current, d = queue.pop(0)
+        if current in visited or d > depth:
+            continue
+        visited.add(current)
+
+        node = db.query(models.KnowledgeGraphNode).filter_by(name=current).first()
+        if node:
+            nodes_out.append({
+                "name": node.name,
+                "type": node.entity_type,
+                "metadata": node.metadata_json,
+            })
+
+        outgoing = db.query(models.KnowledgeGraphEdge).filter_by(source=current).limit(20).all()
+        incoming = db.query(models.KnowledgeGraphEdge).filter_by(target=current).limit(20).all()
+
+        for e in outgoing:
+            edges_out.append({"source": e.source, "target": e.target, "relation": e.relation})
+            if d < depth:
+                queue.append((e.target, d + 1))
+        for e in incoming:
+            edges_out.append({"source": e.source, "target": e.target, "relation": e.relation})
+            if d < depth:
+                queue.append((e.source, d + 1))
+
+    return {"root": name, "nodes": nodes_out, "edges": edges_out}

@@ -28,7 +28,11 @@ def run_pipeline(
     user: Optional[models.User] = Depends(optional_user),
 ):
     try:
-        return orchestrator.run_full_pipeline(query.query, user_id=user.id if user else None)
+        return orchestrator.run_full_pipeline(
+            query.query,
+            user_id=user.id if user else None,
+            mode=(query.mode or "quick"),
+        )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

@@ -21,7 +21,7 @@ export default function OpportunityCard({ opp }: { opp: Opportunity }) {
   return (
     <Link
       to={`/opportunities/${opp.id}`}
-      className="group block bg-surface border border-edge rounded-lg p-4 hover:border-accent/40 hover:bg-overlay transition-all"
+      className="group block bg-surface border border-edge rounded-lg p-4 hover:border-accent/40 hover:bg-overlay hover:-translate-y-[1px] hover:shadow-md transition-all duration-150"
     >
       <div className="flex items-start justify-between gap-4 mb-3">
         <div className="min-w-0 flex-1">

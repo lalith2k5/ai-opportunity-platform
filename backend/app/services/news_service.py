@@ -35,7 +35,7 @@ class NewsService:
         for feed_url in self.RSS_FEEDS:
             try:
                 feed = self._fetch_feed(feed_url)
-                for entry in feed.entries[:20]:
+                for entry in feed.entries[:60]:
                     title = entry.get("title", "")
                     summary = entry.get("summary", "")
 

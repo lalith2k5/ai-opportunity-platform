@@ -3,14 +3,17 @@ import xml.etree.ElementTree as ET
 from app.logger import logger
 from app.services.retry_helper import api_retry
 
+
 class ArxivService:
     BASE_URL = "http://export.arxiv.org/api/query"
+    HARD_CAP = 200
 
     @api_retry(max_attempts=3)
     def _get(self, params):
-        return requests.get(self.BASE_URL, params=params, timeout=20)
+        return requests.get(self.BASE_URL, params=params, timeout=30)
 
     def search_papers(self, query: str, max_results: int = 10):
+        max_results = min(max_results, self.HARD_CAP)
         params = {
             "search_query": f"all:{query}",
             "start": 0,

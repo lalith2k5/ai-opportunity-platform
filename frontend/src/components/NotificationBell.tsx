@@ -1,14 +1,17 @@
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Bell } from 'lucide-react';
+import { Bell, Check, X } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import { getNotifications, getUnreadCount, markNotificationRead, markAllNotificationsRead } from '../services/api';
+import {
+  getNotifications, getUnreadCount,
+  markNotificationRead, markAllNotificationsRead,
+} from '../services/api';
 
 export default function NotificationBell() {
   const [open, setOpen] = useState(false);
   const [notifications, setNotifications] = useState<any[]>([]);
   const [count, setCount] = useState(0);
-  const [coords, setCoords] = useState({ top: 0, left: 0 });
+  const [coords, setCoords] = useState<{ top: number; left: number }>({ top: 0, left: 0 });
 
   const load = async () => {
     try {
@@ -26,10 +29,17 @@ export default function NotificationBell() {
 
   const handleToggle = (e: React.MouseEvent<HTMLButtonElement>) => {
     const rect = (e.currentTarget as HTMLButtonElement).getBoundingClientRect();
-    setCoords({
-      top: rect.bottom + 8,
-      left: rect.right + 12,
-    });
+    const PANEL_WIDTH = 320;
+    const MARGIN = 8;
+
+    // Prefer left-aligning panel to the right edge of the button.
+    // If that would overflow the viewport, right-align instead.
+    let left = rect.right + MARGIN;
+    if (left + PANEL_WIDTH > window.innerWidth - MARGIN) {
+      left = Math.max(MARGIN, window.innerWidth - PANEL_WIDTH - MARGIN);
+    }
+
+    setCoords({ top: rect.bottom + MARGIN, left });
     setOpen(o => !o);
   };
 
@@ -43,48 +53,82 @@ export default function NotificationBell() {
     await load();
   };
 
-  const severityColor = (s: string) => ({
-    success: 'text-emerald-400',
-    warning: 'text-yellow-400',
-    info: 'text-blue-400',
-  }[s] || 'text-gray-400');
+  const severityDot = (s: string) => ({
+    success: 'bg-success',
+    warning: 'bg-warning',
+    info:    'bg-accent',
+  }[s] || 'bg-ink-4');
 
   const dropdown = open ? createPortal(
     <>
       <div className="fixed inset-0 z-[90]" onClick={() => setOpen(false)} />
       <div
-        className="fixed z-[100] w-80 bg-brand-panel border border-brand-border rounded-xl shadow-2xl max-h-[500px] overflow-auto"
+        className="fixed z-[100] w-80 max-w-[calc(100vw-1rem)] bg-overlay border border-edge rounded-lg shadow-xl overflow-hidden animate-slide-up"
         style={{ top: coords.top, left: coords.left }}
       >
-        <div className="p-3 border-b border-brand-border flex items-center justify-between sticky top-0 bg-brand-panel z-10">
-          <h3 className="text-white font-semibold text-sm">Notifications</h3>
-          {count > 0 && (
-            <button onClick={handleAll} className="text-xs text-brand-accent hover:underline">
-              Mark all read
+        {/* Header */}
+        <div className="flex items-center justify-between px-3.5 py-3 border-b border-edge-subtle bg-overlay">
+          <div className="flex items-center gap-2">
+            <h3 className="text-xs font-medium text-ink uppercase tracking-wider">Notifications</h3>
+            {count > 0 && (
+              <span className="badge bg-accent/15 text-accent border border-accent/30">
+                {count}
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-0.5">
+            {count > 0 && (
+              <button
+                onClick={handleAll}
+                title="Mark all as read"
+                className="p-1.5 rounded-md text-ink-4 hover:text-ink hover:bg-subtle transition-colors"
+              >
+                <Check size={13} />
+              </button>
+            )}
+            <button
+              onClick={() => setOpen(false)}
+              className="p-1.5 rounded-md text-ink-4 hover:text-ink hover:bg-subtle transition-colors"
+            >
+              <X size={13} />
             </button>
+          </div>
+        </div>
+
+        {/* Body */}
+        <div className="max-h-[440px] overflow-y-auto">
+          {notifications.length === 0 ? (
+            <div className="px-6 py-10 text-center">
+              <Bell className="text-ink-4 mx-auto mb-3" size={20} />
+              <p className="text-xs text-ink-3 font-medium">You're all caught up</p>
+              <p className="text-2xs text-ink-4 mt-1">No notifications yet</p>
+            </div>
+          ) : (
+            notifications.slice(0, 15).map(n => (
+              <Link
+                key={n.id}
+                to={n.link || '/'}
+                onClick={() => { if (!n.read) handleRead(n.id); setOpen(false); }}
+                className={`block px-3.5 py-3 border-b border-edge-subtle last:border-0 hover:bg-subtle/60 transition-colors ${
+                  !n.read ? 'bg-accent/[0.04]' : ''
+                }`}
+              >
+                <div className="flex items-start gap-2.5">
+                  <span className={`w-1.5 h-1.5 rounded-full mt-1.5 flex-shrink-0 ${severityDot(n.severity)}`} />
+                  <div className="flex-1 min-w-0">
+                    <p className={`text-xs truncate ${!n.read ? 'text-ink font-medium' : 'text-ink-2'}`}>
+                      {n.title}
+                    </p>
+                    <p className="text-2xs text-ink-3 mt-0.5 line-clamp-2 leading-relaxed">{n.message}</p>
+                    <p className="text-2xs text-ink-4 mt-1.5">
+                      {new Date(n.created_at).toLocaleString()}
+                    </p>
+                  </div>
+                </div>
+              </Link>
+            ))
           )}
         </div>
-        {notifications.length === 0 ? (
-          <p className="p-6 text-center text-gray-500 text-sm">No notifications</p>
-        ) : (
-          notifications.slice(0, 15).map(n => (
-            <Link
-              key={n.id}
-              to={n.link || '/'}
-              onClick={() => { if (!n.read) handleRead(n.id); setOpen(false); }}
-              className={`block p-3 border-b border-brand-border last:border-0 hover:bg-brand-border/30 ${!n.read ? 'bg-brand-border/20' : ''}`}
-            >
-              <div className="flex items-start gap-2">
-                <div className={`w-2 h-2 rounded-full mt-1.5 flex-shrink-0 ${severityColor(n.severity)}`} style={{ backgroundColor: 'currentColor' }} />
-                <div className="flex-1 min-w-0">
-                  <p className="text-xs font-medium text-white truncate">{n.title}</p>
-                  <p className="text-xs text-gray-500 mt-0.5 line-clamp-2">{n.message}</p>
-                  <p className="text-[10px] text-gray-600 mt-1">{new Date(n.created_at).toLocaleString()}</p>
-                </div>
-              </div>
-            </Link>
-          ))
-        )}
       </div>
     </>,
     document.body
@@ -94,11 +138,12 @@ export default function NotificationBell() {
     <>
       <button
         onClick={handleToggle}
-        className="relative p-2 rounded-lg text-gray-400 hover:text-white hover:bg-brand-border transition-colors"
+        aria-label="Notifications"
+        className="relative p-2 rounded-md text-ink-3 hover:text-ink hover:bg-overlay transition-colors"
       >
-        <Bell size={20} />
+        <Bell size={16} />
         {count > 0 && (
-          <span className="absolute top-0 right-0 w-4 h-4 bg-red-500 text-white text-[10px] rounded-full flex items-center justify-center">
+          <span className="absolute top-0.5 right-0.5 min-w-[16px] h-[16px] px-1 bg-danger text-white text-[9px] font-bold rounded-full flex items-center justify-center leading-none">
             {count > 9 ? '9+' : count}
           </span>
         )}

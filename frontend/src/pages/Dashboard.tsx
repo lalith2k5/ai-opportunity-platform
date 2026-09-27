@@ -13,7 +13,7 @@ import AIRecommendationsPanel from '../components/AIRecommendationsPanel';
 import { useAuth } from '../context/AuthContext';
 import {
   Loader2, Zap, TrendingUp, FileText, Database, Search as SearchIcon,
-  ArrowRight, Sparkles, Clock,
+  ArrowRight, Sparkles, Clock, Bell,
 } from 'lucide-react';
 
 function greeting() {
@@ -23,24 +23,29 @@ function greeting() {
   return 'Good evening';
 }
 
-function PanelHeader({
+function Panel({
   icon: Icon,
   title,
   action,
   accent = 'text-accent',
+  children,
 }: {
   icon: any;
   title: string;
   action?: React.ReactNode;
   accent?: string;
+  children: React.ReactNode;
 }) {
   return (
-    <div className="flex items-center justify-between mb-3">
-      <div className="flex items-center gap-2">
-        <Icon size={13} className={accent} />
-        <h3 className="text-ink font-medium text-xs uppercase tracking-wider">{title}</h3>
+    <div className="bg-surface border border-edge rounded-lg p-4 flex flex-col">
+      <div className="flex items-center justify-between mb-3 flex-shrink-0">
+        <div className="flex items-center gap-2">
+          <Icon size={13} className={accent} />
+          <h3 className="text-ink font-medium text-xs uppercase tracking-wider">{title}</h3>
+        </div>
+        {action}
       </div>
-      {action}
+      <div className="flex-1 min-h-0">{children}</div>
     </div>
   );
 }
@@ -101,17 +106,17 @@ export default function Dashboard() {
       </div>
 
       {/* Stat row */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-8">
-        <StatCard label="Opportunities" value={opportunities.length} sublabel="Ranked by score" icon={Zap} accent />
-        <StatCard label="Problem clusters" value={problems.length} sublabel="Recurring signals" icon={TrendingUp} />
-        <StatCard label="Active trends" value={trends.length} sublabel="Emerging technologies" icon={FileText} />
-        <StatCard label="Vectors stored" value={vectorCount} sublabel="Semantic index" icon={Database} />
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
+        <StatCard label="Opportunities"   value={opportunities.length} sublabel="Ranked by score"    icon={Zap}        accent />
+        <StatCard label="Problem clusters" value={problems.length}    sublabel="Recurring signals"  icon={TrendingUp} />
+        <StatCard label="Active trends"   value={trends.length}       sublabel="Emerging tech"      icon={FileText} />
+        <StatCard label="Vectors stored"  value={vectorCount}         sublabel="Semantic index"     icon={Database} />
       </div>
 
-      {/* Main grid */}
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+      {/* Top row: Opportunities (2/3) + AI Picks & Gaps (1/3) */}
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-5 mb-5">
 
-        {/* Left — Top opportunities */}
+        {/* LEFT — Top opportunities */}
         <div className="xl:col-span-2">
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-2">
@@ -137,90 +142,81 @@ export default function Dashboard() {
               </Link>
             </div>
           ) : (
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-              {opportunities.slice(0, 8).map(opp => (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {opportunities.slice(0, 6).map(opp => (
                 <OpportunityCard key={opp.id} opp={opp} />
               ))}
             </div>
           )}
         </div>
 
-        {/* Right — Widget rail */}
-        <div className="xl:col-span-1 space-y-4">
-
-          {/* Panel: Timeline */}
-          <div className="bg-surface border border-edge rounded-lg p-4">
-            <PanelHeader icon={Clock} title="Timeline" />
-            <InnovationTimeline />
-          </div>
-
-          {/* Panel: Alerts */}
-          <div className="bg-surface border border-edge rounded-lg p-4">
-            <PanelHeader icon={Sparkles} title="Alerts" accent="text-warning" />
-            <AlertsPanel />
-          </div>
-
-          {/* Panel: AI Recs */}
-          <div className="bg-surface border border-edge rounded-lg p-4">
-            <PanelHeader icon={Zap} title="AI picks" accent="text-warning" />
+        {/* RIGHT — AI Picks + Research Gaps stacked */}
+        <div className="xl:col-span-1 space-y-5">
+          <Panel icon={Sparkles} title="AI picks" accent="text-warning">
             <AIRecommendationsPanel />
-          </div>
+          </Panel>
 
-          {/* Panel: Research gaps */}
-          <div className="bg-surface border border-edge rounded-lg p-4">
-            <PanelHeader icon={FileText} title="Research gaps" accent="text-success" />
+          <Panel icon={FileText} title="Research gaps" accent="text-success">
             <ResearchGapSummary />
-          </div>
-
-          {/* Panel: Trends */}
-          <div className="bg-surface border border-edge rounded-lg p-4">
-            <PanelHeader
-              icon={TrendingUp}
-              title="Emerging trends"
-              accent="text-success"
-              action={
-                <Link to="/reports" className="text-2xs text-accent hover:text-accent-hover font-medium">
-                  View all
-                </Link>
-              }
-            />
-            <div className="space-y-2.5">
-              {trends.length === 0 ? (
-                <p className="text-xs text-ink-4 text-center py-4">No trends yet.</p>
-              ) : (
-                trends.slice(0, 8).map(trend => (
-                  <div key={trend.id} className="flex items-center gap-3">
-                    <span className="text-xs text-ink-2 truncate flex-1">{trend.name}</span>
-                    <div className="w-16 h-1 bg-overlay rounded-full overflow-hidden flex-shrink-0">
-                      <div className="h-full bg-success" style={{ width: `${trend.trend_score * 100}%` }} />
-                    </div>
-                    <span className="text-2xs font-mono tabular-nums text-ink-4 w-8 text-right flex-shrink-0">
-                      {trend.trend_score.toFixed(2)}
-                    </span>
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
-
-          {/* Panel: Recent searches */}
-          <div className="bg-surface border border-edge rounded-lg p-4">
-            <PanelHeader icon={SearchIcon} title="Recent searches" accent="text-ink-3" />
-            <div className="space-y-2">
-              {searchHistory.length === 0 ? (
-                <p className="text-xs text-ink-4 text-center py-3">No searches yet.</p>
-              ) : (
-                searchHistory.slice(0, 5).map((s: any) => (
-                  <div key={s.id} className="flex items-center justify-between gap-3 py-1.5 border-b border-edge-subtle last:border-0">
-                    <span className="text-xs text-ink-2 truncate flex-1">{s.query}</span>
-                    <span className="text-2xs font-mono text-ink-4 flex-shrink-0">{s.results_count}</span>
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
-
+          </Panel>
         </div>
+      </div>
+
+      {/* Bottom row: 4 even widgets */}
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+
+        <Panel icon={Clock} title="Timeline">
+          <InnovationTimeline />
+        </Panel>
+
+        <Panel icon={Bell} title="Alerts" accent="text-warning">
+          <AlertsPanel />
+        </Panel>
+
+        <Panel
+          icon={TrendingUp}
+          title="Emerging trends"
+          accent="text-success"
+          action={
+            <Link to="/reports" className="text-2xs text-accent hover:text-accent-hover font-medium">
+              View all
+            </Link>
+          }
+        >
+          <div className="space-y-2.5">
+            {trends.length === 0 ? (
+              <p className="text-xs text-ink-4 text-center py-4">No trends yet.</p>
+            ) : (
+              trends.slice(0, 6).map(trend => (
+                <div key={trend.id} className="flex items-center gap-3">
+                  <span className="text-xs text-ink-2 truncate flex-1">{trend.name}</span>
+                  <div className="w-14 h-1 bg-overlay rounded-full overflow-hidden flex-shrink-0">
+                    <div className="h-full bg-success" style={{ width: `${trend.trend_score * 100}%` }} />
+                  </div>
+                  <span className="text-2xs font-mono tabular-nums text-ink-4 w-8 text-right flex-shrink-0">
+                    {trend.trend_score.toFixed(2)}
+                  </span>
+                </div>
+              ))
+            )}
+          </div>
+        </Panel>
+
+        <Panel icon={SearchIcon} title="Recent searches" accent="text-ink-3">
+          <div className="space-y-2">
+            {searchHistory.length === 0 ? (
+              <p className="text-xs text-ink-4 text-center py-3">No searches yet.</p>
+            ) : (
+              searchHistory.slice(0, 6).map((s: any) => (
+                <div key={s.id} className="flex items-center justify-between gap-3 py-1.5 border-b border-edge-subtle last:border-0">
+                  <span className="text-xs text-ink-2 truncate flex-1">{s.query}</span>
+                  <span className="text-2xs font-mono text-ink-4 flex-shrink-0">{s.results_count}</span>
+                </div>
+              ))
+            )}
+          </div>
+        </Panel>
+
       </div>
     </div>
   );

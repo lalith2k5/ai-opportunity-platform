@@ -53,7 +53,7 @@ class NLPAgent:
             vectorizer = TfidfVectorizer(max_features=200, stop_words="english", ngram_range=(1, 2))
             X = vectorizer.fit_transform(texts)
             n_topics = min(n_topics, max(2, len(texts) // 2))
-            nmf = NMF(n_components=n_topics, random_state=42, init='nndsvda', max_iter=200)
+            nmf = NMF(n_components=n_topics, random_state=42, init='nndsvda', max_iter=1000)
             nmf.fit(X)
             feature_names = vectorizer.get_feature_names_out()
             topics = []

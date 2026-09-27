@@ -14,7 +14,7 @@ export default function StatCard({
   accent?: boolean;
 }) {
   return (
-    <div className="group relative bg-surface border border-edge rounded-lg p-4 hover:border-edge-strong transition-colors">
+    <div className="group relative bg-surface border border-edge rounded-lg p-4 hover:border-edge-strong hover:-translate-y-[1px] hover:shadow-sm transition-all duration-150">
       <div className="flex items-center justify-between mb-3">
         <p className="text-2xs font-medium text-ink-4 uppercase tracking-wider">{label}</p>
         {Icon && (

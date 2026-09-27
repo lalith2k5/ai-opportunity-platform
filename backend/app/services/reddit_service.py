@@ -2,7 +2,10 @@ import praw
 from app.config import settings
 from app.logger import logger
 
+
 class RedditService:
+    HARD_CAP = 200
+
     def __init__(self):
         if settings.REDDIT_CLIENT_ID and settings.REDDIT_CLIENT_SECRET:
             try:
@@ -22,6 +25,7 @@ class RedditService:
     def search_posts(self, query: str, limit: int = 10):
         if not self.reddit:
             return []
+        limit = min(limit, self.HARD_CAP)
         results = []
         try:
             for submission in self.reddit.subreddit("all").search(query, limit=limit, sort="relevance"):

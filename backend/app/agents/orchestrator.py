@@ -136,18 +136,18 @@ class OrchestratorAgent:
         finally:
             db.close()
 
-    def run_full_pipeline(self, query: str, user_id: int = None) -> dict:
-        logger.info(f"Starting pipeline for: {query}")
-        raw = self.data_collection.collect_all(query)
+    def run_full_pipeline(self, query: str, user_id: int = None, mode: str = "quick") -> dict:
+        logger.info(f"Starting pipeline for: {query} (mode={mode})")
+        raw = self.data_collection.collect_all(query, mode=mode)
 
         documents = []
-        for repo in raw.get("github", [])[:8]:
+        for repo in raw.get("github", [])[:200]:
             documents.append({"source": "github", "title": repo.get("name", ""), "content": repo.get("description", "") or ""})
-        for post in raw.get("reddit", [])[:8]:
+        for post in raw.get("reddit", [])[:200]:
             documents.append({"source": "reddit", "title": post.get("title", ""), "content": post.get("selftext", "")})
-        for paper in raw.get("arxiv", [])[:8]:
+        for paper in raw.get("arxiv", [])[:200]:
             documents.append({"source": "arxiv", "title": paper.get("title", ""), "content": paper.get("summary", "")})
-        for article in raw.get("news", [])[:8]:
+        for article in raw.get("news", [])[:200]:
             documents.append({"source": "news", "title": article.get("title", ""), "content": article.get("summary", "")})
 
         logger.info(f"Processing {len(documents)} documents")
@@ -174,8 +174,6 @@ class OrchestratorAgent:
             global_topics = []
             logger.error(f"Topic modeling error: {e}")
 
-        kg_stats = self.kg.build_from_documents(processed)
-        self.kg.persist()
         clusters = self.problem_discovery.discover(processed)
         gaps = self.research_gap.detect_gaps(clusters, raw.get("arxiv", []))
         trends = self.innovation_monitor.monitor(processed)
@@ -191,7 +189,14 @@ class OrchestratorAgent:
                 news_items=raw.get("news", []),
             )
             opp["explanation"] = self.explainable.explain(opp)
+            opp["_cluster_title"] = (cluster.get("title") or "").replace("Problem Cluster:", "").strip()
+            opp["_gap_title"] = gap.get("title") if gap else None
             opportunities.append(opp)
+
+        # Build + persist knowledge graph (Document layer + semantic layer)
+        self.kg.build_from_documents(processed)
+        kg_stats = self.kg.build_semantic_graph(raw, clusters, gaps, opportunities, global_topics)
+        self.kg.persist()
 
         self._save_to_db(query, raw, processed, clusters, gaps, trends, opportunities, user_id=user_id)
 

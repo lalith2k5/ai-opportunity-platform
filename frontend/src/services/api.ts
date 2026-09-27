@@ -162,3 +162,11 @@ export const markAllNotificationsRead = () => api.post('/notifications/read-all'
 // Knowledge Graph
 export const getKGStats = () => api.get('/kg/stats').then(r => r.data);
 export const getKGEdges = () => api.get('/kg/edges').then(r => r.data);
+
+// Admin — Config & Sync
+export const adminGetSettings = () => api.get('/admin/settings').then(r => r.data);
+export const adminUpdateSetting = (key: string, value: string) =>
+  api.patch('/admin/settings', { key, value }).then(r => r.data);
+export const adminGetSyncStatus = () => api.get('/admin/sync/status').then(r => r.data);
+export const adminTriggerSync = (topic: string, mode: 'quick' | 'deep') =>
+  api.post('/admin/sync/trigger', { topic, mode }).then(r => r.data);

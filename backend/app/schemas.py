@@ -18,6 +18,7 @@ class ChatQuery(BaseModel):
 class SearchQuery(BaseModel):
     query: str
     source: Optional[str] = None
+    mode: Optional[str] = "quick"  # "quick" or "deep"
 
 class OpportunityResponse(BaseModel):
     id: int
