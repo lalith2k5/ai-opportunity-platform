@@ -33,19 +33,39 @@ def run_pipeline(
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/opportunities")
-def get_opportunities(db: Session = Depends(get_db)):
-    return db.query(models.Opportunity).order_by(models.Opportunity.opportunity_score.desc()).limit(50).all()
+def get_opportunities(db: Session = Depends(get_db), _=Depends(get_current_user)):
+    from sqlalchemy import func
+    # Show only the highest-scoring row per unique title
+    subq = (
+        db.query(
+            models.Opportunity.title,
+            func.max(models.Opportunity.opportunity_score).label("max_score"),
+        )
+        .group_by(models.Opportunity.title)
+        .subquery()
+    )
+    return (
+        db.query(models.Opportunity)
+        .join(
+            subq,
+            (models.Opportunity.title == subq.c.title)
+            & (models.Opportunity.opportunity_score == subq.c.max_score),
+        )
+        .order_by(models.Opportunity.opportunity_score.desc())
+        .limit(50)
+        .all()
+    )
 
 @router.get("/problems")
-def get_problems(db: Session = Depends(get_db)):
+def get_problems(db: Session = Depends(get_db), _=Depends(get_current_user)):
     return db.query(models.ProblemCluster).order_by(models.ProblemCluster.demand_score.desc()).limit(50).all()
 
 @router.get("/research-gaps")
-def get_research_gaps(db: Session = Depends(get_db)):
+def get_research_gaps(db: Session = Depends(get_db), _=Depends(get_current_user)):
     return db.query(models.ResearchGap).order_by(models.ResearchGap.gap_score.desc()).limit(50).all()
 
 @router.get("/trends")
-def get_trends(db: Session = Depends(get_db)):
+def get_trends(db: Session = Depends(get_db), _=Depends(get_current_user)):
     return db.query(models.Trend).order_by(models.Trend.trend_score.desc()).limit(50).all()
 
 @router.get("/search-history")

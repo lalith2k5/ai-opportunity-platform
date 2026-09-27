@@ -126,6 +126,34 @@ export default function OpportunityDetail() {
         </div>
       )}
 
+      <div className="bg-brand-panel border border-brand-border rounded-xl p-6 mb-6">
+        <h2 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+          <FileText className="text-brand-accent" size={20} /> Source References
+        </h2>
+        <div className="text-sm text-gray-300 space-y-2">
+          <p>• <strong className="text-white">Cluster keywords:</strong> {cluster?.keywords?.slice(0, 8).join(', ') || 'N/A'}</p>
+          <p>• <strong className="text-white">Cluster size:</strong> {cluster?.source_count || 0} sources</p>
+          {gap && (
+            <>
+              <p>• <strong className="text-white">Research coverage:</strong> {((gap.evidence?.coverage || 0) * 100).toFixed(0)}%</p>
+              {gap.evidence?.future_work_snippets?.length > 0 && (
+                <div>
+                  <p className="mt-2 text-white font-medium">Future-work signals from arXiv:</p>
+                  <ul className="ml-4 mt-1 space-y-1">
+                    {gap.evidence.future_work_snippets.slice(0, 3).map((fws: any, i: number) => (
+                      <li key={i} className="text-xs text-gray-400">
+                        <em>"{fws.snippet?.slice(0, 180)}..."</em>
+                        <span className="text-gray-600 ml-1">— {fws.paper?.slice(0, 50)}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+
       <div className="bg-brand-panel border border-brand-border rounded-xl p-6">
         <h2 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
           <FileText className="text-brand-accent" size={20} /> Recommendation Summary

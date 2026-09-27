@@ -10,6 +10,7 @@ from app.database import engine, Base
 from app import models
 from app.logger import logger
 from app.scheduler import start_scheduler, stop_scheduler
+from app.middleware import ActivityLogMiddleware
 
 # Create tables
 Base.metadata.create_all(bind=engine)
@@ -30,6 +31,8 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan,
 )
+
+app.add_middleware(ActivityLogMiddleware)
 
 app.add_middleware(
     CORSMiddleware,

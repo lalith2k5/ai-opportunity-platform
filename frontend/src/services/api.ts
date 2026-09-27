@@ -17,14 +17,28 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
-// Auto-logout on 401
+// Auto-refresh on 401
 api.interceptors.response.use(
   r => r,
-  err => {
-    if (err?.response?.status === 401 && window.location.pathname !== '/login') {
-      localStorage.removeItem('aod_token');
-      localStorage.removeItem('aod_user');
-      window.location.href = '/login';
+  async err => {
+    const original = err.config;
+    if (err?.response?.status === 401 && !original._retried) {
+      original._retried = true;
+      const refresh = localStorage.getItem('aod_refresh');
+      if (refresh && !window.location.pathname.includes('/login')) {
+        try {
+          const res = await axios.post(`${API_BASE}/auth/refresh`, { refresh_token: refresh });
+          const newToken = res.data.access_token;
+          localStorage.setItem('aod_token', newToken);
+          original.headers.Authorization = `Bearer ${newToken}`;
+          return api(original);
+        } catch {
+          localStorage.removeItem('aod_token');
+          localStorage.removeItem('aod_refresh');
+          localStorage.removeItem('aod_user');
+          window.location.href = '/login';
+        }
+      }
     }
     return Promise.reject(err);
   }

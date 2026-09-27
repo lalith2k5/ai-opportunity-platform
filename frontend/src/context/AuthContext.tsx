@@ -20,6 +20,7 @@ const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
 const API_BASE = 'http://localhost:8000/api';
 const TOKEN_KEY = 'aod_token';
+const REFRESH_KEY = 'aod_refresh';
 const USER_KEY = 'aod_user';
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -59,6 +60,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setToken(data.access_token);
     setUser(data.user);
     localStorage.setItem(TOKEN_KEY, data.access_token);
+    if (data.refresh_token) localStorage.setItem(REFRESH_KEY, data.refresh_token);
     localStorage.setItem(USER_KEY, JSON.stringify(data.user));
   };
 
@@ -79,6 +81,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setToken(null);
     setUser(null);
     localStorage.removeItem(TOKEN_KEY);
+    localStorage.removeItem(REFRESH_KEY);
     localStorage.removeItem(USER_KEY);
   };
 

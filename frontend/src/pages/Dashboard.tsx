@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import { getOpportunities, getProblems, getTrends, getHealth, getSearchHistory, type Opportunity, type ProblemCluster, type Trend } from '../services/api';
 import StatCard from '../components/StatCard';
 import OpportunityCard from '../components/OpportunityCard';
+import InnovationTimeline from '../components/InnovationTimeline';
+import AlertsPanel from '../components/AlertsPanel';
 import { Loader2, TrendingUp, AlertCircle, Zap, FileText } from 'lucide-react';
 
 export default function Dashboard() {
@@ -100,6 +102,14 @@ export default function Dashboard() {
                 </div>
               ))
             )}
+          </div>
+
+          <div className="mt-8">
+            <InnovationTimeline />
+          </div>
+
+          <div className="mt-6">
+            <AlertsPanel />
           </div>
 
           <div className="flex items-center gap-2 mb-4 mt-8">

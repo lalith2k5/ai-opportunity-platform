@@ -1,5 +1,5 @@
 import { Link, useLocation } from 'react-router-dom';
-import { LayoutDashboard, Search, MessageSquare, FileText, Activity, LogOut, User as UserIcon, Shield, UserCircle } from 'lucide-react';
+import { LayoutDashboard, Search, MessageSquare, FileText, Activity, LogOut, User as UserIcon, Shield, UserCircle, TrendingUp, BarChart3 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import NotificationBell from './NotificationBell';
 
@@ -8,6 +8,8 @@ const navItems = [
   { path: '/search', label: 'Search', icon: Search },
   { path: '/chat', label: 'AI Chat', icon: MessageSquare },
   { path: '/reports', label: 'Reports', icon: FileText },
+  { path: '/problems', label: 'Problems', icon: TrendingUp },
+  { path: '/analytics', label: 'Analytics', icon: BarChart3 },
 ];
 
 export default function Layout({ children }: { children: React.ReactNode }) {

@@ -1,5 +1,11 @@
 import re
 
+_LATIN_ONLY = re.compile(r'^[a-zA-Z0-9\s\-&,.\']+$')
+
+
+def _is_latin_only(s: str) -> bool:
+    return bool(s and _LATIN_ONLY.match(s))
+
 
 # Additional noise words (things that show up in titles but aren't meaningful)
 NOISE_WORDS = {
@@ -135,6 +141,8 @@ def _clean_keywords(keywords: list) -> dict:
     for kw in keywords:
         if not kw:
             continue
+        if not _is_latin_only(kw):
+            continue
         w = kw.lower().strip()
         if " " in w:
             # Multi-word from TF-IDF: keep if all tokens meaningful
@@ -240,13 +248,49 @@ class OpportunityIntelligenceAgent:
             gap_note = " with significant research coverage gaps"
         return f"Opportunity focused on {focus}{gap_note}."
 
-    def score(self, problem_cluster: dict, research_gap: dict = None, trend: dict = None) -> dict:
+
+    def _derive_competition_score(self, keywords: list, github_items: list) -> float:
+        """More matching repos → more competition → HIGHER score (harder)."""
+        if not keywords or not github_items:
+            return 0.3
+        text = " ".join([
+            (r.get("name", "") + " " + (r.get("description", "") or "")).lower()
+            for r in github_items
+        ])
+        matches = sum(1 for kw in keywords if kw.lower() in text)
+        density = matches / max(len(keywords), 1)
+        return round(min(1.0, 0.2 + density * 0.8), 3)
+
+    def _derive_feasibility_score(self, keywords: list, github_items: list, arxiv_items: list) -> float:
+        """Repo stars + paper count → higher technical feasibility."""
+        stars = sum(r.get("stargazers_count", 0) or 0 for r in (github_items or []))
+        papers = len(arxiv_items or [])
+        # Normalize: 20k stars + 10 papers → max feasibility
+        star_component = min(1.0, stars / 20000.0)
+        paper_component = min(1.0, papers / 10.0)
+        return round(0.3 + 0.5 * star_component + 0.2 * paper_component, 3)
+
+    def _derive_market_readiness_score(self, keywords: list, news_items: list) -> float:
+        """More news coverage → higher market readiness."""
+        if not keywords or not news_items:
+            return 0.4
+        text = " ".join([
+            (n.get("title", "") + " " + (n.get("summary", ""))).lower()
+            for n in news_items
+        ])
+        matches = sum(1 for kw in keywords if kw.lower() in text)
+        density = matches / max(len(keywords), 1)
+        return round(min(1.0, 0.3 + density * 0.7), 3)
+
+    def score(self, problem_cluster: dict, research_gap: dict = None, trend: dict = None,
+              github_items: list = None, arxiv_items: list = None, news_items: list = None) -> dict:
         demand = problem_cluster.get("demand_score", 0.5)
         gap = research_gap.get("gap_score", 0.5) if research_gap else 0.5
         trend_score = trend.get("trend_score", 0.5) if trend else 0.5
-        competition = 0.3
-        feasibility = 0.7
-        market_readiness = 0.6
+        keywords = problem_cluster.get("keywords", [])
+        competition = self._derive_competition_score(keywords, github_items or [])
+        feasibility = self._derive_feasibility_score(keywords, github_items or [], arxiv_items or [])
+        market_readiness = self._derive_market_readiness_score(keywords, news_items or [])
         confidence = 0.8
 
         opportunity_score = (

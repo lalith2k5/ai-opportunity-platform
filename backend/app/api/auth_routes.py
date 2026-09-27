@@ -9,7 +9,9 @@ from pydantic import BaseModel
 
 from app.database import get_db
 from app import models, schemas
-from app.auth.security import hash_password, verify_password, create_access_token
+from app.auth.security import (
+    hash_password, verify_password, create_access_token, generate_refresh_token,
+)
 from app.auth.dependencies import get_current_user
 from app.logger import logger
 
@@ -20,20 +22,20 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 class ForgotPasswordRequest(BaseModel):
     email: str
 
-
 class ResetPasswordRequest(BaseModel):
     token: str
     new_password: str
-
 
 class ProfileUpdateRequest(BaseModel):
     name: Optional[str] = None
     email: Optional[str] = None
 
-
 class ChangePasswordRequest(BaseModel):
     old_password: str
     new_password: str
+
+class RefreshRequest(BaseModel):
+    refresh_token: str
 
 
 # ---------- Register ----------
@@ -64,9 +66,17 @@ def login(form: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get
             detail="Incorrect email or password",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    token = create_access_token({"sub": user.email, "role": user.role})
+    access = create_access_token({"sub": user.email, "role": user.role})
+    refresh = generate_refresh_token()
+    db.add(models.RefreshToken(
+        user_id=user.id,
+        token=refresh,
+        expires_at=datetime.now(timezone.utc) + timedelta(days=30),
+    ))
+    db.commit()
     return {
-        "access_token": token,
+        "access_token": access,
+        "refresh_token": refresh,
         "token_type": "bearer",
         "user": {
             "id": user.id,
@@ -75,6 +85,53 @@ def login(form: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get
             "role": user.role,
         },
     }
+
+
+# ---------- Refresh ----------
+@router.post("/refresh")
+def refresh_access_token(payload: RefreshRequest, db: Session = Depends(get_db)):
+    row = db.query(models.RefreshToken).filter(
+        models.RefreshToken.token == payload.refresh_token,
+        models.RefreshToken.revoked == False,
+    ).first()
+    if not row:
+        raise HTTPException(401, "Invalid refresh token")
+    exp = row.expires_at
+    if exp.tzinfo is None:
+        exp = exp.replace(tzinfo=timezone.utc)
+    if exp < datetime.now(timezone.utc):
+        raise HTTPException(401, "Refresh token expired")
+    user = db.query(models.User).filter(models.User.id == row.user_id).first()
+    if not user:
+        raise HTTPException(404, "User not found")
+    new_access = create_access_token({"sub": user.email, "role": user.role})
+    return {"access_token": new_access, "token_type": "bearer"}
+
+
+# ---------- Logout ----------
+@router.post("/logout")
+def logout(payload: RefreshRequest, db: Session = Depends(get_db)):
+    row = db.query(models.RefreshToken).filter(
+        models.RefreshToken.token == payload.refresh_token
+    ).first()
+    if row:
+        row.revoked = True
+        db.commit()
+    return {"message": "Logged out"}
+
+
+# ---------- Revoke all sessions ----------
+@router.post("/revoke-all")
+def revoke_all(
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    db.query(models.RefreshToken).filter(
+        models.RefreshToken.user_id == user.id,
+        models.RefreshToken.revoked == False,
+    ).update({"revoked": True})
+    db.commit()
+    return {"message": "All sessions revoked"}
 
 
 # ---------- Current user ----------
@@ -123,19 +180,16 @@ def change_password(
 def forgot_password(payload: ForgotPasswordRequest, db: Session = Depends(get_db)):
     user = db.query(models.User).filter(models.User.email == payload.email).first()
     if not user:
-        # Do not reveal whether the email exists
         return {"message": "If the email is registered, a reset link has been sent."}
-
     token = secrets.token_urlsafe(32)
     expires = datetime.now(timezone.utc) + timedelta(hours=1)
     db.add(models.PasswordResetToken(user_id=user.id, token=token, expires_at=expires))
     db.commit()
-
     logger.info(f"[Password Reset] user={user.email} token={token}")
     print(f"\n=== PASSWORD RESET LINK ===\nhttp://localhost:5173/reset-password?token={token}\n")
     return {
         "message": "Reset link generated.",
-        "token": token,  # DEV ONLY — remove in production
+        "token": token,
         "reset_url": f"http://localhost:5173/reset-password?token={token}",
     }
 
@@ -154,11 +208,9 @@ def reset_password(payload: ResetPasswordRequest, db: Session = Depends(get_db))
         exp = exp.replace(tzinfo=timezone.utc)
     if exp < datetime.now(timezone.utc):
         raise HTTPException(400, "Token expired")
-
     user = db.query(models.User).filter(models.User.id == row.user_id).first()
     if not user:
         raise HTTPException(404, "User not found")
-
     user.password_hash = hash_password(payload.new_password)
     row.used = True
     db.commit()

@@ -36,3 +36,12 @@ def decode_token(token: str) -> Optional[dict]:
         return jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
     except JWTError:
         return None
+
+
+import secrets
+
+REFRESH_TOKEN_EXPIRE_DAYS = 30
+
+def generate_refresh_token() -> str:
+    """Opaque random token (not JWT)."""
+    return secrets.token_urlsafe(48)

@@ -178,7 +178,12 @@ class OrchestratorAgent:
         for i, cluster in enumerate(clusters):
             gap = gaps[i] if i < len(gaps) else None
             trend = trends[i] if i < len(trends) else None
-            opp = self.opportunity.score(cluster, gap, trend)
+            opp = self.opportunity.score(
+                cluster, gap, trend,
+                github_items=raw.get("github", []),
+                arxiv_items=raw.get("arxiv", []),
+                news_items=raw.get("news", []),
+            )
             opp["explanation"] = self.explainable.explain(opp)
             opportunities.append(opp)
 
