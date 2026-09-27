@@ -35,24 +35,31 @@ class OrchestratorAgent:
     def _save_to_db(self, query, raw, processed, clusters, gaps, trends, opportunities, user_id=None):
         db = SessionLocal()
         try:
-            # 1. Save raw documents with dedup
+            # 1. Save raw documents with dedup — track new docs for embedding
             inserted = 0
+            newly_inserted_docs = []
             for source_name, items in raw.items():
                 for item in items:
-                    ext_id = str(item.get("id", "") or "")
                     title = item.get("title") or item.get("name") or ""
                     content = item.get("summary") or item.get("selftext") or item.get("description") or ""
 
-                    # Skip if already stored (dedup)
-                    if ext_id:
-                        exists = db.execute(
-                            select(models.RawDocument.id).where(
-                                models.RawDocument.source == source_name,
-                                models.RawDocument.external_id == ext_id,
-                            )
-                        ).first()
-                        if exists:
-                            continue
+                    # Stable external_id: prefer source id, fall back to URL, then title hash.
+                    # This makes dedup work for every source (news/RSS has no id field).
+                    ext_id = str(item.get("id", "") or "")
+                    if not ext_id:
+                        ext_id = str(item.get("url", "") or item.get("html_url", "") or "")
+                    if not ext_id:
+                        import hashlib as _hl
+                        ext_id = "title:" + _hl.sha1(title.encode("utf-8")).hexdigest()[:16]
+
+                    exists = db.execute(
+                        select(models.RawDocument.id).where(
+                            models.RawDocument.source == source_name,
+                            models.RawDocument.external_id == ext_id,
+                        )
+                    ).first()
+                    if exists:
+                        continue
 
                     url = item.get("url", item.get("html_url", ""))
                     metadata = {"keys": list(item.keys())}
@@ -68,7 +75,22 @@ class OrchestratorAgent:
                     )
                     db.add(raw_doc)
                     inserted += 1
+
+                    text = (title + " " + content)[:1000]
+                    if text.strip():
+                        newly_inserted_docs.append((text, {"source": source_name}))
             logger.info(f"Inserted {inserted} new raw documents")
+
+            if newly_inserted_docs:
+                try:
+                    texts = [t for t, _ in newly_inserted_docs]
+                    metas = [m for _, m in newly_inserted_docs]
+                    self.embedding.add_documents(texts, metadatas=metas)
+                    logger.info(f"Embedded {len(texts)} NEW docs (skipped duplicates)")
+                except Exception as e:
+                    logger.error(f"Embedding error: {e}")
+            else:
+                logger.info("No new documents to embed")
 
             # 1b. Save ProcessedDocument rows linked to their RawDocument
             processed_inserted = 0
@@ -227,15 +249,6 @@ class OrchestratorAgent:
         for doc in documents:
             nlp_result = self.nlp.process(doc.get("title", "") + " " + doc.get("content", ""))
             processed.append({**doc, **nlp_result})
-
-        if processed:
-            try:
-                texts = [d.get("title", "") + " " + (d.get("content", "") or "")[:1000] for d in processed]
-                metadatas = [{"source": d.get("source", "unknown")} for d in processed]
-                self.embedding.add_documents(texts, metadatas=metadatas)
-                logger.info(f"Stored {len(texts)} docs in vector DB")
-            except Exception as e:
-                logger.error(f"Embedding error: {e}")
 
         # Global topic modeling across all documents
         try:
