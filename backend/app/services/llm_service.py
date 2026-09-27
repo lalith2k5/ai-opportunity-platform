@@ -38,7 +38,7 @@ class GeminiProvider(BaseProvider):
         return self.client is not None
 
     def generate(self, prompt: str, context: str = "") -> str:
-        import time as _t
+        import time
         full = prompt if not context else (
             f"You are an innovation intelligence analyst with access to live platform data.\n\n"
             f"{context}\n\n"

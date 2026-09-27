@@ -17,6 +17,7 @@ import Opportunities from './pages/Opportunities';
 import Recommendations from './pages/Recommendations';
 import Analytics from './pages/Analytics';
 import KnowledgeGraph from './pages/KnowledgeGraph';
+import ProblemProfiles from './pages/ProblemProfiles';
 
 const wrap = (el: React.ReactNode) => (
   <ProtectedRoute><Layout>{el}</Layout></ProtectedRoute>
@@ -40,6 +41,7 @@ export default function App() {
       <Route path="/recommendations" element={wrap(<Recommendations />)} />
       <Route path="/analytics" element={wrap(<Analytics />)} />
       <Route path="/knowledge-graph" element={wrap(<KnowledgeGraph />)} />
+      <Route path="/problem-profiles" element={wrap(<ProblemProfiles />)} />
       <Route path="/opportunities/:id" element={wrap(<OpportunityDetail />)} />
     </Routes>
   );

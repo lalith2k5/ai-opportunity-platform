@@ -186,3 +186,33 @@ class RefreshToken(Base):
     expires_at = Column(DateTime(timezone=True), nullable=False)
     revoked = Column(Boolean, default=False, index=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class ProblemProfile(Base):
+    """Structured problem statement extracted from industry/R&D/gov challenge portals.
+
+    Populated by ProblemExtractorAgent (LLM) from raw challenge documents
+    (SBIR solicitations, XPRIZE challenges, NIST innovation calls, etc).
+    """
+    __tablename__ = "problem_profiles"
+
+    id = Column(Integer, primary_key=True, index=True)
+    organization = Column(String)
+    problem_title = Column(String, index=True)
+    problem_description = Column(Text)
+    industry_domain = Column(String, index=True)
+    problem_type = Column(String, index=True)
+    technology_stage = Column(String, default="potential")
+    required_technology = Column(JSON)
+    current_approach = Column(Text)
+    known_limitations = Column(Text)
+    expected_outcome = Column(Text)
+    published_date = Column(DateTime(timezone=True))
+    source = Column(String, index=True)
+    source_url = Column(Text)
+    keywords = Column(JSON)
+    problem_status = Column(String, default="unknown")
+    student_suitability = Column(String, default="medium")
+    raw_document_id = Column(Integer, ForeignKey("raw_documents.id"))
+    extracted_by = Column(String)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())

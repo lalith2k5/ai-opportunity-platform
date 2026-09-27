@@ -34,4 +34,9 @@ class Settings:
     CHROMA_PERSIST_DIR: str = os.getenv("CHROMA_PERSIST_DIR", "./chroma_db")
     EMBEDDING_MODEL: str = "all-MiniLM-L6-v2"
 
+    # Challenge portals — industry / gov problem statements (ProblemProfile)
+    ENABLE_CHALLENGE_PORTALS: bool = os.getenv("ENABLE_CHALLENGE_PORTALS", "true").lower() in ("1", "true", "yes")
+    CHALLENGE_PORTAL_CAP: int = int(os.getenv("CHALLENGE_PORTAL_CAP", "20"))
+    PROBLEM_EXTRACTION_CAP: int = int(os.getenv("PROBLEM_EXTRACTION_CAP", "8"))
+
 settings = Settings()

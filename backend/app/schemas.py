@@ -79,3 +79,26 @@ class SearchHistoryResponse(BaseModel):
     created_at: Any
     class Config:
         from_attributes = True
+
+
+class ProblemProfileResponse(BaseModel):
+    id: int
+    organization: Optional[str] = ""
+    problem_title: str
+    problem_description: Optional[str] = ""
+    industry_domain: Optional[str] = "Other"
+    problem_type: Optional[str] = "Other"
+    technology_stage: Optional[str] = "potential"
+    required_technology: Optional[List[str]] = []
+    current_approach: Optional[str] = ""
+    known_limitations: Optional[str] = ""
+    expected_outcome: Optional[str] = ""
+    source: Optional[str] = ""
+    source_url: Optional[str] = ""
+    keywords: Optional[List[str]] = []
+    problem_status: Optional[str] = "unknown"
+    student_suitability: Optional[str] = "medium"
+    extracted_by: Optional[str] = ""
+    created_at: Any
+    class Config:
+        from_attributes = True

@@ -12,6 +12,8 @@ from app import models
 from sqlalchemy import select
 from app.logger import logger
 from app.services.notification_service import generate_pipeline_notifications
+from app.services.challenge_portal_service import ChallengePortalService
+from app.agents.problem_extractor import ProblemExtractorAgent
 
 import threading
 
@@ -31,6 +33,59 @@ class OrchestratorAgent:
         self.opportunity = OpportunityIntelligenceAgent()
         self.explainable = ExplainableAIAgent()
         self.embedding = EmbeddingService()
+        self.challenge_portal = ChallengePortalService()
+        self.problem_extractor = ProblemExtractorAgent()
+
+    def _save_problem_profiles(self, profiles: list):
+        """Persist extracted ProblemProfile rows. Dedup by source_url or title."""
+        if not profiles:
+            return 0
+        from app.database import SessionLocal as _SL
+        db = _SL()
+        inserted = 0
+        try:
+            for pr in profiles:
+                key_url = (pr.get("source_url") or "").strip()
+                key_title = (pr.get("problem_title") or "").strip()[:200]
+                exists = False
+                if key_url:
+                    exists = db.query(models.ProblemProfile.id).filter(
+                        models.ProblemProfile.source_url == key_url
+                    ).first() is not None
+                if not exists and key_title:
+                    exists = db.query(models.ProblemProfile.id).filter(
+                        models.ProblemProfile.problem_title == key_title
+                    ).first() is not None
+                if exists:
+                    continue
+                db.add(models.ProblemProfile(
+                    organization=pr.get("organization", "")[:500],
+                    problem_title=pr.get("problem_title", "")[:500],
+                    problem_description=pr.get("problem_description", ""),
+                    industry_domain=pr.get("industry_domain", "Other"),
+                    problem_type=pr.get("problem_type", "Other"),
+                    technology_stage=pr.get("technology_stage", "potential"),
+                    required_technology=pr.get("required_technology", []),
+                    current_approach=pr.get("current_approach", ""),
+                    known_limitations=pr.get("known_limitations", ""),
+                    expected_outcome=pr.get("expected_outcome", ""),
+                    source=pr.get("source", "unknown"),
+                    source_url=pr.get("source_url", ""),
+                    keywords=pr.get("keywords", []),
+                    problem_status=pr.get("problem_status", "unknown"),
+                    student_suitability=pr.get("student_suitability", "medium"),
+                    extracted_by=pr.get("extracted_by", "unknown"),
+                ))
+                inserted += 1
+            db.commit()
+            logger.info(f"Saved {inserted} new ProblemProfile rows")
+            return inserted
+        except Exception as e:
+            db.rollback()
+            logger.error(f"ProblemProfile save error: {e}")
+            return 0
+        finally:
+            db.close()
 
     def _save_to_db(self, query, raw, processed, clusters, gaps, trends, opportunities, user_id=None):
         db = SessionLocal()
@@ -232,6 +287,16 @@ class OrchestratorAgent:
         logger.info(f"Starting pipeline for: {query} (mode={mode})")
         raw = self.data_collection.collect_all(query, mode=mode)
 
+        # ---- Challenge portals (industry/gov problem statements) ----
+        challenge_items = []
+        try:
+            from app.config import settings as _s
+            if _s.ENABLE_CHALLENGE_PORTALS:
+                challenge_items = self.challenge_portal.fetch_all(query, limit=_s.CHALLENGE_PORTAL_CAP)
+                raw["challenge_portal"] = challenge_items
+        except Exception as e:
+            logger.warning(f"Challenge portal fetch failed: {e}")
+
         documents = []
         for repo in raw.get("github", [])[:200]:
             documents.append({"source": "github", "title": repo.get("name", ""), "content": repo.get("description", "") or ""})
@@ -243,6 +308,8 @@ class OrchestratorAgent:
             documents.append({"source": "news", "title": article.get("title", ""), "content": article.get("summary", "")})
         for post in raw.get("rd_cells", [])[:200]:
             documents.append({"source": "rd_cells", "title": post.get("title", ""), "content": post.get("summary", "")})
+        for post in raw.get("challenge_portal", [])[:200]:
+            documents.append({"source": "challenge_portal", "title": post.get("title", ""), "content": post.get("raw_text", "") or post.get("description", "")})
 
         logger.info(f"Processing {len(documents)} documents")
         processed = []
@@ -321,6 +388,19 @@ class OrchestratorAgent:
 
         self._save_to_db(query, raw, processed, clusters, gaps, trends, opportunities, user_id=user_id)
 
+        # ---- Extract structured Problem Profiles from challenge portals ----
+        problem_profiles = []
+        if challenge_items:
+            try:
+                from app.config import settings as _s
+                problem_profiles = self.problem_extractor.extract_batch(
+                    challenge_items, cap=_s.PROBLEM_EXTRACTION_CAP
+                )
+                if problem_profiles:
+                    self._save_problem_profiles(problem_profiles)
+            except Exception as e:
+                logger.error(f"ProblemProfile extraction failed: {e}")
+
         # Strip private helper keys before returning to API
         for c in clusters:
             c.pop("_doc_indices", None)
@@ -335,4 +415,5 @@ class OrchestratorAgent:
             "opportunities": opportunities,
             "knowledge_graph": kg_stats,
             "topics": global_topics,
+            "problem_profiles": problem_profiles,
         }

@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard, Search, MessageSquare, FileText, Activity,
-  TrendingUp, BarChart3, Zap, Shield, Menu, X, Sparkles, Network,
+  TrendingUp, BarChart3, Zap, Shield, Menu, X, Sparkles, Network, Target,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import NotificationBell from './NotificationBell';
@@ -19,6 +19,7 @@ const sections = [
       { path: '/recommendations', label: 'Recommendations', icon: Sparkles },
       { path: '/opportunities', label: 'Opportunities', icon: Zap },
       { path: '/problems', label: 'Problems', icon: TrendingUp },
+      { path: '/problem-profiles', label: 'Problem Profiles', icon: Target },
     ],
   },
   {
