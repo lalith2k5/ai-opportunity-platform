@@ -54,3 +54,5 @@ Thumbs.db
 project_codebase.txt
 handoff/
 clean_codebase_v*.txt
+*.bak
+*.bak.*
