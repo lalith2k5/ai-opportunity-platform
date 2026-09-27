@@ -1,0 +1,40 @@
+{
+    # Local HTTPS uses Caddy's internal CA (self-signed, trusted on this machine)
+    local_certs
+    admin off
+}
+
+# Frontend → served over HTTPS on :8443
+:8443 {
+    tls internal
+
+    # Proxy API calls to the backend service
+    handle /api/* {
+        reverse_proxy backend:8000
+    }
+
+    # Everything else → Vite dev server
+    handle {
+        reverse_proxy frontend:5173
+    }
+
+    # Security headers
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains"
+        X-Content-Type-Options "nosniff"
+        X-Frame-Options "DENY"
+        Referrer-Policy "strict-origin-when-cross-origin"
+    }
+}
+
+# Backend API directly over HTTPS on :8443 (Swagger, direct calls)
+:8444 {
+    tls internal
+
+    reverse_proxy backend:8000
+
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains"
+        X-Content-Type-Options "nosniff"
+    }
+}

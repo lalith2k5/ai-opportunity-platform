@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
 import {
   getOpportunities, getResearchGaps, getTrends, downloadPDFReport,
+  downloadOpportunitiesJSON, downloadGapsJSON, downloadFullJSON,
   type Opportunity, type ResearchGap, type Trend,
 } from '../services/api';
-import { Download, FileText, Loader2, FileDown, TrendingUp } from 'lucide-react';
+import { Download, FileText, Loader2, FileDown, TrendingUp, Braces, ChevronDown } from 'lucide-react';
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,
   PieChart, Pie, Cell, Legend,
@@ -17,6 +18,7 @@ export default function Reports() {
   const [trends, setTrends] = useState<Trend[]>([]);
   const [loading, setLoading] = useState(true);
   const [pdfLoading, setPdfLoading] = useState(false);
+  const [jsonOpen, setJsonOpen] = useState(false);
 
   useEffect(() => {
     Promise.all([getOpportunities(), getResearchGaps(), getTrends()])
@@ -46,6 +48,17 @@ export default function Reports() {
     try { await downloadPDFReport(); }
     catch (e: any) { alert(`PDF error: ${e.message}`); }
     finally { setPdfLoading(false); }
+  };
+
+  const exportJSON = async (kind: 'opps' | 'gaps' | 'full') => {
+    setJsonOpen(false);
+    try {
+      if (kind === 'opps') await downloadOpportunitiesJSON();
+      else if (kind === 'gaps') await downloadGapsJSON();
+      else await downloadFullJSON();
+    } catch (e: any) {
+      alert(`Export failed: ${e.message}`);
+    }
   };
 
   if (loading) {
@@ -88,6 +101,43 @@ export default function Reports() {
           <button onClick={downloadCSV} disabled={opportunities.length === 0} className="btn-secondary text-xs">
             <Download size={13} /> CSV
           </button>
+          <div className="relative">
+            <button
+              onClick={() => setJsonOpen(o => !o)}
+              className="btn-secondary text-xs"
+              disabled={opportunities.length === 0}
+            >
+              <Braces size={13} /> JSON <ChevronDown size={11} />
+            </button>
+            {jsonOpen && (
+              <>
+                <div className="fixed inset-0 z-40" onClick={() => setJsonOpen(false)} />
+                <div className="absolute right-0 top-full mt-1 w-56 bg-overlay border border-edge rounded-lg shadow-xl z-50 overflow-hidden animate-slide-up">
+                  <button
+                    onClick={() => exportJSON('opps')}
+                    className="w-full text-left px-3.5 py-2.5 text-xs text-ink-2 hover:bg-subtle hover:text-ink transition-colors border-b border-edge-subtle"
+                  >
+                    <span className="font-medium text-ink">Opportunities only</span>
+                    <span className="block text-2xs text-ink-4 mt-0.5">JSON array with all scoring fields</span>
+                  </button>
+                  <button
+                    onClick={() => exportJSON('gaps')}
+                    className="w-full text-left px-3.5 py-2.5 text-xs text-ink-2 hover:bg-subtle hover:text-ink transition-colors border-b border-edge-subtle"
+                  >
+                    <span className="font-medium text-ink">Research gaps only</span>
+                    <span className="block text-2xs text-ink-4 mt-0.5">Gap scores + evidence snippets</span>
+                  </button>
+                  <button
+                    onClick={() => exportJSON('full')}
+                    className="w-full text-left px-3.5 py-2.5 text-xs text-ink-2 hover:bg-subtle hover:text-ink transition-colors"
+                  >
+                    <span className="font-medium text-ink">Full export</span>
+                    <span className="block text-2xs text-ink-4 mt-0.5">Everything: opps + clusters + gaps + trends</span>
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
           <button onClick={downloadPDF} disabled={pdfLoading || opportunities.length === 0} className="btn-primary text-xs">
             {pdfLoading ? <Loader2 className="animate-spin" size={13} /> : <FileDown size={13} />}
             {pdfLoading ? 'Generating…' : 'PDF report'}

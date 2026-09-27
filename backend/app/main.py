@@ -6,6 +6,7 @@ from app.api.auth_routes import router as auth_router
 from app.api.admin_routes import router as admin_router
 from app.api.notification_routes import router as notif_router
 from app.api.admin_config_routes import router as admin_config_router
+from app.api.export_routes import router as export_router
 from app.api.kg_routes import router as kg_router
 from app.database import engine, Base
 from app import models
@@ -47,6 +48,7 @@ app.include_router(router, prefix="/api")
 app.include_router(auth_router, prefix="/api")
 app.include_router(admin_router, prefix="/api")
 app.include_router(admin_config_router, prefix="/api")
+app.include_router(export_router, prefix="/api")
 app.include_router(notif_router, prefix="/api")
 app.include_router(kg_router, prefix="/api")
 

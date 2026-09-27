@@ -14,6 +14,7 @@ from app.auth.security import (
 )
 from app.auth.dependencies import get_current_user
 from app.logger import logger
+from app.rate_limit import rate_limit
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -58,7 +59,11 @@ def register(payload: schemas.UserCreate, db: Session = Depends(get_db)):
 
 # ---------- Login ----------
 @router.post("/login", response_model=schemas.TokenResponse)
-def login(form: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
+def login(
+    form: OAuth2PasswordRequestForm = Depends(),
+    db: Session = Depends(get_db),
+    _rl=Depends(rate_limit(max_requests=5, window_seconds=60)),
+):
     user = db.query(models.User).filter(models.User.email == form.username).first()
     if not user or not verify_password(form.password, user.password_hash):
         raise HTTPException(
@@ -182,7 +187,11 @@ def change_password(
 
 # ---------- Forgot password ----------
 @router.post("/forgot-password")
-def forgot_password(payload: ForgotPasswordRequest, db: Session = Depends(get_db)):
+def forgot_password(
+    payload: ForgotPasswordRequest,
+    db: Session = Depends(get_db),
+    _rl=Depends(rate_limit(max_requests=3, window_seconds=300)),
+):
     user = db.query(models.User).filter(models.User.email == payload.email).first()
     if not user:
         return {"message": "If the email is registered, a reset link has been sent."}

@@ -54,6 +54,23 @@ services:
       - ./frontend/src:/app/src
       - ./frontend/index.html:/app/index.html
 
+  caddy:
+    image: caddy:2-alpine
+    container_name: aod_caddy
+    restart: unless-stopped
+    depends_on:
+      - backend
+      - frontend
+    ports:
+      - "8443:8443"
+      - "8444:8444"
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
 volumes:
   postgres_data:
   chroma_data:
+  caddy_data:
+  caddy_config:

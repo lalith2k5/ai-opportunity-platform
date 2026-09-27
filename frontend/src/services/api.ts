@@ -30,6 +30,10 @@ api.interceptors.response.use(
           const res = await axios.post(`${API_BASE}/auth/refresh`, { refresh_token: refresh });
           const newToken = res.data.access_token;
           localStorage.setItem('aod_token', newToken);
+          // Refresh token rotation — save the new one if server issued it
+          if (res.data.refresh_token) {
+            localStorage.setItem('aod_refresh', res.data.refresh_token);
+          }
           original.headers.Authorization = `Bearer ${newToken}`;
           return api(original);
         } catch {
@@ -170,3 +174,26 @@ export const adminUpdateSetting = (key: string, value: string) =>
 export const adminGetSyncStatus = () => api.get('/admin/sync/status').then(r => r.data);
 export const adminTriggerSync = (topic: string, mode: 'quick' | 'deep') =>
   api.post('/admin/sync/trigger', { topic, mode }).then(r => r.data);
+
+// JSON exports
+const downloadFile = async (url: string, filename: string) => {
+  const token = localStorage.getItem('aod_token');
+  const response = await fetch(`http://localhost:8000/api${url}`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+  if (!response.ok) throw new Error(`Export failed: ${response.status}`);
+  const blob = await response.blob();
+  const objectUrl = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = objectUrl;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(objectUrl);
+};
+
+export const downloadOpportunitiesJSON = () =>
+  downloadFile('/export/opportunities.json', `opportunities_${new Date().toISOString().slice(0,10)}.json`);
+export const downloadGapsJSON = () =>
+  downloadFile('/export/research-gaps.json', `research_gaps_${new Date().toISOString().slice(0,10)}.json`);
+export const downloadFullJSON = () =>
+  downloadFile('/export/full.json', `full_export_${new Date().toISOString().slice(0,10)}.json`);
