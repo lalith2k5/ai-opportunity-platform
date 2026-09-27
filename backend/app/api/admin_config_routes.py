@@ -20,11 +20,20 @@ ENV_PATH = Path(__file__).resolve().parents[2] / ".env"
 
 # Which keys we allow the admin to edit (and how to mask them)
 EDITABLE_KEYS = {
+    # LLM providers
+    "LLM_PRIMARY_PROVIDER":{"label": "Primary LLM provider",   "provider": "System",   "url": ""},
     "GEMINI_API_KEY":      {"label": "Google Gemini API key",  "provider": "Google",   "url": "https://aistudio.google.com/apikey"},
+    "GEMINI_MODEL":        {"label": "Gemini model name",      "provider": "Google",   "url": ""},
+    "OPENAI_API_KEY":      {"label": "OpenAI API key",         "provider": "OpenAI",   "url": "https://platform.openai.com/api-keys"},
+    "OPENAI_MODEL":        {"label": "OpenAI model name",      "provider": "OpenAI",   "url": ""},
+    "ANTHROPIC_API_KEY":   {"label": "Anthropic API key",      "provider": "Anthropic","url": "https://console.anthropic.com/settings/keys"},
+    "ANTHROPIC_MODEL":     {"label": "Anthropic model name",   "provider": "Anthropic","url": ""},
+    # Data sources
     "GITHUB_TOKEN":        {"label": "GitHub Personal token",  "provider": "GitHub",   "url": "https://github.com/settings/tokens"},
     "REDDIT_CLIENT_ID":    {"label": "Reddit Client ID",       "provider": "Reddit",   "url": "https://www.reddit.com/prefs/apps"},
     "REDDIT_CLIENT_SECRET":{"label": "Reddit Client Secret",   "provider": "Reddit",   "url": "https://www.reddit.com/prefs/apps"},
     "REDDIT_USER_AGENT":   {"label": "Reddit User Agent",      "provider": "Reddit",   "url": ""},
+    # Infrastructure
     "DATABASE_URL":        {"label": "PostgreSQL connection",  "provider": "Postgres", "url": ""},
     "CHROMA_PERSIST_DIR":  {"label": "ChromaDB storage path",  "provider": "ChromaDB", "url": ""},
 }
@@ -91,7 +100,13 @@ def get_settings(
     env = _read_env_file()
     # Merge with current runtime settings (in case .env missing)
     current = {
+        "LLM_PRIMARY_PROVIDER": settings.LLM_PRIMARY_PROVIDER,
         "GEMINI_API_KEY":       settings.GEMINI_API_KEY,
+        "GEMINI_MODEL":         settings.GEMINI_MODEL,
+        "OPENAI_API_KEY":       settings.OPENAI_API_KEY,
+        "OPENAI_MODEL":         settings.OPENAI_MODEL,
+        "ANTHROPIC_API_KEY":    settings.ANTHROPIC_API_KEY,
+        "ANTHROPIC_MODEL":      settings.ANTHROPIC_MODEL,
         "GITHUB_TOKEN":         settings.GITHUB_TOKEN,
         "REDDIT_CLIENT_ID":     settings.REDDIT_CLIENT_ID,
         "REDDIT_CLIENT_SECRET": settings.REDDIT_CLIENT_SECRET,
@@ -236,3 +251,13 @@ def sync_trigger(
     except Exception as e:
         logger.error(f"[Admin] Sync failed: {e}")
         raise HTTPException(500, str(e))
+
+
+@router.get("/llm/status")
+def llm_status(
+    user: models.User = Depends(require_role("admin")),
+):
+    """Report which LLM providers are configured and which is primary."""
+    from app.services.llm_service import LLMService
+    svc = LLMService()
+    return svc.status()

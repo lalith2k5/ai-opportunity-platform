@@ -146,3 +146,5 @@ websockets==16.1.1
 wheel==0.48.0
 wrapt==2.5.0
 yarl==1.25.1
+openai==3.19.2
+anthropic==1.8.0

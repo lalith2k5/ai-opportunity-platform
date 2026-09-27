@@ -197,3 +197,5 @@ export const downloadGapsJSON = () =>
   downloadFile('/export/research-gaps.json', `research_gaps_${new Date().toISOString().slice(0,10)}.json`);
 export const downloadFullJSON = () =>
   downloadFile('/export/full.json', `full_export_${new Date().toISOString().slice(0,10)}.json`);
+
+export const adminGetLLMStatus = () => api.get('/admin/llm/status').then(r => r.data);

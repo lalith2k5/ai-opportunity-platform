@@ -3,12 +3,12 @@ import {
   adminGetStats, adminGetUsers, adminUpdateRole, adminDeleteUser,
   adminGetLogs, adminGetScheduler, adminTriggerScheduler,
   adminGetSettings, adminUpdateSetting,
-  adminGetSyncStatus, adminTriggerSync,
+  adminGetSyncStatus, adminTriggerSync, adminGetLLMStatus,
 } from '../services/api';
 import {
   Loader2, Users, Activity, Trash2, RefreshCw, Play, Shield, FileText, Clock,
   Settings as SettingsIcon, Database, CheckCircle2, XCircle, Eye, EyeOff,
-  Save, ExternalLink, Zap, Globe, AlertCircle,
+  Save, ExternalLink, Zap, Globe, AlertCircle, Cpu,
 } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
 import { useConfirm } from '../context/ConfirmContext';
@@ -51,6 +51,7 @@ export default function Admin() {
   const [scheduler, setScheduler] = useState<any>(null);
   const [settings, setSettings] = useState<any[]>([]);
   const [syncStatus, setSyncStatus] = useState<any>(null);
+  const [llmStatus, setLlmStatus] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<Tab>('overview');
   const toast = useToast();
@@ -59,14 +60,16 @@ export default function Admin() {
   const load = async () => {
     setLoading(true);
     try {
-      const [s, u, l, sc, cfg, sy] = await Promise.all([
+      const [s, u, l, sc, cfg, sy, llm] = await Promise.all([
         adminGetStats(), adminGetUsers(), adminGetLogs(), adminGetScheduler(),
         adminGetSettings().catch(() => ({ items: [] })),
         adminGetSyncStatus().catch(() => null),
+        adminGetLLMStatus().catch(() => null),
       ]);
       setStats(s); setUsers(u); setLogs(l); setScheduler(sc);
       setSettings(cfg.items || []);
       setSyncStatus(sy);
+      setLlmStatus(llm);
     } catch (e: any) {
       toast.error('Access denied', e?.response?.data?.detail || e.message);
     } finally { setLoading(false); }
@@ -211,7 +214,7 @@ export default function Admin() {
       )}
 
       {/* CONFIG */}
-      {tab === 'config' && <ConfigTab settings={settings} reload={load} />}
+      {tab === 'config' && <ConfigTab settings={settings} llmStatus={llmStatus} reload={load} />}
 
       {/* SYNC */}
       {tab === 'sync' && <SyncTab status={syncStatus} reload={load} />}
@@ -293,7 +296,7 @@ export default function Admin() {
 /* ============================================ */
 /* Config tab                                    */
 /* ============================================ */
-function ConfigTab({ settings, reload }: { settings: any[]; reload: () => void }) {
+function ConfigTab({ settings, llmStatus, reload }: { settings: any[]; llmStatus: any; reload: () => void }) {
   const [revealed, setRevealed] = useState<Record<string, boolean>>({});
   const [editing, setEditing] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState<string | null>(null);
@@ -333,6 +336,54 @@ function ConfigTab({ settings, reload }: { settings: any[]; reload: () => void }
           These settings are written directly to <code className="font-mono text-accent">backend/.env</code>. Secrets are masked by default — click the eye to reveal, type a new value, and hit Save.
         </p>
       </div>
+
+      {/* LLM status banner */}
+      {llmStatus && (
+        <div className="bg-surface border border-edge rounded-lg p-4">
+          <div className="flex items-center gap-2 mb-3">
+            <Cpu size={14} className="text-accent" />
+            <h3 className="text-xs font-medium text-ink uppercase tracking-wider">LLM provider status</h3>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            {(['gemini', 'openai', 'anthropic'] as const).map(name => {
+              const available = llmStatus.available?.includes(name);
+              const isPrimary = llmStatus.primary === name;
+              return (
+                <div
+                  key={name}
+                  className={`rounded-md border p-3 ${
+                    available
+                      ? isPrimary
+                        ? 'bg-accent/[0.06] border-accent/30'
+                        : 'bg-success/[0.05] border-success/25'
+                      : 'bg-danger/[0.05] border-danger/25'
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-1.5">
+                    <p className="text-xs font-medium text-ink capitalize">{name}</p>
+                    {isPrimary && available && (
+                      <span className="badge bg-accent/15 text-accent border border-accent/30">Primary</span>
+                    )}
+                  </div>
+                  <p className="text-2xs text-ink-4 font-mono truncate">{llmStatus.models?.[name]}</p>
+                  <div className="flex items-center gap-1.5 mt-2">
+                    {available
+                      ? <CheckCircle2 size={11} className="text-success" />
+                      : <XCircle size={11} className="text-danger" />
+                    }
+                    <p className="text-2xs text-ink-3">
+                      {available ? 'Configured' : 'No key set'}
+                    </p>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          <p className="text-2xs text-ink-4 mt-3 pt-3 border-t border-edge-subtle leading-relaxed">
+            Fallback chain: primary provider is tried first, then the others in order gemini → openai → anthropic. Any provider that fails is skipped automatically.
+          </p>
+        </div>
+      )}
 
       <div className="bg-surface border border-edge rounded-lg overflow-hidden">
         {settings.map((item, i) => {
