@@ -10,13 +10,15 @@ export default function ForgotPassword() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [resetLink, setResetLink] = useState('');
+  const [sent, setSent] = useState(false);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setLoading(true); setError(''); setResetLink('');
+    setLoading(true); setError(''); setResetLink(''); setSent(false);
     try {
       const res = await forgotPassword(email);
       if (res.reset_url) setResetLink(res.reset_url);
+      else setSent(true);
     } catch (e: any) {
       setError(e?.response?.data?.detail || e.message);
     } finally { setLoading(false); }
@@ -35,7 +37,21 @@ export default function ForgotPassword() {
       <form onSubmit={submit} className="space-y-4">
         {error && <Alert type="error">{error}</Alert>}
 
-        {resetLink ? (
+        {sent ? (
+          <>
+            <Alert type="success">
+              If <strong>{email}</strong> is registered, a reset link has been sent.
+              Check your inbox (and spam folder).
+            </Alert>
+            <button
+              type="button"
+              onClick={() => { setSent(false); setEmail(''); }}
+              className="btn-ghost w-full text-xs"
+            >
+              Send to a different email
+            </button>
+          </>
+        ) : resetLink ? (
           <>
             <Alert type="success">
               Reset link generated (dev mode).

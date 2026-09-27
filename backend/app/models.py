@@ -83,6 +83,7 @@ class Opportunity(Base):
     demand_score = Column(Float, default=0.0)
     research_gap_score = Column(Float, default=0.0)
     trend_score = Column(Float, default=0.0)
+    innovation_score = Column(Float, default=0.0)
     competition_score = Column(Float, default=0.0)
     feasibility_score = Column(Float, default=0.0)
     market_readiness_score = Column(Float, default=0.0)
@@ -174,6 +175,15 @@ class KnowledgeGraphEdge(Base):
     target = Column(String, index=True, nullable=False)
     relation = Column(String, index=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class TrendSnapshot(Base):
+    __tablename__ = "trend_snapshots"
+    id = Column(Integer, primary_key=True, index=True)
+    trend_name = Column(String, index=True, nullable=False)
+    mention_count = Column(Integer, default=0)
+    source_count = Column(Integer, default=0)
+    snapshot_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
 
 
 class RefreshToken(Base):

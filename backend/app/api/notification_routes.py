@@ -1,9 +1,8 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
-from typing import Optional
 from app.database import get_db
 from app import models
-from app.auth.dependencies import optional_user
+from app.auth.dependencies import get_current_user
 
 router = APIRouter(tags=["notifications"])
 
@@ -13,6 +12,7 @@ def list_notifications(
     limit: int = 50,
     unread_only: bool = False,
     db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
 ):
     q = db.query(models.Notification)
     if unread_only:
@@ -34,12 +34,19 @@ def list_notifications(
 
 
 @router.get("/notifications/unread-count")
-def unread_count(db: Session = Depends(get_db)):
+def unread_count(
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
     return {"count": db.query(models.Notification).filter(models.Notification.read == False).count()}
 
 
 @router.post("/notifications/{nid}/read")
-def mark_read(nid: int, db: Session = Depends(get_db)):
+def mark_read(
+    nid: int,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
     n = db.query(models.Notification).filter(models.Notification.id == nid).first()
     if n:
         n.read = True
@@ -48,14 +55,21 @@ def mark_read(nid: int, db: Session = Depends(get_db)):
 
 
 @router.post("/notifications/read-all")
-def mark_all_read(db: Session = Depends(get_db)):
+def mark_all_read(
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
     db.query(models.Notification).filter(models.Notification.read == False).update({"read": True})
     db.commit()
     return {"message": "All marked read"}
 
 
 @router.delete("/notifications/{nid}")
-def delete_notification(nid: int, db: Session = Depends(get_db)):
+def delete_notification(
+    nid: int,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
     db.query(models.Notification).filter(models.Notification.id == nid).delete()
     db.commit()
     return {"deleted": nid}

@@ -48,7 +48,7 @@ def main():
     run_test("/api/opportunities", n_requests=50, concurrency=10, token=token)
     run_test("/api/problems", n_requests=50, concurrency=10, token=token)
     run_test("/api/trends", n_requests=50, concurrency=10, token=token)
-    run_test("/api/notifications", n_requests=50, concurrency=10)
+    run_test("/api/notifications", n_requests=50, concurrency=10, token=token)
 
 if __name__ == "__main__":
     main()

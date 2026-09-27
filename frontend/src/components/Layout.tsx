@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard, Search, MessageSquare, FileText, Activity,
-  TrendingUp, BarChart3, Zap, Shield, Menu, X, Sparkles,
+  TrendingUp, BarChart3, Zap, Shield, Menu, X, Sparkles, Network,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import NotificationBell from './NotificationBell';
@@ -26,6 +26,7 @@ const sections = [
     items: [
       { path: '/reports', label: 'Reports', icon: FileText },
       { path: '/analytics', label: 'Analytics', icon: BarChart3 },
+      { path: '/knowledge-graph', label: 'Knowledge Graph', icon: Network },
     ],
   },
 ];

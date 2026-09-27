@@ -4,6 +4,11 @@ from dotenv import load_dotenv
 load_dotenv()
 
 class Settings:
+    # Environment
+    # DEV_MODE=true  -> forgot-password returns the reset token in the JSON response (local dev)
+    # DEV_MODE=false -> token is only logged server-side; response is neutral (production)
+    DEV_MODE: bool = os.getenv("DEV_MODE", "true").lower() in ("1", "true", "yes")
+
     # Database
     DATABASE_URL: str = os.getenv("DATABASE_URL", "postgresql://localhost/ai_opportunity_db")
 

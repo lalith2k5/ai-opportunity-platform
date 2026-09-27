@@ -14,6 +14,7 @@ from app.auth.security import (
 )
 from app.auth.dependencies import get_current_user
 from app.logger import logger
+from app.config import settings
 from app.rate_limit import rate_limit
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -199,12 +200,22 @@ def forgot_password(
     expires = datetime.now(timezone.utc) + timedelta(hours=1)
     db.add(models.PasswordResetToken(user_id=user.id, token=token, expires_at=expires))
     db.commit()
-    logger.info(f"[Password Reset] user={user.email} token={token}")
-    print(f"\n=== PASSWORD RESET LINK ===\nhttp://localhost:5173/reset-password?token={token}\n")
+    reset_url = f"http://localhost:5173/reset-password?token={token}"
+
+    # Always log server-side so the dev can recover the token from logs
+    logger.info(f"[Password Reset] user={user.email} token={token} url={reset_url}")
+
+    # Never return the token in production — only in DEV_MODE
+    if settings.DEV_MODE:
+        return {
+            "message": "Reset link generated (dev mode).",
+            "token": token,
+            "reset_url": reset_url,
+        }
+
+    # Production-safe: neutral response, no token leakage
     return {
-        "message": "Reset link generated.",
-        "token": token,
-        "reset_url": f"http://localhost:5173/reset-password?token={token}",
+        "message": "If the email is registered, a reset link has been sent.",
     }
 
 

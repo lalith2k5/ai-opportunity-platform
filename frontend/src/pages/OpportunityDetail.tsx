@@ -130,6 +130,7 @@ export default function OpportunityDetail() {
             <ScoreRow label="Market demand"       value={opp.demand_score}            color="bg-accent" />
             <ScoreRow label="Research gap"        value={opp.research_gap_score}      color="bg-success" />
             <ScoreRow label="Technology trend"    value={opp.trend_score}             color="bg-warning" />
+            <ScoreRow label="Innovation"          value={opp.innovation_score ?? 0}   color="bg-pink-500" />
             <ScoreRow label="Competition"         value={opp.competition_score}       color="bg-danger" />
             <ScoreRow label="Technical feasibility" value={opp.feasibility_score}     color="bg-sky-500" />
             <ScoreRow label="Market readiness"    value={opp.market_readiness_score}  color="bg-purple-500" />
@@ -216,6 +217,36 @@ export default function OpportunityDetail() {
       {/* Source references */}
       <Section icon={FileText} title="Source references">
         <div className="space-y-3">
+
+          {/* Original linked sources from the pipeline */}
+          {data.sources && data.sources.length > 0 && (
+            <div>
+              <p className="text-2xs text-ink-4 uppercase tracking-wider mb-2">
+                Original sources ({data.sources.length})
+              </p>
+              <div className="space-y-1.5">
+                {data.sources.map((src: any) => (
+                  <a
+                    key={src.id}
+                    href={src.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="flex items-start gap-2.5 px-3 py-2 rounded-md border border-edge hover:border-accent/40 hover:bg-overlay transition-colors group"
+                  >
+                    <span className="badge bg-overlay text-ink-3 border border-edge flex-shrink-0 mt-0.5 uppercase">
+                      {src.source}
+                    </span>
+                    <span className="text-xs text-ink-2 leading-snug flex-1 group-hover:text-accent transition-colors line-clamp-2">
+                      {src.title || '(untitled)'}
+                    </span>
+                    <ExternalLink size={12} className="text-ink-4 group-hover:text-accent flex-shrink-0 mt-1 transition-colors" />
+                  </a>
+                ))}
+              </div>
+              <div className="mt-4 pt-4 border-t border-edge-subtle" />
+            </div>
+          )}
+
           <div className="flex items-start gap-3">
             <CheckCircle2 size={14} className="text-success flex-shrink-0 mt-0.5" />
             <div>

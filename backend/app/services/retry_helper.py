@@ -3,7 +3,6 @@ from tenacity import (
     before_sleep_log,
 )
 import logging
-from app.logger import logger
 
 # Create a standard logging adapter for tenacity
 _log = logging.getLogger("tenacity")

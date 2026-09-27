@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-const API_BASE = 'http://localhost:8000/api';
+const API_BASE = '/api';
 
 const api = axios.create({
   baseURL: API_BASE,
@@ -57,6 +57,7 @@ export interface Opportunity {
   demand_score: number;
   research_gap_score: number;
   trend_score: number;
+  innovation_score: number;
   competition_score: number;
   feasibility_score: number;
   market_readiness_score: number;
@@ -85,6 +86,11 @@ export interface Trend {
   name: string;
   category: string;
   trend_score: number;
+  growth_rate?: number;
+  recent_avg?: number;
+  prior_avg?: number;
+  label?: 'rising' | 'declining' | 'stable' | 'new' | 'no_data';
+  detected_at?: string;
 }
 
 export const getHealth = () => api.get('/health').then(r => r.data);
@@ -92,6 +98,8 @@ export const getOpportunities = () => api.get<Opportunity[]>('/opportunities').t
 export const getProblems = () => api.get<ProblemCluster[]>('/problems').then(r => r.data);
 export const getResearchGaps = () => api.get<ResearchGap[]>('/research-gaps').then(r => r.data);
 export const getTrends = () => api.get<Trend[]>('/trends').then(r => r.data);
+export const getTrendHistory = (name: string, days: number = 30) =>
+  api.get(`/trends/${encodeURIComponent(name)}/history?days=${days}`).then(r => r.data);
 
 export const runPipeline = (query: string) =>
   api.post('/pipeline/run', { query }).then(r => r.data);
@@ -105,7 +113,7 @@ export const semanticSearch = (query: string) =>
 
 export const downloadPDFReport = async () => {
   const token = localStorage.getItem('aod_token');
-  const response = await fetch('http://localhost:8000/api/reports/pdf', {
+  const response = await fetch('/api/reports/pdf', {
     headers: token ? { Authorization: `Bearer ${token}` } : {},
   });
   if (!response.ok) throw new Error('Failed to generate PDF');
@@ -165,7 +173,14 @@ export const markAllNotificationsRead = () => api.post('/notifications/read-all'
 
 // Knowledge Graph
 export const getKGStats = () => api.get('/kg/stats').then(r => r.data);
-export const getKGEdges = () => api.get('/kg/edges').then(r => r.data);
+export const getKGEntityTypes = () =>
+  api.get('/kg/entity-types').then(r => r.data);
+export const getKGNodes = (params: { entity_type?: string; limit?: number } = {}) =>
+  api.get('/kg/nodes', { params }).then(r => r.data);
+export const getKGEdgesList = (params: { relation?: string; limit?: number } = {}) =>
+  api.get('/kg/edges', { params }).then(r => r.data);
+export const getKGSemanticChain = (name: string, depth: number = 2) =>
+  api.get(`/kg/semantic-chain/${encodeURIComponent(name)}?depth=${depth}`).then(r => r.data);
 
 // Admin — Config & Sync
 export const adminGetSettings = () => api.get('/admin/settings').then(r => r.data);
@@ -178,7 +193,7 @@ export const adminTriggerSync = (topic: string, mode: 'quick' | 'deep') =>
 // JSON exports
 const downloadFile = async (url: string, filename: string) => {
   const token = localStorage.getItem('aod_token');
-  const response = await fetch(`http://localhost:8000/api${url}`, {
+  const response = await fetch(`/api${url}`, {
     headers: token ? { Authorization: `Bearer ${token}` } : {},
   });
   if (!response.ok) throw new Error(`Export failed: ${response.status}`);

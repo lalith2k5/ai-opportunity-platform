@@ -1,0 +1,25 @@
+{
+    local_certs
+}
+
+localhost:8443 {
+    tls internal
+
+    handle /api/* {
+        reverse_proxy localhost:8000
+    }
+
+    handle {
+        reverse_proxy localhost:5173
+    }
+
+    header {
+        Strict-Transport-Security "max-age=31536000"
+        X-Content-Type-Options "nosniff"
+    }
+
+    log {
+        output file /tmp/caddy-aod.log
+        format console
+    }
+}

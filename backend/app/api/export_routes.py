@@ -1,7 +1,6 @@
 import json
 from datetime import datetime
-from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 from app.database import get_db

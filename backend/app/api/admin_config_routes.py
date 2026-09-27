@@ -1,4 +1,3 @@
-import os
 import re
 from pathlib import Path
 from typing import Optional, Dict
@@ -192,10 +191,11 @@ def sync_status(
 
     return {
         "sources": [
-            src("github", True),           # GitHub works without token (rate-limited)
-            src("arxiv",  True),           # Always available
-            src("news",   True),           # RSS — always available
-            src("reddit", reddit_configured),
+            src("github",   True),           # GitHub works without token (rate-limited)
+            src("arxiv",    True),           # Always available
+            src("news",     True),           # RSS — always available
+            src("rd_cells", True),           # Corporate/academic/gov R&D lab feeds
+            src("reddit",   reddit_configured),
         ],
         "ai": {
             "gemini": gemini_configured,
@@ -225,7 +225,6 @@ def sync_trigger(
 ):
     """Trigger a pipeline run for a specific topic. Runs in background."""
     from app.agents.orchestrator import OrchestratorAgent
-    from fastapi import BackgroundTasks
 
     topic = (payload.topic or "").strip()
     if not topic:

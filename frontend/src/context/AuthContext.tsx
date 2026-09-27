@@ -18,7 +18,7 @@ interface AuthContextValue {
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
-const API_BASE = 'http://localhost:8000/api';
+const API_BASE = '/api';
 const TOKEN_KEY = 'aod_token';
 const REFRESH_KEY = 'aod_refresh';
 const USER_KEY = 'aod_user';

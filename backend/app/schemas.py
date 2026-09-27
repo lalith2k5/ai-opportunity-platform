@@ -29,6 +29,10 @@ class OpportunityResponse(BaseModel):
     demand_score: float
     research_gap_score: float
     trend_score: float
+    innovation_score: float = 0.0
+    competition_score: float = 0.0
+    feasibility_score: float = 0.0
+    market_readiness_score: float = 0.0
     explanation: Optional[str] = None
     class Config:
         from_attributes = True

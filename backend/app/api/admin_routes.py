@@ -1,7 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from sqlalchemy import func
-from typing import List
 from app.database import get_db
 from app import models
 from app.auth.dependencies import require_role
@@ -73,8 +71,49 @@ def delete_user(
     target = db.query(models.User).filter(models.User.id == user_id).first()
     if not target:
         raise HTTPException(404, "User not found")
-    db.delete(target)
-    db.commit()
+
+    try:
+        # Cascade manually — the FK constraints don't have ON DELETE CASCADE.
+        # ChatMessage rows reference chat_sessions, so delete those first.
+        session_ids = [
+            row[0] for row in db.query(models.ChatSession.id)
+            .filter(models.ChatSession.user_id == user_id).all()
+        ]
+        if session_ids:
+            db.query(models.ChatMessage).filter(
+                models.ChatMessage.session_id.in_(session_ids)
+            ).delete(synchronize_session=False)
+
+        db.query(models.ChatSession).filter(
+            models.ChatSession.user_id == user_id
+        ).delete(synchronize_session=False)
+
+        db.query(models.SearchHistory).filter(
+            models.SearchHistory.user_id == user_id
+        ).delete(synchronize_session=False)
+
+        db.query(models.RefreshToken).filter(
+            models.RefreshToken.user_id == user_id
+        ).delete(synchronize_session=False)
+
+        db.query(models.PasswordResetToken).filter(
+            models.PasswordResetToken.user_id == user_id
+        ).delete(synchronize_session=False)
+
+        db.query(models.Notification).filter(
+            models.Notification.user_id == user_id
+        ).delete(synchronize_session=False)
+
+        db.query(models.Report).filter(
+            models.Report.user_id == user_id
+        ).delete(synchronize_session=False)
+
+        db.delete(target)
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(500, f"Failed to delete user: {e}")
+
     return {"deleted": user_id}
 
 

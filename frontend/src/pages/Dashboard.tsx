@@ -187,17 +187,36 @@ export default function Dashboard() {
             {trends.length === 0 ? (
               <p className="text-xs text-ink-4 text-center py-4">No trends yet.</p>
             ) : (
-              trends.slice(0, 6).map(trend => (
-                <div key={trend.id} className="flex items-center gap-3">
-                  <span className="text-xs text-ink-2 truncate flex-1">{trend.name}</span>
-                  <div className="w-14 h-1 bg-overlay rounded-full overflow-hidden flex-shrink-0">
-                    <div className="h-full bg-success" style={{ width: `${trend.trend_score * 100}%` }} />
+              trends.slice(0, 6).map(trend => {
+                const growth = trend.growth_rate ?? 0;
+                const arrow = trend.label === 'rising' ? '↑'
+                            : trend.label === 'declining' ? '↓'
+                            : trend.label === 'new' ? '★'
+                            : '·';
+                const arrowColor = trend.label === 'rising' ? 'text-success'
+                                 : trend.label === 'declining' ? 'text-danger'
+                                 : trend.label === 'new' ? 'text-accent'
+                                 : 'text-ink-4';
+                return (
+                  <div key={trend.id} className="flex items-center gap-3">
+                    <span className="text-xs text-ink-2 truncate flex-1">{trend.name}</span>
+                    <span className={`text-xs font-mono ${arrowColor} w-3 text-center flex-shrink-0`} title={
+                      trend.label === 'new' ? 'New this week'
+                      : trend.label === 'rising' ? `Rising (${(growth*100).toFixed(0)}%)`
+                      : trend.label === 'declining' ? `Declining (${(growth*100).toFixed(0)}%)`
+                      : 'Stable'
+                    }>
+                      {arrow}
+                    </span>
+                    <div className="w-14 h-1 bg-overlay rounded-full overflow-hidden flex-shrink-0">
+                      <div className="h-full bg-success" style={{ width: `${trend.trend_score * 100}%` }} />
+                    </div>
+                    <span className="text-2xs font-mono tabular-nums text-ink-4 w-8 text-right flex-shrink-0">
+                      {trend.trend_score.toFixed(2)}
+                    </span>
                   </div>
-                  <span className="text-2xs font-mono tabular-nums text-ink-4 w-8 text-right flex-shrink-0">
-                    {trend.trend_score.toFixed(2)}
-                  </span>
-                </div>
-              ))
+                );
+              })
             )}
           </div>
         </Panel>

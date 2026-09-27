@@ -1,13 +1,17 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app import models
+from app.auth.dependencies import get_current_user
 
 router = APIRouter(prefix="/kg", tags=["knowledge-graph"])
 
 
 @router.get("/stats")
-def kg_stats(db: Session = Depends(get_db)):
+def kg_stats(
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
     return {
         "nodes": db.query(models.KnowledgeGraphNode).count(),
         "edges": db.query(models.KnowledgeGraphEdge).count(),
@@ -19,6 +23,7 @@ def list_nodes(
     entity_type: str = None,
     limit: int = 100,
     db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
 ):
     q = db.query(models.KnowledgeGraphNode)
     if entity_type:
@@ -31,7 +36,11 @@ def list_nodes(
 
 
 @router.get("/nodes/{name}/neighbors")
-def node_neighbors(name: str, db: Session = Depends(get_db)):
+def node_neighbors(
+    name: str,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
     outgoing = db.query(models.KnowledgeGraphEdge).filter(
         models.KnowledgeGraphEdge.source == name
     ).all()
@@ -46,7 +55,12 @@ def node_neighbors(name: str, db: Session = Depends(get_db)):
 
 
 @router.get("/edges")
-def list_edges(relation: str = None, limit: int = 200, db: Session = Depends(get_db)):
+def list_edges(
+    relation: str = None,
+    limit: int = 200,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
     q = db.query(models.KnowledgeGraphEdge)
     if relation:
         q = q.filter(models.KnowledgeGraphEdge.relation == relation)
@@ -55,14 +69,21 @@ def list_edges(relation: str = None, limit: int = 200, db: Session = Depends(get
 
 
 @router.get("/search")
-def kg_search(q: str, db: Session = Depends(get_db)):
+def kg_search(
+    q: str,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
     nodes = db.query(models.KnowledgeGraphNode).filter(
         models.KnowledgeGraphNode.name.ilike(f"%{q}%")
     ).limit(20).all()
     return [{"name": n.name, "type": n.entity_type} for n in nodes]
 
 @router.get("/entity-types")
-def entity_types(db: Session = Depends(get_db)):
+def entity_types(
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
     """List distinct entity types with counts, for graph visualization."""
     from sqlalchemy import func
     rows = db.query(
@@ -73,7 +94,12 @@ def entity_types(db: Session = Depends(get_db)):
 
 
 @router.get("/semantic-chain/{name}")
-def semantic_chain(name: str, depth: int = 2, db: Session = Depends(get_db)):
+def semantic_chain(
+    name: str,
+    depth: int = 2,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
     """Return the semantic neighborhood around a node (BFS up to `depth`)."""
     visited = set()
     queue = [(name, 0)]

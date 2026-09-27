@@ -8,5 +8,13 @@ export default defineConfig({
     port: 5173,
     strictPort: true,
     watch: { usePolling: true },
+    // Proxy API calls to the backend. Works whether you open
+    // http://localhost:5173 directly OR https://localhost:8443 via Caddy.
+    proxy: {
+      '/api': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+      },
+    },
   },
 })

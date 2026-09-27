@@ -493,10 +493,11 @@ function SyncTab({ status, reload }: { status: any; reload: () => void }) {
   }
 
   const sourceIcons: Record<string, any> = {
-    github: Globe,
-    arxiv: FileText,
-    news: Zap,
-    reddit: Activity,
+    github:   Globe,
+    arxiv:    FileText,
+    news:     Zap,
+    reddit:   Activity,
+    rd_cells: Cpu,
   };
 
   return (

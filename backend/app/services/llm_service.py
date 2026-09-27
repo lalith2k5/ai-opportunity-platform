@@ -39,8 +39,14 @@ class GeminiProvider(BaseProvider):
 
     def generate(self, prompt: str, context: str = "") -> str:
         full = prompt if not context else (
-            f"Context information:\n{context}\n\nUser question: {prompt}\n\n"
-            "Answer based on the context above. If the context is insufficient, say so."
+            f"You are an innovation intelligence analyst with access to live platform data.\n\n"
+            f"{context}\n\n"
+            f"User question: {prompt}\n\n"
+            "Instructions:\n"
+            "- If the STRUCTURED DATA section contains the answer, use those exact numbers and titles.\n"
+            "- If the DOCUMENT EXCERPTS section is relevant, cite them.\n"
+            "- If neither section answers the question, say so clearly instead of guessing.\n"
+            "- Be concise. Use bullet points for lists."
         )
         response = self.client.models.generate_content(
             model=settings.GEMINI_MODEL,
@@ -74,8 +80,9 @@ class OpenAIProvider(BaseProvider):
             messages.append({
                 "role": "system",
                 "content": (
-                    "You are an innovation analyst. Use the provided context to answer. "
-                    "If the context is insufficient, say so."
+                    "You are an innovation intelligence analyst with access to live platform data. "
+                    "If the context has a STRUCTURED DATA section, use those exact numbers/titles. "
+                    "If it has DOCUMENT EXCERPTS, cite them. If neither answers the question, say so."
                 ),
             })
             messages.append({"role": "user", "content": f"Context:\n{context}\n\nQuestion: {prompt}"})
@@ -109,7 +116,11 @@ class AnthropicProvider(BaseProvider):
         return self.client is not None
 
     def generate(self, prompt: str, context: str = "") -> str:
-        system = "You are an innovation analyst. Use the provided context to answer."
+        system = (
+            "You are an innovation intelligence analyst with access to live platform data. "
+            "Use STRUCTURED DATA for exact numbers, DOCUMENT EXCERPTS for context. "
+            "If neither answers the question, say so."
+        )
         user_msg = prompt if not context else (
             f"Context information:\n{context}\n\nUser question: {prompt}\n\n"
             "Answer based on the context above. If the context is insufficient, say so."
@@ -190,6 +201,85 @@ Trend: {opportunity_data.get('trend_score')}
 Final Score: {opportunity_data.get('opportunity_score')}
 Provide a concise 3-4 sentence explanation."""
         return self.generate(prompt)
+
+    def generate_narrative(self, opportunities, gaps, trends, query: str = "") -> str:
+        """
+        Produce an executive-summary paragraph for a report.
+        `opportunities`, `gaps`, `trends` are ORM rows or dicts.
+        """
+        def _o(o, key, default=0):
+            return getattr(o, key, None) if hasattr(o, key) else o.get(key, default)
+
+        # Build a compact factual brief
+        lines = []
+        if query:
+            lines.append(f"Report scope: {query}")
+        lines.append(f"Total opportunities analyzed: {len(opportunities)}")
+        lines.append(f"Total research gaps: {len(gaps)}")
+        lines.append(f"Total trends: {len(trends)}")
+        lines.append("")
+
+        if opportunities:
+            lines.append("Top 5 opportunities by score:")
+            for o in opportunities[:5]:
+                lines.append(
+                    f"  - {_o(o,'title','?')} | score={_o(o,'opportunity_score',0):.2f} | "
+                    f"demand={_o(o,'demand_score',0):.2f} | "
+                    f"gap={_o(o,'research_gap_score',0):.2f} | "
+                    f"feasibility={_o(o,'feasibility_score',0):.2f}"
+                )
+            lines.append("")
+
+        if gaps:
+            lines.append("Top 3 research gaps:")
+            for g in gaps[:3]:
+                lines.append(f"  - {_o(g,'title','?')} (gap {_o(g,'gap_score',0):.2f})")
+            lines.append("")
+
+        if trends:
+            seen = set()
+            lines.append("Top 5 trends:")
+            for t in trends:
+                name = _o(t, "name", "?")
+                if name in seen:
+                    continue
+                seen.add(name)
+                lines.append(f"  - {name} (score {_o(t,'trend_score',0):.2f})")
+                if len(seen) >= 5:
+                    break
+            lines.append("")
+
+        brief = "\n".join(lines)
+
+        prompt = (
+            "Write a 4-6 sentence executive summary for an innovation intelligence report. "
+            "Use ONLY the facts in the brief below. Do NOT invent names or numbers. "
+            "Open with the strongest signal, then mention one research gap and one trend. "
+            "End with a one-sentence recommendation. Do not use bullet points or headings, "
+            "just one flowing paragraph.\n\n"
+            f"FACTUAL BRIEF:\n{brief}"
+        )
+
+        try:
+            result = self.generate(prompt)
+            # LLMService.generate() returns an error string instead of raising.
+            # Detect that and fall back to a graceful message.
+            if result.startswith("All LLM providers failed") or result.startswith("AI service not configured"):
+                logger.warning(f"[LLM] Narrative fallback triggered: {result[:100]}")
+                return (
+                    f"This report covers {len(opportunities)} opportunities, "
+                    f"{len(gaps)} research gaps, and {len(trends)} trends discovered by the platform. "
+                    f"The AI summary could not be generated right now (LLM provider unavailable). "
+                    f"See the tables below for the full data breakdown."
+                )
+            return result
+        except Exception as e:
+            logger.error(f"[LLM] Narrative generation failed: {e}")
+            return (
+                f"This report covers {len(opportunities)} opportunities, "
+                f"{len(gaps)} research gaps, and {len(trends)} trends discovered by the platform. "
+                f"Narrative generation is currently unavailable."
+            )
 
     def status(self) -> dict:
         return {

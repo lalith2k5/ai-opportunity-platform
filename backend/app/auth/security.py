@@ -1,11 +1,26 @@
+import os
+import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Optional
+
+from dotenv import load_dotenv
 from jose import JWTError, jwt
 import bcrypt
 
-SECRET_KEY = "change-me-in-production-use-a-long-random-string"
+# Ensure .env is loaded even if this module is imported before app.config
+load_dotenv()
+
+SECRET_KEY = os.getenv("SECRET_KEY", "").strip()
+if not SECRET_KEY or SECRET_KEY == "change-me-in-production-use-a-long-random-string":
+    raise RuntimeError(
+        "SECRET_KEY is not set. Add SECRET_KEY=\"<random>\" to backend/.env "
+        "and restart the backend. Generate one with:\n"
+        "    python -c \"import secrets; print(secrets.token_urlsafe(64))\""
+    )
+
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24
+REFRESH_TOKEN_EXPIRE_DAYS = 30
 
 
 def hash_password(password: str) -> str:
@@ -37,10 +52,6 @@ def decode_token(token: str) -> Optional[dict]:
     except JWTError:
         return None
 
-
-import secrets
-
-REFRESH_TOKEN_EXPIRE_DAYS = 30
 
 def generate_refresh_token() -> str:
     """Opaque random token (not JWT)."""

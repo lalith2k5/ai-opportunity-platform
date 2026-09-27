@@ -13,6 +13,13 @@ from sqlalchemy import select
 from app.logger import logger
 from app.services.notification_service import generate_pipeline_notifications
 
+import threading
+
+# Global lock — only one pipeline can run at a time, across all OrchestratorAgent instances.
+# Prevents scheduler + user-triggered runs from colliding (ChromaDB writes, KG persists).
+_PIPELINE_LOCK = threading.Lock()
+
+
 class OrchestratorAgent:
     def __init__(self):
         self.data_collection = DataCollectionAgent()
@@ -47,17 +54,57 @@ class OrchestratorAgent:
                         if exists:
                             continue
 
+                    url = item.get("url", item.get("html_url", ""))
+                    metadata = {"keys": list(item.keys())}
+                    if source_name == "rd_cells":
+                        metadata["lab"] = item.get("lab", "unknown")
                     raw_doc = models.RawDocument(
                         source=source_name,
                         external_id=ext_id,
                         title=title,
                         content=content[:5000],
-                        url=item.get("url", item.get("html_url", "")),
-                        metadata_json={"keys": list(item.keys())},
+                        url=url,
+                        metadata_json=metadata,
                     )
                     db.add(raw_doc)
                     inserted += 1
             logger.info(f"Inserted {inserted} new raw documents")
+
+            # 1b. Save ProcessedDocument rows linked to their RawDocument
+            processed_inserted = 0
+            if processed:
+                all_raw = db.query(models.RawDocument).all()
+                raw_index = {}
+                for rd in all_raw:
+                    key = (rd.source or "", (rd.title or "").strip()[:200])
+                    if key not in raw_index:
+                        raw_index[key] = rd.id
+
+                existing_pd_raw_ids = {
+                    row[0] for row in db.query(models.ProcessedDocument.raw_document_id).all()
+                }
+
+                for pdoc in processed:
+                    src_name = pdoc.get("source") or "unknown"
+                    title = (pdoc.get("title") or "").strip()[:200]
+                    raw_id = raw_index.get((src_name, title))
+                    if raw_id is None:
+                        continue
+                    if raw_id in existing_pd_raw_ids:
+                        continue
+
+                    db.add(models.ProcessedDocument(
+                        raw_document_id=raw_id,
+                        cleaned_text=(pdoc.get("cleaned_text") or "")[:10000],
+                        keywords=pdoc.get("keywords") or [],
+                        entities=pdoc.get("entities") or [],
+                        topics=pdoc.get("topics") or [],
+                        sentiment_score=float(pdoc.get("sentiment_score") or 0.0),
+                        embedding_id=None,
+                    ))
+                    processed_inserted += 1
+
+                logger.info(f"Inserted {processed_inserted} new processed documents")
 
             # 2. Save problem clusters
             cluster_ids = []
@@ -87,13 +134,23 @@ class OrchestratorAgent:
                 db.flush()
                 gap_ids.append(rg.id)
 
-            # 4. Save trends
+            # 4. Save trends + snapshot them for time-series analysis
             for trend in trends:
+                name = trend.get("name", "")
+                if not name:
+                    continue
+                source_data = trend.get("source_data", {}) or {}
                 db.add(models.Trend(
-                    name=trend.get("name", ""),
+                    name=name,
                     category=trend.get("category", "general"),
                     trend_score=trend.get("trend_score", 0.0),
-                    source_data=trend.get("source_data", {}),
+                    source_data=source_data,
+                ))
+                # Snapshot for growth-rate computation
+                db.add(models.TrendSnapshot(
+                    trend_name=name[:200],
+                    mention_count=int(source_data.get("mentions", 0) or 0),
+                    source_count=len(source_data.get("sources", {}) or {}),
                 ))
 
             # 5. Save opportunities
@@ -106,6 +163,7 @@ class OrchestratorAgent:
                     demand_score=opp.get("demand_score", 0.0),
                     research_gap_score=opp.get("research_gap_score", 0.0),
                     trend_score=opp.get("trend_score", 0.0),
+                    innovation_score=opp.get("innovation_score", 0.0),
                     competition_score=opp.get("competition_score", 0.0),
                     feasibility_score=opp.get("feasibility_score", 0.0),
                     market_readiness_score=opp.get("market_readiness_score", 0.0),
@@ -137,6 +195,18 @@ class OrchestratorAgent:
             db.close()
 
     def run_full_pipeline(self, query: str, user_id: int = None, mode: str = "quick") -> dict:
+        # Refuse to start if another pipeline is already running
+        acquired = _PIPELINE_LOCK.acquire(blocking=False)
+        if not acquired:
+            logger.warning(f"[Orchestrator] Pipeline already running — refusing concurrent run for '{query}'")
+            raise RuntimeError("Another pipeline is already running. Please wait for it to finish.")
+
+        try:
+            return self._run_full_pipeline_inner(query, user_id=user_id, mode=mode)
+        finally:
+            _PIPELINE_LOCK.release()
+
+    def _run_full_pipeline_inner(self, query: str, user_id: int = None, mode: str = "quick") -> dict:
         logger.info(f"Starting pipeline for: {query} (mode={mode})")
         raw = self.data_collection.collect_all(query, mode=mode)
 
@@ -149,6 +219,8 @@ class OrchestratorAgent:
             documents.append({"source": "arxiv", "title": paper.get("title", ""), "content": paper.get("summary", "")})
         for article in raw.get("news", [])[:200]:
             documents.append({"source": "news", "title": article.get("title", ""), "content": article.get("summary", "")})
+        for post in raw.get("rd_cells", [])[:200]:
+            documents.append({"source": "rd_cells", "title": post.get("title", ""), "content": post.get("summary", "")})
 
         logger.info(f"Processing {len(documents)} documents")
         processed = []
@@ -187,6 +259,7 @@ class OrchestratorAgent:
                 github_items=raw.get("github", []),
                 arxiv_items=raw.get("arxiv", []),
                 news_items=raw.get("news", []),
+                raw_items=raw,
             )
             opp["explanation"] = self.explainable.explain(opp)
             opp["_cluster_title"] = (cluster.get("title") or "").replace("Problem Cluster:", "").strip()

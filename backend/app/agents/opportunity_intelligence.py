@@ -195,12 +195,13 @@ def _clean_keywords(keywords: list) -> dict:
 
 class OpportunityIntelligenceAgent:
     WEIGHTS = {
-        "demand": 0.25,
-        "research_gap": 0.20,
-        "trend": 0.15,
-        "competition": 0.10,
-        "feasibility": 0.15,
-        "market_readiness": 0.10,
+        "demand": 0.23,
+        "research_gap": 0.18,
+        "trend": 0.14,
+        "innovation": 0.08,
+        "competition": 0.09,
+        "feasibility": 0.14,
+        "market_readiness": 0.09,
         "confidence": 0.05,
     }
 
@@ -270,6 +271,57 @@ class OpportunityIntelligenceAgent:
         paper_component = min(1.0, papers / 10.0)
         return round(0.3 + 0.5 * star_component + 0.2 * paper_component, 3)
 
+    def _item_text(self, item: dict) -> str:
+        """Concatenate every text-bearing field on a raw item, lowercased."""
+        parts = [
+            item.get("title") or "",
+            item.get("name") or "",
+            item.get("description") or "",
+            item.get("summary") or "",
+            item.get("selftext") or "",
+        ]
+        return " ".join(p for p in parts if p).lower()
+
+    def _derive_innovation_score(self, keywords: list, raw_items: dict) -> float:
+        """
+        Novelty/diversity of the signal around *this* cluster.
+
+        - diversity (0.5): how many of the 4 sources have docs matching this cluster
+        - balance   (0.3): 1 - dominant_source_share  (penalizes single-source clusters)
+        - breadth   (0.2): min(1, len(keywords) / 8)
+
+        Ranges from 0.15 (only one source touches the topic) to ~0.93 (evenly spread).
+        """
+        if not keywords or not raw_items:
+            return 0.3
+
+        keywords_lower = [str(k).lower() for k in keywords if k]
+        if not keywords_lower:
+            return 0.3
+
+        source_matches = {}
+        for src in ("github", "arxiv", "news", "reddit"):
+            items = raw_items.get(src) or []
+            count = 0
+            for item in items:
+                text = self._item_text(item)
+                if any(kw in text for kw in keywords_lower):
+                    count += 1
+            if count > 0:
+                source_matches[src] = count
+
+        if not source_matches:
+            return 0.15
+
+        diversity = len(source_matches) / 4.0
+        total = sum(source_matches.values())
+        max_share = max(source_matches.values()) / total
+        balance = 1.0 - max_share
+        breadth = min(1.0, len(keywords) / 8.0)
+
+        score = 0.5 * diversity + 0.3 * balance + 0.2 * breadth
+        return round(score, 3)
+
     def _derive_market_readiness_score(self, keywords: list, news_items: list) -> float:
         """More news coverage → higher market readiness."""
         if not keywords or not news_items:
@@ -283,7 +335,8 @@ class OpportunityIntelligenceAgent:
         return round(min(1.0, 0.3 + density * 0.7), 3)
 
     def score(self, problem_cluster: dict, research_gap: dict = None, trend: dict = None,
-              github_items: list = None, arxiv_items: list = None, news_items: list = None) -> dict:
+              github_items: list = None, arxiv_items: list = None, news_items: list = None,
+              raw_items: dict = None) -> dict:
         demand = problem_cluster.get("demand_score", 0.5)
         gap = research_gap.get("gap_score", 0.5) if research_gap else 0.5
         trend_score = trend.get("trend_score", 0.5) if trend else 0.5
@@ -291,12 +344,14 @@ class OpportunityIntelligenceAgent:
         competition = self._derive_competition_score(keywords, github_items or [])
         feasibility = self._derive_feasibility_score(keywords, github_items or [], arxiv_items or [])
         market_readiness = self._derive_market_readiness_score(keywords, news_items or [])
+        innovation = self._derive_innovation_score(keywords, raw_items or {})
         confidence = 0.8
 
         opportunity_score = (
             self.WEIGHTS["demand"] * demand +
             self.WEIGHTS["research_gap"] * gap +
             self.WEIGHTS["trend"] * trend_score +
+            self.WEIGHTS["innovation"] * innovation +
             self.WEIGHTS["competition"] * (1 - competition) +
             self.WEIGHTS["feasibility"] * feasibility +
             self.WEIGHTS["market_readiness"] * market_readiness +
@@ -316,6 +371,7 @@ class OpportunityIntelligenceAgent:
             "demand_score": round(demand, 3),
             "research_gap_score": round(gap, 3),
             "trend_score": round(trend_score, 3),
+            "innovation_score": innovation,
             "competition_score": competition,
             "feasibility_score": feasibility,
             "market_readiness_score": market_readiness,

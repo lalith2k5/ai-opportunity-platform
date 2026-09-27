@@ -1,7 +1,7 @@
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 from apscheduler.triggers.cron import CronTrigger
-from datetime import datetime
+from datetime import datetime, timedelta
 from app.logger import logger
 from app.database import SessionLocal
 from app import models
@@ -29,17 +29,7 @@ def _run_monitored_pipeline():
     logger.info("[Scheduler] Starting scheduled monitoring run")
     db = SessionLocal()
     try:
-        # Pick the topic that was run least recently (round-robin)
-        from sqlalchemy import func
-        used_topics = {
-            row[0]: row[1]
-            for row in db.query(
-                models.SearchHistory.query,
-                func.max(models.SearchHistory.created_at),
-            ).group_by(models.SearchHistory.query).all()
-        } if False else {}
-
-        # Simple approach: pick the least-used topic from the list
+        # Pick the least-used topic from the list
         counts = {}
         for topic in MONITORED_TOPICS:
             count = db.query(models.SearchHistory).filter(
@@ -81,8 +71,70 @@ def _run_monitored_pipeline():
 
 
 def _cleanup_old_logs():
-    """Placeholder for periodic cleanup tasks."""
-    logger.info("[Scheduler] Running cleanup job (noop for now)")
+    """Purge old data based on retention policy. Runs daily at 3 AM."""
+    from datetime import datetime, timedelta, timezone
+
+    db = SessionLocal()
+    result = {}
+    now = datetime.now(timezone.utc)
+
+    try:
+        # Agent logs — 30 days
+        cutoff = now - timedelta(days=30)
+        n = db.query(models.AgentLog).filter(models.AgentLog.created_at < cutoff).delete(synchronize_session=False)
+        result["agent_logs"] = n
+
+        # Trend snapshots — 90 days
+        cutoff = now - timedelta(days=90)
+        n = db.query(models.TrendSnapshot).filter(models.TrendSnapshot.snapshot_at < cutoff).delete(synchronize_session=False)
+        result["trend_snapshots"] = n
+
+        # Password reset tokens — expired OR used, older than 7 days
+        cutoff = now - timedelta(days=7)
+        n = db.query(models.PasswordResetToken).filter(
+            models.PasswordResetToken.created_at < cutoff,
+            (models.PasswordResetToken.used == True) |
+            (models.PasswordResetToken.expires_at < now),
+        ).delete(synchronize_session=False)
+        result["password_reset_tokens"] = n
+
+        # Refresh tokens — revoked or expired, older than 7 days
+        cutoff = now - timedelta(days=7)
+        n = db.query(models.RefreshToken).filter(
+            models.RefreshToken.created_at < cutoff,
+            (models.RefreshToken.revoked == True) |
+            (models.RefreshToken.expires_at < now),
+        ).delete(synchronize_session=False)
+        result["refresh_tokens"] = n
+
+        # Search history — 180 days
+        cutoff = now - timedelta(days=180)
+        n = db.query(models.SearchHistory).filter(models.SearchHistory.created_at < cutoff).delete(synchronize_session=False)
+        result["search_history"] = n
+
+        db.commit()
+        total = sum(result.values())
+        logger.info(f"[Scheduler] Cleanup done — {total} rows purged: {result}")
+
+        # Log to agent_logs (fresh table after purge)
+        try:
+            db.add(models.AgentLog(
+                agent_name="Scheduler",
+                action="cleanup_old_logs",
+                status="success",
+                details={"deleted": result, "total": total},
+            ))
+            db.commit()
+        except Exception:
+            pass
+
+        return result
+    except Exception as e:
+        db.rollback()
+        logger.error(f"[Scheduler] Cleanup error: {e}")
+        return {}
+    finally:
+        db.close()
 
 
 def start_scheduler():
@@ -101,7 +153,7 @@ def start_scheduler():
         id="monitored_pipeline",
         name="Continuous monitoring pipeline",
         replace_existing=True,
-        next_run_time=datetime.now(),  # run once at startup
+        next_run_time=datetime.now() + timedelta(seconds=60),  # first run 60s after startup (avoids race with --reload)
     )
 
     # Daily cleanup at 3 AM

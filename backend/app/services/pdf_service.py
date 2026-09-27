@@ -25,7 +25,7 @@ class PDFReportService:
             spaceAfter=6, leading=14,
         ))
 
-    def generate_report(self, opportunities, problems, gaps, trends, username="User"):
+    def generate_report(self, opportunities, problems, gaps, trends, username="User", narrative=""):
         buf = BytesIO()
         doc = SimpleDocTemplate(
             buf, pagesize=A4,
@@ -43,6 +43,12 @@ class PDFReportService:
             self.styles['BodyText2'],
         ))
         elements.append(Spacer(1, 0.5*cm))
+
+        # AI narrative
+        if narrative:
+            elements.append(Paragraph("AI Executive Summary", self.styles['SectionHeading']))
+            elements.append(Paragraph(narrative, self.styles['BodyText2']))
+            elements.append(Spacer(1, 0.4*cm))
 
         # Summary
         elements.append(Paragraph("Executive Summary", self.styles['SectionHeading']))

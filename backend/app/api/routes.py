@@ -33,6 +33,9 @@ def run_pipeline(
             user_id=user.id if user else None,
             mode=(query.mode or "quick"),
         )
+    except RuntimeError as e:
+        # Concurrent pipeline rejection — return 409, not 500
+        raise HTTPException(status_code=409, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -68,9 +71,112 @@ def get_problems(db: Session = Depends(get_db), _=Depends(get_current_user)):
 def get_research_gaps(db: Session = Depends(get_db), _=Depends(get_current_user)):
     return db.query(models.ResearchGap).order_by(models.ResearchGap.gap_score.desc()).limit(50).all()
 
+def _compute_growth(db, trend_name: str) -> dict:
+    """7-day avg vs prior-7-day avg of the mention_count. Returns growth metrics."""
+    from datetime import datetime, timedelta, timezone
+    from sqlalchemy import func
+
+    now = datetime.now(timezone.utc)
+    week_ago = now - timedelta(days=7)
+    two_weeks_ago = now - timedelta(days=14)
+
+    recent = db.query(func.avg(models.TrendSnapshot.mention_count)).filter(
+        models.TrendSnapshot.trend_name == trend_name,
+        models.TrendSnapshot.snapshot_at >= week_ago,
+    ).scalar()
+    prior = db.query(func.avg(models.TrendSnapshot.mention_count)).filter(
+        models.TrendSnapshot.trend_name == trend_name,
+        models.TrendSnapshot.snapshot_at >= two_weeks_ago,
+        models.TrendSnapshot.snapshot_at < week_ago,
+    ).scalar()
+
+    recent = float(recent or 0)
+    prior = float(prior or 0)
+
+    if prior == 0 and recent == 0:
+        growth = 0.0
+        label = "no_data"
+    elif prior == 0:
+        growth = 1.0
+        label = "new"
+    else:
+        growth = (recent - prior) / prior
+        if growth > 0.2:
+            label = "rising"
+        elif growth < -0.2:
+            label = "declining"
+        else:
+            label = "stable"
+
+    return {
+        "growth_rate": round(growth, 3),
+        "recent_avg": round(recent, 2),
+        "prior_avg": round(prior, 2),
+        "label": label,
+    }
+
+
 @router.get("/trends")
 def get_trends(db: Session = Depends(get_db), _=Depends(get_current_user)):
-    return db.query(models.Trend).order_by(models.Trend.trend_score.desc()).limit(50).all()
+    rows = db.query(models.Trend).order_by(models.Trend.trend_score.desc()).limit(50).all()
+    out = []
+    seen = set()
+    for t in rows:
+        if t.name in seen:
+            continue
+        seen.add(t.name)
+        growth = _compute_growth(db, t.name)
+        out.append({
+            "id": t.id,
+            "name": t.name,
+            "category": t.category,
+            "trend_score": t.trend_score,
+            "source_data": t.source_data,
+            "detected_at": t.detected_at.isoformat() if t.detected_at else None,
+            **growth,
+        })
+    return out
+
+
+@router.get("/trends/{trend_name}/history")
+def get_trend_history(
+    trend_name: str,
+    days: int = 30,
+    db: Session = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    """Return daily mention-count history for a trend."""
+    from datetime import datetime, timedelta, timezone
+    from sqlalchemy import func
+
+    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+    rows = (
+        db.query(
+            func.date(models.TrendSnapshot.snapshot_at).label("day"),
+            func.avg(models.TrendSnapshot.mention_count).label("avg_mentions"),
+            func.count(models.TrendSnapshot.id).label("runs"),
+        )
+        .filter(
+            models.TrendSnapshot.trend_name == trend_name,
+            models.TrendSnapshot.snapshot_at >= cutoff,
+        )
+        .group_by(func.date(models.TrendSnapshot.snapshot_at))
+        .order_by(func.date(models.TrendSnapshot.snapshot_at))
+        .all()
+    )
+    return {
+        "trend_name": trend_name,
+        "days": days,
+        "history": [
+            {
+                "day": str(r.day),
+                "avg_mentions": round(float(r.avg_mentions or 0), 2),
+                "runs": r.runs,
+            }
+            for r in rows
+        ],
+        "growth": _compute_growth(db, trend_name),
+    }
 
 @router.get("/search-history")
 def get_search_history(
@@ -166,9 +272,14 @@ def generate_pdf(
     gaps = db.query(models.ResearchGap).order_by(models.ResearchGap.gap_score.desc()).limit(20).all()
     trends = db.query(models.Trend).order_by(models.Trend.trend_score.desc()).limit(20).all()
 
+    # AI executive summary (graceful fallback inside generate_narrative)
+    from app.services.llm_service import LLMService
+    narrative = LLMService().generate_narrative(opportunities, gaps, trends)
+
     buf = pdf_service.generate_report(
         opportunities, problems, gaps, trends,
         username=user.name if user else "Guest",
+        narrative=narrative,
     )
     filename = f"opportunity_report_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf"
     return StreamingResponse(
@@ -176,6 +287,29 @@ def generate_pdf(
         media_type="application/pdf",
         headers={"Content-Disposition": f"attachment; filename={filename}"},
     )
+
+
+@router.get("/reports/narrative")
+def generate_narrative_endpoint(
+    query: str = "",
+    db: Session = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    """Return an AI-written executive summary based on current DB state."""
+    from app.services.llm_service import LLMService
+    opps = db.query(models.Opportunity).order_by(models.Opportunity.opportunity_score.desc()).limit(20).all()
+    gaps = db.query(models.ResearchGap).order_by(models.ResearchGap.gap_score.desc()).limit(10).all()
+    trends = db.query(models.Trend).order_by(models.Trend.trend_score.desc()).limit(10).all()
+    svc = LLMService()
+    narrative = svc.generate_narrative(opps, gaps, trends, query=query)
+    return {
+        "narrative": narrative,
+        "counts": {
+            "opportunities": len(opps),
+            "gaps": len(gaps),
+            "trends": len(trends),
+        },
+    }
 
 
 @router.get("/scheduler/status")
@@ -196,6 +330,37 @@ def get_opportunity(opp_id: int, db: Session = Depends(get_db)):
     gap = None
     if opp.research_gap_id:
         gap = db.query(models.ResearchGap).filter(models.ResearchGap.id == opp.research_gap_id).first()
+
+    # Find raw source documents whose content matches the cluster's keywords
+    related_sources = []
+    if cluster and cluster.keywords:
+        keywords = [str(k).lower() for k in (cluster.keywords or [])[:8] if k]
+        if keywords:
+            candidates = (
+                db.query(models.RawDocument)
+                .order_by(models.RawDocument.collected_at.desc())
+                .limit(1000)
+                .all()
+            )
+            scored = []
+            for doc in candidates:
+                if not doc.url:
+                    continue
+                haystack = ((doc.title or "") + " " + (doc.content or "")).lower()
+                hits = sum(1 for kw in keywords if kw in haystack)
+                if hits > 0:
+                    scored.append((hits, doc))
+            scored.sort(key=lambda x: -x[0])
+            related_sources = [
+                {
+                    "id": d.id,
+                    "title": (d.title or "")[:200],
+                    "url": d.url,
+                    "source": d.source or "unknown",
+                    "matched_keywords": h,
+                }
+                for h, d in scored[:12]
+            ]
 
     return {
         "opportunity": {
@@ -227,7 +392,56 @@ def get_opportunity(opp_id: int, db: Session = Depends(get_db)):
             "gap_score": gap.gap_score,
             "evidence": gap.evidence,
         } if gap else None,
+        "sources": related_sources,
     }
+
+
+@router.get("/processed-documents")
+def list_processed_documents(
+    source: Optional[str] = None,
+    keyword: Optional[str] = None,
+    limit: int = 50,
+    db: Session = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    """List processed documents with optional filters."""
+    q = db.query(models.ProcessedDocument).order_by(
+        models.ProcessedDocument.processed_at.desc()
+    )
+    if source or keyword:
+        q = q.join(
+            models.RawDocument,
+            models.ProcessedDocument.raw_document_id == models.RawDocument.id,
+        )
+        if source:
+            q = q.filter(models.RawDocument.source == source)
+        if keyword:
+            q = q.filter(models.RawDocument.title.ilike(f"%{keyword}%"))
+
+    rows = q.limit(limit).all()
+
+    raw_ids = [r.raw_document_id for r in rows]
+    raw_map = {}
+    if raw_ids:
+        for rd in db.query(models.RawDocument).filter(models.RawDocument.id.in_(raw_ids)).all():
+            raw_map[rd.id] = rd
+
+    out = []
+    for r in rows:
+        rd = raw_map.get(r.raw_document_id)
+        out.append({
+            "id": r.id,
+            "raw_document_id": r.raw_document_id,
+            "source": (rd.source if rd else None),
+            "title": (rd.title if rd else None),
+            "url": (rd.url if rd else None),
+            "keywords": r.keywords or [],
+            "entities": r.entities or [],
+            "topics": r.topics or [],
+            "sentiment_score": r.sentiment_score,
+            "processed_at": r.processed_at.isoformat() if r.processed_at else None,
+        })
+    return {"count": len(out), "documents": out}
 
 
 @router.get("/chat-sessions/{session_id}")

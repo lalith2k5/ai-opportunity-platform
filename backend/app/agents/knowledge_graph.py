@@ -4,6 +4,30 @@ from app import models
 from app.logger import logger
 
 
+# Type specificity ranking — higher number = more specific.
+# Used to decide when a generic node (Keyword, Document) should be
+# promoted to a specific type (Technology, Article, ResearchPaper).
+_TYPE_RANK = {
+    "unknown": 0,
+    "Keyword": 1,
+    "Document": 2,
+    "Article": 3,
+    "ResearchPaper": 3,
+    "Repository": 3,
+    "Industry": 3,
+    "Author": 3,
+    "Technology": 3,
+    "Problem": 3,
+    "RDLab": 3,
+    "ResearchGap": 3,
+    "StartupOpportunity": 3,
+}
+
+
+def _is_more_specific(new_type: str, old_type: str) -> bool:
+    return _TYPE_RANK.get(new_type, 0) > _TYPE_RANK.get(old_type, 0)
+
+
 class KnowledgeGraphAgent:
     def __init__(self):
         self.graph = nx.DiGraph()
@@ -16,7 +40,8 @@ class KnowledgeGraphAgent:
             return
         if self.graph.has_node(name):
             self.graph.nodes[name]["metadata"].update(metadata or {})
-            if self.graph.nodes[name].get("type") in ("Keyword", "unknown"):
+            old_type = self.graph.nodes[name].get("type", "unknown")
+            if _is_more_specific(entity_type, old_type):
                 self.graph.nodes[name]["type"] = entity_type
         else:
             self.graph.add_node(name, type=entity_type, metadata=metadata or {})
@@ -132,6 +157,27 @@ class KnowledgeGraphAgent:
                 })
                 self.add_relationship(src, "published", title)
 
+        # 5b. R&D Lab nodes (from rd_cells source) → link to their published articles
+        for post in raw.get("rd_cells", []):
+            lab = (post.get("lab") or "Unknown Lab").strip()
+            title = (post.get("title") or "").strip()
+            if not lab or not title:
+                continue
+            self.add_entity("RDLab", lab, {"type": "research_organization"})
+            self.add_entity("Article", title, {
+                "url": post.get("url", ""),
+                "source": "rd_cells",
+                "lab": lab,
+            })
+            self.add_relationship(lab, "published", title)
+            # Link lab to keywords found in the post
+            post_text = (title + " " + (post.get("summary") or "")).lower()
+            for cluster in clusters:
+                for kw in (cluster.get("keywords") or [])[:5]:
+                    if kw.lower() in post_text:
+                        self.add_relationship(lab, "researches", kw)
+                        break
+
         # 6. Research Gap nodes → link to papers + problems
         for gap in gaps:
             gap_title = (gap.get("title") or "").strip()
@@ -189,8 +235,7 @@ class KnowledgeGraphAgent:
                 if node in existing_nodes:
                     existing = db.query(models.KnowledgeGraphNode).filter_by(name=node).first()
                     new_type = attrs.get("type", "unknown")
-                    if existing and existing.entity_type in ("unknown", "Keyword") \
-                            and new_type not in ("unknown", "Keyword"):
+                    if existing and _is_more_specific(new_type, existing.entity_type or "unknown"):
                         existing.entity_type = new_type
                     continue
                 db.add(models.KnowledgeGraphNode(

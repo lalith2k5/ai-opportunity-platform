@@ -20,70 +20,96 @@ export default function Search() {
   };
 
   return (
-    <div className="p-8 max-w-4xl mx-auto">
+    <div className="p-6 lg:p-8 max-w-4xl mx-auto">
+
+      {/* Header */}
       <div className="mb-8">
-        <h1 className="text-3xl font-bold text-white">Run Intelligence Pipeline</h1>
-        <p className="text-gray-400 mt-1">Enter a topic to collect data from GitHub, arXiv, and News, then run AI analysis.</p>
+        <div className="flex items-center gap-3 mb-2">
+          <div className="w-8 h-8 rounded-md bg-accent/10 flex items-center justify-center">
+            <SearchIcon className="text-accent" size={16} />
+          </div>
+          <h1 className="text-2xl font-bold text-ink tracking-tight">Run intelligence pipeline</h1>
+        </div>
+        <p className="text-sm text-ink-3">
+          Enter a topic to collect data from GitHub, arXiv, and News, then run the AI analysis.
+        </p>
       </div>
 
-      <div className="bg-brand-panel border border-brand-border rounded-xl p-6 mb-6">
-        <div className="flex gap-3">
+      {/* Input card */}
+      <div className="bg-surface border border-edge rounded-lg p-5 mb-6">
+        <div className="flex flex-col md:flex-row gap-3">
           <input
-            type="text" value={query} onChange={e => setQuery(e.target.value)}
+            type="text"
+            value={query}
+            onChange={e => setQuery(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && handleRun()}
             placeholder="e.g. artificial intelligence healthcare"
-            className="flex-1 bg-brand-dark border border-brand-border rounded-lg px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-brand-accent"
+            className="input flex-1"
           />
           <button
-            onClick={handleRun} disabled={loading || !query.trim()}
-            className="bg-brand-accent hover:bg-indigo-600 disabled:opacity-50 text-white px-6 py-3 rounded-lg font-medium flex items-center gap-2 transition-colors"
+            onClick={handleRun}
+            disabled={loading || !query.trim()}
+            className="btn-primary whitespace-nowrap"
           >
-            {loading ? <Loader2 className="animate-spin" size={18} /> : <SearchIcon size={18} />}
-            {loading ? 'Running...' : 'Run Pipeline'}
+            {loading ? <Loader2 className="animate-spin" size={15} /> : <SearchIcon size={15} />}
+            {loading ? 'Running…' : 'Run pipeline'}
           </button>
         </div>
-        {loading && <p className="text-sm text-gray-400 mt-3">This takes 30–90 seconds.</p>}
+        {loading && (
+          <p className="text-xs text-ink-4 mt-3">
+            This takes 30–90 seconds depending on mode.
+          </p>
+        )}
       </div>
 
+      {/* Error */}
       {error && (
-        <div className="bg-red-900/30 border border-red-700 rounded-xl p-4 mb-6 flex items-start gap-3">
-          <AlertCircle className="text-red-400 mt-0.5" size={20} />
-          <div><p className="text-red-300 font-medium">Pipeline Error</p><p className="text-red-200/70 text-sm mt-1">{error}</p></div>
+        <div className="bg-danger/10 border border-danger/30 rounded-lg p-4 mb-6 flex items-start gap-3">
+          <AlertCircle className="text-danger flex-shrink-0 mt-0.5" size={16} />
+          <div>
+            <p className="text-sm text-danger font-medium">Pipeline error</p>
+            <p className="text-xs text-danger/80 mt-1 leading-relaxed">{error}</p>
+          </div>
         </div>
       )}
 
+      {/* Result */}
       {result && (
         <div className="space-y-4">
-          <div className="bg-emerald-900/30 border border-emerald-700 rounded-xl p-4 flex items-start gap-3">
-            <CheckCircle2 className="text-emerald-400 mt-0.5" size={20} />
-            <div><p className="text-emerald-300 font-medium">Pipeline Complete</p>
-              <p className="text-emerald-200/70 text-sm mt-1">{result.documents_count} documents processed</p></div>
+          <div className="bg-success/10 border border-success/30 rounded-lg p-4 flex items-start gap-3">
+            <CheckCircle2 className="text-success flex-shrink-0 mt-0.5" size={16} />
+            <div>
+              <p className="text-sm text-success font-medium">Pipeline complete</p>
+              <p className="text-xs text-success/80 mt-1">
+                {result.documents_count} documents processed
+              </p>
+            </div>
           </div>
+
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            <div className="bg-brand-panel border border-brand-border rounded-lg p-4">
-              <p className="text-xs text-gray-500 mb-1">Clusters</p>
-              <p className="text-2xl font-bold text-white">{result.clusters?.length || 0}</p>
-            </div>
-            <div className="bg-brand-panel border border-brand-border rounded-lg p-4">
-              <p className="text-xs text-gray-500 mb-1">Research Gaps</p>
-              <p className="text-2xl font-bold text-white">{result.research_gaps?.length || 0}</p>
-            </div>
-            <div className="bg-brand-panel border border-brand-border rounded-lg p-4">
-              <p className="text-xs text-gray-500 mb-1">Trends</p>
-              <p className="text-2xl font-bold text-white">{result.trends?.length || 0}</p>
-            </div>
-            <div className="bg-brand-panel border border-brand-border rounded-lg p-4">
-              <p className="text-xs text-gray-500 mb-1">Opportunities</p>
-              <p className="text-2xl font-bold text-white">{result.opportunities?.length || 0}</p>
-            </div>
+            {[
+              { label: 'Clusters',      value: result.clusters?.length || 0,       accent: 'text-accent' },
+              { label: 'Research gaps', value: result.research_gaps?.length || 0,  accent: 'text-success' },
+              { label: 'Trends',        value: result.trends?.length || 0,         accent: 'text-warning' },
+              { label: 'Opportunities', value: result.opportunities?.length || 0,  accent: 'text-accent' },
+            ].map(s => (
+              <div key={s.label} className="bg-surface border border-edge rounded-lg p-4">
+                <p className="text-2xs font-medium text-ink-4 uppercase tracking-wider mb-2">{s.label}</p>
+                <p className={`text-2xl font-semibold font-mono tabular-nums ${s.accent}`}>{s.value}</p>
+              </div>
+            ))}
           </div>
-          <div className="bg-brand-panel border border-brand-border rounded-xl p-4">
-            <p className="text-sm text-gray-400">
-              Navigate to <span className="text-brand-accent font-medium">Dashboard</span> to see new opportunities.
+
+          <div className="bg-surface border border-edge rounded-lg p-4 flex items-start gap-3">
+            <SearchIcon size={14} className="text-accent flex-shrink-0 mt-0.5" />
+            <p className="text-xs text-ink-2 leading-relaxed">
+              New opportunities are ready. Open the <span className="text-ink font-medium">Dashboard</span> or{' '}
+              <span className="text-ink font-medium">Opportunities</span> page to see them.
             </p>
           </div>
         </div>
       )}
+
     </div>
   );
 }
