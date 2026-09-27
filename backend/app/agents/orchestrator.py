@@ -308,6 +308,8 @@ class OrchestratorAgent:
             documents.append({"source": "news", "title": article.get("title", ""), "content": article.get("summary", "")})
         for post in raw.get("rd_cells", [])[:200]:
             documents.append({"source": "rd_cells", "title": post.get("title", ""), "content": post.get("summary", "")})
+        for patent in raw.get("patents", [])[:200]:
+            documents.append({"source": "patents", "title": patent.get("title", ""), "content": patent.get("summary", "")})
         for post in raw.get("challenge_portal", [])[:200]:
             documents.append({"source": "challenge_portal", "title": post.get("title", ""), "content": post.get("raw_text", "") or post.get("description", "")})
 

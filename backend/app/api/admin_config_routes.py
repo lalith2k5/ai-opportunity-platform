@@ -29,6 +29,7 @@ EDITABLE_KEYS = {
     "ANTHROPIC_MODEL":     {"label": "Anthropic model name",   "provider": "Anthropic","url": ""},
     # Data sources
     "GITHUB_TOKEN":        {"label": "GitHub Personal token",  "provider": "GitHub",   "url": "https://github.com/settings/tokens"},
+    "PATENTSVIEW_API_KEY": {"label": "PatentsView API key",    "provider": "PatentsView", "url": "https://patentsview.org/apis/keyrequest"},
     "REDDIT_CLIENT_ID":    {"label": "Reddit Client ID",       "provider": "Reddit",   "url": "https://www.reddit.com/prefs/apps"},
     "REDDIT_CLIENT_SECRET":{"label": "Reddit Client Secret",   "provider": "Reddit",   "url": "https://www.reddit.com/prefs/apps"},
     "REDDIT_USER_AGENT":   {"label": "Reddit User Agent",      "provider": "Reddit",   "url": ""},
@@ -103,6 +104,7 @@ def get_settings(
         "ANTHROPIC_API_KEY":    settings.ANTHROPIC_API_KEY,
         "ANTHROPIC_MODEL":      settings.ANTHROPIC_MODEL,
         "GITHUB_TOKEN":         settings.GITHUB_TOKEN,
+        "PATENTSVIEW_API_KEY":  settings.PATENTSVIEW_API_KEY,
         "REDDIT_CLIENT_ID":     settings.REDDIT_CLIENT_ID,
         "REDDIT_CLIENT_SECRET": settings.REDDIT_CLIENT_SECRET,
         "REDDIT_USER_AGENT":    settings.REDDIT_USER_AGENT,
@@ -174,6 +176,7 @@ def sync_status(
     reddit_configured = bool(settings.REDDIT_CLIENT_ID and settings.REDDIT_CLIENT_SECRET)
     github_configured = bool(settings.GITHUB_TOKEN)
     gemini_configured = bool(settings.GEMINI_API_KEY)
+    patents_configured = bool(settings.PATENTSVIEW_API_KEY)
 
     def src(name, configured, default_enabled=True):
         info = source_map.get(name, {"count": 0, "last": None})
@@ -191,6 +194,7 @@ def sync_status(
             src("arxiv",    True),           # Always available
             src("news",     True),           # RSS — always available
             src("rd_cells", True),           # Corporate/academic/gov R&D lab feeds
+            src("patents",  patents_configured),  # PatentsView (opt-in; disabled if PATENTSVIEW_API_KEY is blank)
             src("reddit",   reddit_configured),
         ],
         "ai": {

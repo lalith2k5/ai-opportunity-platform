@@ -4,12 +4,13 @@ from app.services.reddit_service import RedditService
 from app.services.arxiv_service import ArxivService
 from app.services.news_service import NewsService
 from app.services.rd_cells_service import RDCellsService
+from app.services.patents_service import PatentsService
 from app.logger import logger
 
 # Mode → per-source caps
 MODES = {
-    "quick": {"github": 8,   "arxiv": 8,   "news": 8,   "reddit": 8,   "rd_cells": 8},
-    "deep":  {"github": 100, "arxiv": 100, "news": 100, "reddit": 50,  "rd_cells": 60},
+    "quick": {"github": 8,   "arxiv": 8,   "news": 8,   "reddit": 8,   "rd_cells": 8,   "patents": 8},
+    "deep":  {"github": 100, "arxiv": 100, "news": 100, "reddit": 50,  "rd_cells": 60,  "patents": 50},
 }
 
 
@@ -20,6 +21,7 @@ class DataCollectionAgent:
         self.arxiv = ArxivService()
         self.news = NewsService()
         self.rd_cells = RDCellsService()
+        self.patents = PatentsService()
 
     def collect_all(self, query: str, mode: str = "quick") -> dict:
         caps = MODES.get(mode, MODES["quick"])
@@ -31,9 +33,10 @@ class DataCollectionAgent:
             "news":     lambda: self.news.search_news(query, limit=caps["news"]),
             "reddit":   lambda: self.reddit.search_posts(query, limit=caps["reddit"]),
             "rd_cells": lambda: self.rd_cells.search_rd_cells(query, limit=caps["rd_cells"]),
+            "patents":  lambda: self.patents.search_patents(query, limit=caps["patents"]),
         }
 
-        results = {"github": [], "arxiv": [], "news": [], "reddit": [], "rd_cells": []}
+        results = {"github": [], "arxiv": [], "news": [], "reddit": [], "rd_cells": [], "patents": []}
         with ThreadPoolExecutor(max_workers=4) as ex:
             futures = {ex.submit(fn): name for name, fn in tasks.items()}
             for fut in as_completed(futures):
@@ -49,6 +52,7 @@ class DataCollectionAgent:
             f"{len(results['github'])} repos, "
             f"{len(results['arxiv'])} papers, "
             f"{len(results['news'])} news, "
-            f"{len(results['reddit'])} reddit"
+            f"{len(results['reddit'])} reddit, "
+            f"{len(results['patents'])} patents"
         )
         return results

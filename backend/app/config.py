@@ -26,6 +26,8 @@ class Settings:
 
     # Data sources
     GITHUB_TOKEN: str = os.getenv("GITHUB_TOKEN", "")
+    # PatentsView (https://patentsview.org/apis/keyrequest) — blank disables patents source
+    PATENTSVIEW_API_KEY: str = os.getenv("PATENTSVIEW_API_KEY", "")
     REDDIT_CLIENT_ID: str = os.getenv("REDDIT_CLIENT_ID", "")
     REDDIT_CLIENT_SECRET: str = os.getenv("REDDIT_CLIENT_SECRET", "")
     REDDIT_USER_AGENT: str = os.getenv("REDDIT_USER_AGENT", "ai-opportunity-platform/1.0")
