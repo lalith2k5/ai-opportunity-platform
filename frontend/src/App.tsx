@@ -14,6 +14,7 @@ import ResetPassword from './pages/ResetPassword';
 import Profile from './pages/Profile';
 import Problems from './pages/Problems';
 import Opportunities from './pages/Opportunities';
+import Recommendations from './pages/Recommendations';
 import Analytics from './pages/Analytics';
 
 const wrap = (el: React.ReactNode) => (
@@ -35,6 +36,7 @@ export default function App() {
       <Route path="/admin" element={wrap(<Admin />)} />
       <Route path="/problems" element={wrap(<Problems />)} />
       <Route path="/opportunities" element={wrap(<Opportunities />)} />
+      <Route path="/recommendations" element={wrap(<Recommendations />)} />
       <Route path="/analytics" element={wrap(<Analytics />)} />
       <Route path="/opportunities/:id" element={wrap(<OpportunityDetail />)} />
     </Routes>
