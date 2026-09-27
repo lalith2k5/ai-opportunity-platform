@@ -1,0 +1,36 @@
+import { Routes, Route } from 'react-router-dom';
+import Layout from './components/Layout';
+import ProtectedRoute from './components/ProtectedRoute';
+import Dashboard from './pages/Dashboard';
+import Search from './pages/Search';
+import Chat from './pages/Chat';
+import Reports from './pages/Reports';
+import Login from './pages/Login';
+import Register from './pages/Register';
+import OpportunityDetail from './pages/OpportunityDetail';
+import Admin from './pages/Admin';
+import ForgotPassword from './pages/ForgotPassword';
+import ResetPassword from './pages/ResetPassword';
+import Profile from './pages/Profile';
+
+const wrap = (el: React.ReactNode) => (
+  <ProtectedRoute><Layout>{el}</Layout></ProtectedRoute>
+);
+
+export default function App() {
+  return (
+    <Routes>
+      <Route path="/login" element={<Login />} />
+      <Route path="/register" element={<Register />} />
+      <Route path="/forgot-password" element={<ForgotPassword />} />
+      <Route path="/reset-password" element={<ResetPassword />} />
+      <Route path="/" element={wrap(<Dashboard />)} />
+      <Route path="/search" element={wrap(<Search />)} />
+      <Route path="/chat" element={wrap(<Chat />)} />
+      <Route path="/reports" element={wrap(<Reports />)} />
+      <Route path="/profile" element={wrap(<Profile />)} />
+      <Route path="/admin" element={wrap(<Admin />)} />
+      <Route path="/opportunities/:id" element={wrap(<OpportunityDetail />)} />
+    </Routes>
+  );
+}

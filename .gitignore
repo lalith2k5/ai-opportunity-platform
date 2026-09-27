@@ -1,0 +1,53 @@
+# ============ Secrets ============
+.env
+*.env
+!.env.example
+backend/.env
+backend/chroma_db/
+backend/logs/
+backups/
+*.sql
+
+# ============ Python ============
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+build/
+dist/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# ============ Node ============
+node_modules/
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+.vite/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# ============ Databases ============
+*.db
+*.sqlite
+*.sqlite3
+backend/chroma_db/
+
+# ============ IDE / OS ============
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+*.log
+
+# ============ Docker ============
+.docker/
