@@ -58,6 +58,74 @@ class KnowledgeGraphAgent:
         else:
             self.graph.add_edge(source, target, relation=relation, weight=1)
 
+    # Map spaCy NER labels -> KG entity types. Only useful categories kept.
+    _NER_LABEL_MAP = {
+        "PERSON":  "Author",
+        "ORG":     "Industry",
+        "PRODUCT": "Technology",
+    }
+
+    # Generic single words spaCy sometimes mislabels as entities.
+    _NER_STOPLIST = {
+        "api", "cli", "sdk", "ui", "ux", "http", "https", "json",
+        "html", "css", "sql", "url", "uri", "xml", "csv",
+        "library", "libraries", "framework", "frameworks",
+        "platform", "platforms", "tutorials", "tutorial",
+        "guide", "guides", "docs", "documentation",
+        "project", "projects", "code", "codes", "tool", "tools",
+        "quantum", "learning", "computing", "intelligence",
+        "data", "cloud", "open", "source", "free", "new",
+        "modern", "moderns", "honors", "honor", "internship",
+        "curriculum", "summerschool", "summer", "school",
+        "technology", "technologies", "science", "sciences",
+        "medicine", "medical", "healthcare", "statistics",
+        "artificial", "machine", "deep", "data", "big",
+        "online", "offline", "minima", "maxima", "pipeline",
+        "showcase", "graduate", "course", "courses", "class",
+        "paper", "papers", "survey", "surveys", "review", "reviews",
+        "the", "a", "an", "of", "for", "and", "or", "in", "on", "with",
+        "software", "hardware", "kernel", "kernels", "framework",
+        "center", "centre", "college", "director", "showcase",
+        "email", "blurb", "figure", "figures", "photo", "image",
+        "images", "congratulations", "thanks", "author", "authors",
+        "researcher", "researchers", "student", "students",
+        "university", "universities", "institute", "institutes",
+        "department", "departments", "newsletter", "brief",
+    }
+
+    def _link_nlp_entities(self, doc_title: str, entities: list):
+        """Turn NLP-extracted named entities into KG nodes/edges.
+
+        Entities have already been shape-validated in NLPAgent.extract_entities.
+        This layer only enforces a few KG-specific guards:
+          - skip entities equal to the doc title
+          - skip entities contained in the doc title (title fragments)
+          - dedupe within this doc
+        """
+        if not entities:
+            return
+        tl = (doc_title or "").lower()
+        seen = set()
+        for ent in entities:
+            text = str(ent.get("text") or "").strip()
+            label = str(ent.get("label") or "").strip().upper()
+            if not text:
+                continue
+            mapped = self._NER_LABEL_MAP.get(label)
+            if not mapped:
+                continue
+            key = text.lower()
+            if key in seen:
+                continue
+            # Skip self-mention or title fragment
+            if tl:
+                if key == tl or key in tl or tl in key:
+                    continue
+            seen.add(key)
+            self.add_entity(mapped, text, {"from_ner": True, "ner_label": label})
+            self.add_relationship(doc_title, "mentions", text)
+
+
     def build_from_documents(self, documents: list):
         """Document + Keyword layer (keeps legacy behavior)."""
         for doc in documents:
@@ -69,6 +137,8 @@ class KnowledgeGraphAgent:
             for keyword in (doc.get("keywords") or [])[:5]:
                 self.add_entity("Keyword", keyword)
                 self.add_relationship(title, "has_keyword", keyword)
+            # NER entities from the NLP pipeline -> KG nodes + "mentions" edges
+            self._link_nlp_entities(title, doc.get("entities") or [])
         return {"nodes": self.graph.number_of_nodes(), "edges": self.graph.number_of_edges()}
 
     def build_semantic_graph(self, raw, clusters, gaps, opportunities, global_topics=None):

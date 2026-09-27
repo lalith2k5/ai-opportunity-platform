@@ -33,11 +33,119 @@ class NLPAgent:
         except Exception:
             return []
 
+    # Words that signal the end of a real entity — RSS artifacts.
+    _ENTITY_TAIL_BLOCKLIST = {
+        "email", "blurb", "figure", "figures", "photo", "image", "images",
+        "author", "authors", "researcher", "researchers", "student", "students",
+        "university", "universities", "institute", "institutes",
+        "department", "departments", "newsletter", "brief", "congratulations",
+        "thanks", "acknowledgments", "acknowledgements", "abstract",
+        "introduction", "conclusion", "references", "appendix",
+        "january", "february", "march", "april", "may", "june", "july",
+        "august", "september", "october", "november", "december",
+        "monday", "tuesday", "wednesday", "thursday", "friday",
+        "saturday", "sunday", "today", "tomorrow", "yesterday",
+        "page", "pages", "figure", "table", "section", "chapter",
+        "software", "hardware", "framework", "kernel", "kernels",
+        "center", "centre", "college", "director", "showcase",
+        "artificial", "machine", "learning", "deep", "data", "science",
+        "intelligence", "computing", "quantum", "cloud", "healthcare",
+        "medical", "medicine", "statistics", "modern", "honors", "internship",
+    }
+
+    _ENTITY_ACRONYMS = {"ai", "ml", "nlp", "llm", "iot", "api", "sdk", "cli", "gpu", "cpu"}
+
+    def _is_valid_entity(self, text: str, label: str) -> bool:
+        """Shape-based validation. Reject anything that doesn't look like a
+        real named entity — proper noun casing, reasonable length, no markup."""
+        if not text:
+            return False
+
+        text = text.strip().rstrip(".,;:!?()[]{}")
+
+        # Reject HTML / URL / punctuation soup
+        if any(ch in text for ch in "<>\"={}"):
+            return False
+        if "://" in text or text.startswith("http"):
+            return False
+
+        # Reject if contains ':' (RSS "Name: Role" fragments)
+        if ":" in text:
+            return False
+
+        # Reject if too short or too long
+        if len(text) < 3 or len(text) > 40:
+            return False
+
+        # Alpha ratio must be reasonable
+        alpha = sum(c.isalpha() for c in text)
+        if alpha < 3 or alpha / max(len(text), 1) < 0.5:
+            return False
+
+        words = text.split()
+        if not words:
+            return False
+
+        # Title-case check for multi-word: at least one word must start uppercase
+        # (proper noun signal). But allow single-word acronyms.
+        if len(words) > 1:
+            # Last word must not be a stoplist word
+            if words[-1].lower().rstrip(".,;:!?") in self._ENTITY_TAIL_BLOCKLIST:
+                return False
+            # At least half the words must be title-cased or known acronyms
+            proper = sum(
+                1 for w in words
+                if w[:1].isupper() or w.lower() in self._ENTITY_ACRONYMS
+            )
+            if proper < len(words) / 2:
+                return False
+
+        # Label-specific rules
+        if label == "PERSON":
+            # Real person names: 2-3 words, or single word if clearly title-cased
+            if len(words) == 1:
+                return False  # single-word PERSON almost always noise
+            if len(words) > 4:
+                return False
+        elif label == "ORG":
+            if len(words) > 5:
+                return False
+        elif label == "PRODUCT":
+            if len(words) > 4:
+                return False
+
+        # Reject if the entire entity is just stoplist words
+        lowered = [w.lower().rstrip(".,;:!?") for w in words]
+        if all(w in self._ENTITY_TAIL_BLOCKLIST for w in lowered):
+            return False
+
+        return True
+
     def extract_entities(self, text: str) -> list:
         if not self.nlp or not text:
             return []
-        doc = self.nlp(text[:10000])
-        return [{"text": ent.text, "label": ent.label_} for ent in doc.ents][:20]
+        # Strip HTML tags/attributes BEFORE passing to spaCy
+        cleaned = re.sub(r"<[^>]+>", " ", text)
+        cleaned = re.sub(r"&[a-zA-Z#0-9]+;", " ", cleaned)
+        cleaned = re.sub(r"\s+", " ", cleaned).strip()
+        doc = self.nlp(cleaned[:10000])
+        out = []
+        seen = set()
+        for ent in doc.ents:
+            label = ent.label_
+            if label not in ("PERSON", "ORG", "PRODUCT"):
+                continue
+            txt = ent.text.strip()
+            if not self._is_valid_entity(txt, label):
+                continue
+            key = txt.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append({"text": txt, "label": label})
+            if len(out) >= 20:
+                break
+        return out
 
     def analyze_sentiment(self, text: str) -> float:
         if not text:
