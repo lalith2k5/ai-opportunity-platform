@@ -336,14 +336,25 @@ class OpportunityIntelligenceAgent:
 
     def score(self, problem_cluster: dict, research_gap: dict = None, trend: dict = None,
               github_items: list = None, arxiv_items: list = None, news_items: list = None,
-              raw_items: dict = None) -> dict:
+              raw_items: dict = None, avg_sentiment: float = None) -> dict:
         demand = problem_cluster.get("demand_score", 0.5)
         gap = research_gap.get("gap_score", 0.5) if research_gap else 0.5
         trend_score = trend.get("trend_score", 0.5) if trend else 0.5
         keywords = problem_cluster.get("keywords", [])
         competition = self._derive_competition_score(keywords, github_items or [])
         feasibility = self._derive_feasibility_score(keywords, github_items or [], arxiv_items or [])
-        market_readiness = self._derive_market_readiness_score(keywords, news_items or [])
+
+        # Market readiness: base score from news coverage, then modulated by
+        # aggregate sentiment. avg_sentiment ∈ [-1, 1] (VADER compound).
+        # Positive buzz → readiness amplified up to +15%. Negative → dampened
+        # to −15%. Clamped to [0, 1] after modulation.
+        market_readiness_raw = self._derive_market_readiness_score(keywords, news_items or [])
+        if avg_sentiment is not None:
+            modifier = 1.0 + 0.15 * max(-1.0, min(1.0, float(avg_sentiment)))
+            market_readiness = max(0.0, min(1.0, market_readiness_raw * modifier))
+        else:
+            market_readiness = market_readiness_raw
+
         innovation = self._derive_innovation_score(keywords, raw_items or {})
         confidence = 0.8
 

@@ -259,9 +259,43 @@ class OrchestratorAgent:
             global_topics = []
             logger.error(f"Topic modeling error: {e}")
 
+        # Assign each document to its closest global NMF topic by keyword overlap.
+        # This turns the fake per-doc `topics` (which used to duplicate keywords)
+        # into a real topic label from the corpus-wide model.
+        if global_topics:
+            topic_keyword_sets = [
+                set(k.lower() for k in (t.get("keywords") or []))
+                for t in global_topics
+            ]
+            for doc in processed:
+                doc_kws = set(k.lower() for k in (doc.get("keywords") or []))
+                best_idx, best_overlap = -1, 0
+                for idx, tset in enumerate(topic_keyword_sets):
+                    overlap = len(doc_kws & tset)
+                    if overlap > best_overlap:
+                        best_overlap = overlap
+                        best_idx = idx
+                if best_idx >= 0 and best_overlap > 0:
+                    topic = global_topics[best_idx]
+                    label = topic.get("label") or ", ".join(topic.get("keywords", [])[:2])
+                    if label:
+                        doc["primary_topic"] = label
+                        doc["topics"] = [label]
+            assigned = sum(1 for d in processed if d.get("primary_topic"))
+            logger.info(f"Assigned {assigned}/{len(processed)} docs to NMF topics")
+
         clusters = self.problem_discovery.discover(processed)
         gaps = self.research_gap.detect_gaps(clusters, raw.get("arxiv", []))
         trends = self.innovation_monitor.monitor(processed)
+
+        # Per-cluster average sentiment (VADER compound in [-1, 1])
+        for cluster in clusters:
+            doc_indices = cluster.get("_doc_indices", [])
+            sents = [
+                float(processed[i].get("sentiment_score") or 0.0)
+                for i in doc_indices if 0 <= i < len(processed)
+            ]
+            cluster["_avg_sentiment"] = (sum(sents) / len(sents)) if sents else 0.0
 
         opportunities = []
         for i, cluster in enumerate(clusters):
@@ -273,18 +307,24 @@ class OrchestratorAgent:
                 arxiv_items=raw.get("arxiv", []),
                 news_items=raw.get("news", []),
                 raw_items=raw,
+                avg_sentiment=cluster.get("_avg_sentiment"),
             )
             opp["explanation"] = self.explainable.explain(opp)
             opp["_cluster_title"] = (cluster.get("title") or "").replace("Problem Cluster:", "").strip()
             opp["_gap_title"] = gap.get("title") if gap else None
             opportunities.append(opp)
 
-        # Build + persist knowledge graph (Document layer + semantic layer)
+        # Build + persist knowledge graph (Document + NER + Topic + semantic layers)
         self.kg.build_from_documents(processed)
         kg_stats = self.kg.build_semantic_graph(raw, clusters, gaps, opportunities, global_topics)
         self.kg.persist()
 
         self._save_to_db(query, raw, processed, clusters, gaps, trends, opportunities, user_id=user_id)
+
+        # Strip private helper keys before returning to API
+        for c in clusters:
+            c.pop("_doc_indices", None)
+            c.pop("_avg_sentiment", None)
 
         return {
             "query": query,

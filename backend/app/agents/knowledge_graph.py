@@ -127,7 +127,7 @@ class KnowledgeGraphAgent:
 
 
     def build_from_documents(self, documents: list):
-        """Document + Keyword layer (keeps legacy behavior)."""
+        """Document + Keyword + NER + Topic layer."""
         for doc in documents:
             source = doc.get("source", "unknown")
             title = doc.get("title", "")
@@ -139,6 +139,11 @@ class KnowledgeGraphAgent:
                 self.add_relationship(title, "has_keyword", keyword)
             # NER entities from the NLP pipeline -> KG nodes + "mentions" edges
             self._link_nlp_entities(title, doc.get("entities") or [])
+            # Primary topic (assigned by orchestrator from global NMF model)
+            primary_topic = doc.get("primary_topic")
+            if primary_topic:
+                self.add_entity("Technology", primary_topic, {"from_topic": True})
+                self.add_relationship(title, "belongs_to_topic", primary_topic)
         return {"nodes": self.graph.number_of_nodes(), "edges": self.graph.number_of_edges()}
 
     def build_semantic_graph(self, raw, clusters, gaps, opportunities, global_topics=None):

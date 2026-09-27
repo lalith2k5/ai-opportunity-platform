@@ -202,6 +202,9 @@ class NLPAgent:
             "filtered_tokens": self.remove_stopwords(tokens)[:30],
             "keywords": self.extract_keywords(text),
             "entities": self.extract_entities(text),
-            "topics": self.extract_keywords(text, top_n=5),
+            # `topics` is intentionally empty at the per-doc level; the real
+            # topic label is assigned later from the corpus-wide NMF model
+            # in OrchestratorAgent._run_full_pipeline_inner.
+            "topics": [],
             "sentiment_score": self.analyze_sentiment(text)
         }

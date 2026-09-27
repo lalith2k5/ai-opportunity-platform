@@ -67,10 +67,15 @@ class ProblemDiscoveryAgent:
         return f"Problem Cluster: {label}"
 
     def discover(self, documents: list, n_clusters: int = None) -> list:
-        texts = [
-            (d.get("title", "") + " " + (d.get("content", "") or "")[:500])
-            for d in documents if d.get("title")
-        ]
+        # Build texts while preserving original indices so downstream
+        # consumers (sentiment averaging) can map back to the source doc.
+        texts = []
+        orig_indices = []
+        for i, d in enumerate(documents):
+            if not d.get("title"):
+                continue
+            texts.append(d.get("title", "") + " " + (d.get("content", "") or "")[:500])
+            orig_indices.append(i)
         if len(texts) < 2:
             return []
 
@@ -89,8 +94,8 @@ class ProblemDiscoveryAgent:
             feature_names = vectorizer.get_feature_names_out()
             clusters = []
             for i in range(n_clusters):
-                indices = np.where(labels == i)[0]
-                if len(indices) == 0:
+                indices_in_texts = np.where(labels == i)[0]
+                if len(indices_in_texts) == 0:
                     continue
                 center = kmeans.cluster_centers_[i]
                 top_keywords = [feature_names[j] for j in center.argsort()[-8:][::-1]]
@@ -99,12 +104,17 @@ class ProblemDiscoveryAgent:
                 if len(clean_kws) < self.MIN_KEYWORDS_TO_KEEP:
                     continue
 
+                # Map cluster membership back to indices in the original
+                # `documents` list (used for per-cluster sentiment aggregation).
+                doc_indices = [orig_indices[j] for j in indices_in_texts]
+
                 clusters.append({
                     "title": self._build_cluster_title(clean_kws),
                     "description": f"Recurring issues related to: {', '.join(clean_kws[:8])}",
                     "keywords": clean_kws,
-                    "source_count": len(indices),
-                    "demand_score": min(1.0, len(indices) / max(10, len(texts) // 5)),
+                    "source_count": len(indices_in_texts),
+                    "demand_score": min(1.0, len(indices_in_texts) / max(10, len(texts) // 5)),
+                    "_doc_indices": doc_indices,
                 })
             return clusters
         except Exception as e:
