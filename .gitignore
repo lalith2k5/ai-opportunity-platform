@@ -52,3 +52,4 @@ Thumbs.db
 # ============ Docker ============
 .docker/
 project_codebase.txt
+handoff/

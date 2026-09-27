@@ -1,13 +1,70 @@
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.cluster import KMeans
 import numpy as np
+from app.agents import opportunity_intelligence as _oi
+from app.agents.opportunity_intelligence import _clean_keywords, _title_case
+
+
+_EXTRA_NOISE = {
+    # Institutions / brands
+    "mit", "stanford", "berkeley", "cmu", "oxford", "cambridge", "harvard",
+    "caltech", "eth", "epfl", "openai", "anthropic", "deepmind", "gemini",
+    "claude", "chatgpt", "gpt", "copilot",
+    # Corporate / meeting boilerplate
+    "group", "advisory", "committee", "board", "member", "members",
+    "chair", "chairman", "director", "directors", "president",
+    "session", "workshop", "symposium", "seminar", "conference",
+    "meeting", "meetings", "summit", "forum", "panel", "keynote",
+    "strategic", "highlights", "recap", "bulletin", "newsletter",
+    # Academic / publication boilerplate
+    "journal", "volume", "issue", "edition", "editor", "editorial",
+    "proceedings", "transaction", "transactions", "abstract",
+    "introduction", "conclusion", "conclusions", "appendix",
+    "figure", "figures", "table", "tables", "equation", "equations",
+    "copyright", "license", "affiliation", "affiliations", "corresponding",
+    "received", "accepted", "published", "revised", "submitted",
+    "author", "authors", "manuscript", "submission", "preprint",
+    "fellowships", "fellowship", "scholarship", "scholarships",
+    # Numbers-as-words
+    "hundred", "thousand", "million", "billion", "trillion", "zero",
+    "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten",
+    # Generic verbs / connectors that TF-IDF over-weights
+    "wants", "want", "wanted", "wanted", "says", "said", "said",
+    "shows", "showed", "shown", "gives", "gave", "given",
+    "makes", "made", "takes", "took", "taken", "goes", "went",
+    # Over-broad single-word topics (too generic to be a title)
+    "emerging", "standards", "standard", "detector", "detectors",
+    "polygraph", "zipper", "brain", "lie", "lies", "truth", "false",
+    "inspired", "inspiring", "chip", "chips", "objective", "objectives",
+}
+_oi.NOISE_WORDS.update(_EXTRA_NOISE)
+
+# Short words allowed through (real acronyms/tech terms)
+_SHORT_ALLOWED = {
+    "ai", "ml", "iot", "nlp", "llm", "rag", "api", "ui", "ux", "db",
+    "sql", "aws", "gcp", "xai", "ar", "vr", "cnn", "rnn", "lstm",
+    "gan", "vae", "svm", "gpt", "bert", "5g", "6g", "3d",
+}
 
 
 class ProblemDiscoveryAgent:
-    """TF-IDF + KMeans. Cluster count scales with document volume."""
-
     MIN_CLUSTERS = 5
     MAX_CLUSTERS = 30
+    MIN_KEYWORDS_TO_KEEP = 3   # <- stricter: need 3+ meaningful keywords
+
+    def _clean_topic_keywords(self, raw_keywords: list) -> list:
+        cleaned = _clean_keywords(raw_keywords or [])
+        combined = cleaned["phrases"] + cleaned["singles"]
+        # Reject 3-char words unless they're a known acronym
+        out = []
+        for k in combined:
+            if " " in k or len(k) >= 4 or k.lower() in _SHORT_ALLOWED:
+                out.append(k)
+        return out
+
+    def _build_cluster_title(self, clean_keywords: list) -> str:
+        label = ", ".join(_title_case(k) for k in clean_keywords[:3])
+        return f"Problem Cluster: {label}"
 
     def discover(self, documents: list, n_clusters: int = None) -> list:
         texts = [
@@ -18,7 +75,6 @@ class ProblemDiscoveryAgent:
             return []
 
         if n_clusters is None:
-            # ~1 cluster per 8 docs, clamped between min and max
             n_clusters = max(self.MIN_CLUSTERS, min(self.MAX_CLUSTERS, len(texts) // 8))
         n_clusters = min(n_clusters, len(texts))
 
@@ -38,10 +94,15 @@ class ProblemDiscoveryAgent:
                     continue
                 center = kmeans.cluster_centers_[i]
                 top_keywords = [feature_names[j] for j in center.argsort()[-8:][::-1]]
+
+                clean_kws = self._clean_topic_keywords(top_keywords)
+                if len(clean_kws) < self.MIN_KEYWORDS_TO_KEEP:
+                    continue
+
                 clusters.append({
-                    "title": f"Problem Cluster: {', '.join(top_keywords[:3])}",
-                    "description": f"Recurring issues related to: {', '.join(top_keywords)}",
-                    "keywords": top_keywords,
+                    "title": self._build_cluster_title(clean_kws),
+                    "description": f"Recurring issues related to: {', '.join(clean_kws[:8])}",
+                    "keywords": clean_kws,
                     "source_count": len(indices),
                     "demand_score": min(1.0, len(indices) / max(10, len(texts) // 5)),
                 })
