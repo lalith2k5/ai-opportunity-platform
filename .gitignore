@@ -53,3 +53,4 @@ Thumbs.db
 .docker/
 project_codebase.txt
 handoff/
+clean_codebase_v*.txt
