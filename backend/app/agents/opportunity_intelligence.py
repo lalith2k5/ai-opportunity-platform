@@ -307,7 +307,7 @@ class OpportunityIntelligenceAgent:
         description = self._generate_description(problem_cluster, research_gap)
 
         raw_title = problem_cluster.get("title", "")
-        if raw_title:
+        if raw_title and _is_latin_only(raw_title):
             description += f" Source cluster: {raw_title[:120]}"
 
         return {

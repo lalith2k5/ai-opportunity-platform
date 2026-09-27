@@ -68,8 +68,16 @@ class ResearchGapAgent:
                         })
                         break
 
+            # Strip "Problem Cluster:" prefix and Chinese chars for cleaner titles
+            raw_title = cluster.get("title", "Unknown")
+            clean_title = raw_title.replace("Problem Cluster:", "").strip()
+            import re as _re
+            clean_title = _re.sub(r"[^\x00-\x7F]+", "", clean_title).strip()
+            if not clean_title:
+                clean_title = "Unknown Domain"
+
             gaps.append({
-                "title": f"Research Gap: {cluster.get('title', 'Unknown')}",
+                "title": f"Research Gap: {clean_title}",
                 "description": f"Limited research coverage ({coverage:.0%}) for problems related to: {', '.join(keywords[:5])}",
                 "gap_score": round(gap_score, 2),
                 "evidence": {
