@@ -11,14 +11,6 @@ class User(Base):
     role = Column(String, default="student")
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
-class DataSource(Base):
-    __tablename__ = "data_sources"
-    id = Column(Integer, primary_key=True, index=True)
-    name = Column(String, unique=True, nullable=False)
-    source_type = Column(String)
-    last_fetched = Column(DateTime(timezone=True))
-    is_active = Column(Boolean, default=True)
-
 class RawDocument(Base):
     __tablename__ = "raw_documents"
     id = Column(Integer, primary_key=True, index=True)

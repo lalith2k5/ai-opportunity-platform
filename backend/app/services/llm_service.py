@@ -38,6 +38,7 @@ class GeminiProvider(BaseProvider):
         return self.client is not None
 
     def generate(self, prompt: str, context: str = "") -> str:
+        import time as _t
         full = prompt if not context else (
             f"You are an innovation intelligence analyst with access to live platform data.\n\n"
             f"{context}\n\n"
@@ -48,11 +49,25 @@ class GeminiProvider(BaseProvider):
             "- If neither section answers the question, say so clearly instead of guessing.\n"
             "- Be concise. Use bullet points for lists."
         )
-        response = self.client.models.generate_content(
-            model=settings.GEMINI_MODEL,
-            contents=full,
-        )
-        return response.text
+        # Retry up to 3 times on 5xx / UNAVAILABLE — Google's Gemini commonly
+        # returns transient 503 during traffic spikes.
+        last_err = None
+        for attempt in range(3):
+            try:
+                response = self.client.models.generate_content(
+                    model=settings.GEMINI_MODEL,
+                    contents=full,
+                )
+                return response.text
+            except Exception as e:
+                last_err = e
+                msg = str(e)
+                if "503" in msg or "UNAVAILABLE" in msg or "429" in msg or "RESOURCE_EXHAUSTED" in msg:
+                    if attempt < 2:
+                        time.sleep(2 ** attempt)   # 1s, 2s
+                        continue
+                raise
+        raise last_err
 
 
 class OpenAIProvider(BaseProvider):
@@ -135,17 +150,31 @@ class AnthropicProvider(BaseProvider):
 
 
 class LLMService:
-    """Multi-provider wrapper with fallback + status reporting."""
+    """Multi-provider wrapper with fallback + status reporting.
+
+    Singleton — one instance per process so that `last_used` accumulates
+    across requests. Every caller gets the same object.
+    """
 
     PROVIDER_ORDER = ["gemini", "openai", "anthropic"]
+    _instance = None
+
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+            cls._instance._initialized = False
+        return cls._instance
 
     def __init__(self):
+        if getattr(self, "_initialized", False):
+            return
         self.providers = {
             "gemini":    GeminiProvider(),
             "openai":    OpenAIProvider(),
             "anthropic": AnthropicProvider(),
         }
         self._last_used: str | None = None
+        self._initialized = True
 
     @property
     def enabled(self) -> bool:

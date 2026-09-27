@@ -37,10 +37,6 @@ EDITABLE_KEYS = {
     "CHROMA_PERSIST_DIR":  {"label": "ChromaDB storage path",  "provider": "ChromaDB", "url": ""},
 }
 
-# Keys we never expose or edit
-SECRET_BLOCKLIST = set()
-
-
 def _mask(value: str) -> str:
     """Show enough to recognize the key, mask the rest."""
     if not value:
