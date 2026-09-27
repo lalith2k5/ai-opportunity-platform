@@ -41,4 +41,11 @@ class Settings:
     CHALLENGE_PORTAL_CAP: int = int(os.getenv("CHALLENGE_PORTAL_CAP", "20"))
     PROBLEM_EXTRACTION_CAP: int = int(os.getenv("PROBLEM_EXTRACTION_CAP", "8"))
 
+    # Per-source problem extraction caps (each extraction = 1 LLM call).
+    # Tuned for Gemini free-tier rate limits; raise in .env if you have headroom.
+    PROBLEM_EXTRACTION_CAP_GITHUB: int = int(os.getenv("PROBLEM_EXTRACTION_CAP_GITHUB", "3"))
+    PROBLEM_EXTRACTION_CAP_ARXIV: int = int(os.getenv("PROBLEM_EXTRACTION_CAP_ARXIV", "2"))
+    PROBLEM_EXTRACTION_CAP_NEWS: int = int(os.getenv("PROBLEM_EXTRACTION_CAP_NEWS", "1"))
+    PROBLEM_EXTRACTION_CAP_PATENTS: int = int(os.getenv("PROBLEM_EXTRACTION_CAP_PATENTS", "2"))
+
 settings = Settings()

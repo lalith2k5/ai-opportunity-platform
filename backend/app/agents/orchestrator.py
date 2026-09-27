@@ -398,18 +398,34 @@ class OrchestratorAgent:
 
         self._save_to_db(query, raw, processed, clusters, gaps, trends, opportunities, user_id=user_id)
 
-        # ---- Extract structured Problem Profiles from challenge portals ----
+        # ---- Extract structured Problem Profiles from ALL sources ----
+        # Each extraction = 1 LLM call. Caps are per-source so one noisy
+        # source cannot monopolize the extraction budget. Sources with
+        # empty results, or disabled sources (patents with no key), skip.
         problem_profiles = []
-        if challenge_items:
-            try:
-                from app.config import settings as _s
-                problem_profiles = self.problem_extractor.extract_batch(
-                    challenge_items, cap=_s.PROBLEM_EXTRACTION_CAP
-                )
-                if problem_profiles:
-                    self._save_problem_profiles(problem_profiles)
-            except Exception as e:
-                logger.error(f"ProblemProfile extraction failed: {e}")
+        try:
+            from app.config import settings as _s
+            extraction_targets = [
+                ("challenge_portal", challenge_items,               _s.PROBLEM_EXTRACTION_CAP),
+                ("github_issues",    raw.get("github_issues", []), _s.PROBLEM_EXTRACTION_CAP_GITHUB),
+                ("arxiv",            raw.get("arxiv", []),         _s.PROBLEM_EXTRACTION_CAP_ARXIV),
+                ("news",             raw.get("news", []),          _s.PROBLEM_EXTRACTION_CAP_NEWS),
+                ("patents",          raw.get("patents", []),       _s.PROBLEM_EXTRACTION_CAP_PATENTS),
+            ]
+            for src_name, items, cap in extraction_targets:
+                if not items or cap <= 0:
+                    continue
+                try:
+                    profiles = self.problem_extractor.extract_batch(
+                        items, cap=cap, source_type=src_name
+                    )
+                    if profiles:
+                        self._save_problem_profiles(profiles)
+                        problem_profiles.extend(profiles)
+                except Exception as e:
+                    logger.warning(f"ProblemProfile extraction failed for {src_name}: {e}")
+        except Exception as e:
+            logger.error(f"ProblemProfile extraction setup failed: {e}")
 
         # Strip private helper keys before returning to API
         for c in clusters:
