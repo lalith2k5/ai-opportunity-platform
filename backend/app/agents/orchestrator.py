@@ -150,6 +150,12 @@ class OrchestratorAgent:
             # 1b. Save ProcessedDocument rows linked to their RawDocument
             processed_inserted = 0
             if processed:
+                # Force pending raw_doc inserts into the transaction's view before
+                # querying them back. SessionLocal is configured with autoflush=False,
+                # so without this the query below cannot see raw documents added
+                # earlier in this same call — the result is that processed documents
+                # for brand-new sources are silently dropped.
+                db.flush()
                 all_raw = db.query(models.RawDocument).all()
                 raw_index = {}
                 for rd in all_raw:
@@ -300,6 +306,8 @@ class OrchestratorAgent:
         documents = []
         for repo in raw.get("github", [])[:200]:
             documents.append({"source": "github", "title": repo.get("name", ""), "content": repo.get("description", "") or ""})
+        for issue in raw.get("github_issues", [])[:200]:
+            documents.append({"source": "github_issues", "title": issue.get("title", ""), "content": issue.get("summary", "")})
         for post in raw.get("reddit", [])[:200]:
             documents.append({"source": "reddit", "title": post.get("title", ""), "content": post.get("selftext", "")})
         for paper in raw.get("arxiv", [])[:200]:

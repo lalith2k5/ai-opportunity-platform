@@ -9,8 +9,8 @@ from app.logger import logger
 
 # Mode → per-source caps
 MODES = {
-    "quick": {"github": 8,   "arxiv": 8,   "news": 8,   "reddit": 8,   "rd_cells": 8,   "patents": 8},
-    "deep":  {"github": 100, "arxiv": 100, "news": 100, "reddit": 50,  "rd_cells": 60,  "patents": 50},
+    "quick": {"github": 8,   "arxiv": 8,   "news": 8,   "reddit": 8,   "rd_cells": 8,   "patents": 8,   "github_issues": 8},
+    "deep":  {"github": 100, "arxiv": 100, "news": 100, "reddit": 50,  "rd_cells": 60,  "patents": 50,  "github_issues": 50},
 }
 
 
@@ -28,7 +28,8 @@ class DataCollectionAgent:
         logger.info(f"[DataCollection] Fetching for '{query}' (mode={mode}, caps={caps})")
 
         tasks = {
-            "github":   lambda: self.github.search_repositories(query, per_page=caps["github"]),
+            "github":        lambda: self.github.search_repositories(query, per_page=caps["github"]),
+            "github_issues": lambda: self.github.search_issues(query, per_page=caps["github_issues"]),
             "arxiv":    lambda: self.arxiv.search_papers(query, max_results=caps["arxiv"]),
             "news":     lambda: self.news.search_news(query, limit=caps["news"]),
             "reddit":   lambda: self.reddit.search_posts(query, limit=caps["reddit"]),
@@ -36,7 +37,7 @@ class DataCollectionAgent:
             "patents":  lambda: self.patents.search_patents(query, limit=caps["patents"]),
         }
 
-        results = {"github": [], "arxiv": [], "news": [], "reddit": [], "rd_cells": [], "patents": []}
+        results = {"github": [], "github_issues": [], "arxiv": [], "news": [], "reddit": [], "rd_cells": [], "patents": []}
         with ThreadPoolExecutor(max_workers=4) as ex:
             futures = {ex.submit(fn): name for name, fn in tasks.items()}
             for fut in as_completed(futures):
@@ -50,6 +51,7 @@ class DataCollectionAgent:
         logger.info(
             f"[DataCollection] Result: "
             f"{len(results['github'])} repos, "
+            f"{len(results['github_issues'])} issues, "
             f"{len(results['arxiv'])} papers, "
             f"{len(results['news'])} news, "
             f"{len(results['reddit'])} reddit, "
