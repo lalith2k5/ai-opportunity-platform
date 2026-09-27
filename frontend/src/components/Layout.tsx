@@ -1,95 +1,121 @@
 import { Link, useLocation } from 'react-router-dom';
-import { LayoutDashboard, Search, MessageSquare, FileText, Activity, LogOut, User as UserIcon, Shield, UserCircle, TrendingUp, BarChart3, Zap } from 'lucide-react';
+import {
+  LayoutDashboard, Search, MessageSquare, FileText, Activity,
+  TrendingUp, BarChart3, Zap, Shield,
+} from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import NotificationBell from './NotificationBell';
+import ThemeToggle from './ThemeToggle';
+import UserMenu from './UserMenu';
 
-const navItems = [
-  { path: '/', label: 'Dashboard', icon: LayoutDashboard },
-  { path: '/search', label: 'Search', icon: Search },
-  { path: '/chat', label: 'AI Chat', icon: MessageSquare },
-  { path: '/reports', label: 'Reports', icon: FileText },
-  { path: '/opportunities', label: 'Opportunities', icon: Zap },
-  { path: '/problems', label: 'Problems', icon: TrendingUp },
-  { path: '/analytics', label: 'Analytics', icon: BarChart3 },
+const sections = [
+  {
+    label: 'Workspace',
+    items: [
+      { path: '/', label: 'Dashboard', icon: LayoutDashboard },
+      { path: '/search', label: 'Search', icon: Search },
+      { path: '/chat', label: 'AI Chat', icon: MessageSquare },
+      { path: '/opportunities', label: 'Opportunities', icon: Zap },
+      { path: '/problems', label: 'Problems', icon: TrendingUp },
+    ],
+  },
+  {
+    label: 'Insights',
+    items: [
+      { path: '/reports', label: 'Reports', icon: FileText },
+      { path: '/analytics', label: 'Analytics', icon: BarChart3 },
+    ],
+  },
 ];
 
 export default function Layout({ children }: { children: React.ReactNode }) {
   const location = useLocation();
-  const { user, logout } = useAuth();
+  const { user } = useAuth();
 
   return (
-    <div className="flex h-screen overflow-hidden bg-brand-dark">
-      <aside className="w-64 flex-shrink-0 bg-brand-panel border-r border-brand-border p-5 flex flex-col h-screen">
-        <div className="flex items-center gap-2 mb-5">
-          <Activity className="text-brand-accent" size={26} />
-          <div>
-            <h1 className="text-white font-bold leading-tight">Opportunity AI</h1>
-            <p className="text-[10px] text-gray-500 uppercase tracking-wider">Innovation Intelligence</p>
+    <div className="flex h-screen overflow-hidden bg-canvas">
+      <aside className="w-[248px] flex-shrink-0 bg-surface border-r border-edge flex flex-col h-screen">
+
+        {/* Logo */}
+        <div className="px-4 pt-5 pb-4 flex items-center gap-2.5">
+          <div className="w-7 h-7 rounded-md bg-accent flex items-center justify-center flex-shrink-0">
+            <Activity className="text-accent-fg" size={16} />
+          </div>
+          <div className="min-w-0">
+            <h1 className="text-ink font-semibold text-sm leading-tight tracking-tight">Opportunity AI</h1>
+            <p className="text-2xs text-ink-4 uppercase tracking-wider leading-tight">Innovation Intelligence</p>
           </div>
         </div>
 
-        <div className="flex items-center justify-between mb-4">
+        {/* Quick actions row */}
+        <div className="px-3 pb-3 flex items-center gap-1 border-b border-edge-subtle">
+          <ThemeToggle />
           <NotificationBell />
-          <Link to="/profile" className="p-2 rounded-lg text-gray-400 hover:text-white hover:bg-brand-border transition-colors">
-            <UserCircle size={20} />
-          </Link>
         </div>
 
-        {user && (
-          <Link to="/profile" className="mb-5 px-3 py-2.5 bg-brand-dark border border-brand-border hover:border-brand-accent rounded-lg transition-colors block">
-            <div className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-full bg-brand-accent flex items-center justify-center flex-shrink-0">
-                <UserIcon size={15} />
-              </div>
-              <div className="min-w-0">
-                <p className="text-sm text-white font-medium truncate">{user.name}</p>
-                <p className="text-[10px] text-gray-500 capitalize truncate">{user.role}</p>
+        {/* Nav sections */}
+        <nav className="flex-1 overflow-y-auto px-3 py-3">
+          {sections.map((section) => (
+            <div key={section.label} className="mb-4">
+              <p className="px-2 mb-1.5 text-2xs font-semibold text-ink-4 uppercase tracking-wider">
+                {section.label}
+              </p>
+              <div className="space-y-0.5">
+                {section.items.map((item) => {
+                  const Icon = item.icon;
+                  const isActive = location.pathname === item.path;
+                  return (
+                    <Link
+                      key={item.path}
+                      to={item.path}
+                      className={`relative flex items-center gap-2.5 px-2 py-1.5 rounded-md text-sm transition-colors ${
+                        isActive
+                          ? 'bg-accent/10 text-ink font-medium'
+                          : 'text-ink-2 hover:bg-overlay hover:text-ink'
+                      }`}
+                    >
+                      {isActive && (
+                        <span className="absolute left-0 top-1.5 bottom-1.5 w-[2px] rounded-full bg-accent" />
+                      )}
+                      <Icon size={15} className={isActive ? 'text-accent' : ''} />
+                      <span className="truncate">{item.label}</span>
+                    </Link>
+                  );
+                })}
               </div>
             </div>
-          </Link>
-        )}
-
-        <nav className="flex flex-col gap-1 flex-1 overflow-y-auto">
-          {navItems.map(item => {
-            const Icon = item.icon;
-            const isActive = location.pathname === item.path;
-            return (
-              <Link
-                key={item.path}
-                to={item.path}
-                className={`flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors text-sm ${
-                  isActive ? 'bg-brand-accent text-white' : 'text-gray-400 hover:bg-brand-border hover:text-white'
-                }`}
-              >
-                <Icon size={18} />
-                <span className="font-medium">{item.label}</span>
-              </Link>
-            );
-          })}
+          ))}
 
           {user?.role === 'admin' && (
-            <Link
-              to="/admin"
-              className={`flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors text-sm ${
-                location.pathname === '/admin' ? 'bg-yellow-500/20 text-yellow-300' : 'text-yellow-400 hover:bg-brand-border hover:text-yellow-300'
-              }`}
-            >
-              <Shield size={18} />
-              <span className="font-medium">Admin</span>
-            </Link>
+            <div className="mb-4">
+              <p className="px-2 mb-1.5 text-2xs font-semibold text-ink-4 uppercase tracking-wider">
+                Admin
+              </p>
+              <Link
+                to="/admin"
+                className={`relative flex items-center gap-2.5 px-2 py-1.5 rounded-md text-sm transition-colors ${
+                  location.pathname === '/admin'
+                    ? 'bg-warning/10 text-ink font-medium'
+                    : 'text-ink-2 hover:bg-overlay hover:text-ink'
+                }`}
+              >
+                {location.pathname === '/admin' && (
+                  <span className="absolute left-0 top-1.5 bottom-1.5 w-[2px] rounded-full bg-warning" />
+                )}
+                <Shield size={15} className={location.pathname === '/admin' ? 'text-warning' : ''} />
+                <span>Admin</span>
+              </Link>
+            </div>
           )}
         </nav>
 
-        <button
-          onClick={async () => { await logout(); window.location.href = '/login'; }}
-          className="mt-3 flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-400 hover:bg-brand-border hover:text-white transition-colors text-sm"
-        >
-          <LogOut size={18} />
-          <span className="font-medium">Sign out</span>
-        </button>
+        {/* User menu */}
+        <div className="border-t border-edge p-3">
+          <UserMenu />
+        </div>
       </aside>
 
-      <main className="flex-1 overflow-y-auto h-screen">{children}</main>
+      <main className="flex-1 overflow-y-auto h-screen bg-canvas">{children}</main>
     </div>
   );
 }

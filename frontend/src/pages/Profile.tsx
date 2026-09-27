@@ -1,7 +1,19 @@
 import { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { updateProfile, changePassword } from '../services/api';
-import { Loader2, CheckCircle2, AlertCircle } from 'lucide-react';
+import { Loader2, CheckCircle2, User as UserIcon, Lock, Shield } from 'lucide-react';
+
+function Alert({ type, children }: { type: 'success' | 'error'; children: React.ReactNode }) {
+  const cls = type === 'success'
+    ? 'bg-success/10 border-success/30 text-success'
+    : 'bg-danger/10 border-danger/30 text-danger';
+  return (
+    <div className={`text-xs border rounded-md px-3 py-2.5 flex items-center gap-2 ${cls}`}>
+      <CheckCircle2 size={13} className="flex-shrink-0" />
+      <span>{children}</span>
+    </div>
+  );
+}
 
 export default function Profile() {
   const { user } = useAuth();
@@ -23,8 +35,7 @@ export default function Profile() {
     setSavingProfile(true); setProfileMsg(''); setProfileErr('');
     try {
       await updateProfile({ name, email });
-      setProfileMsg('Profile updated. Refresh page to see changes in sidebar.');
-      // Update localStorage
+      setProfileMsg('Profile updated successfully');
       localStorage.setItem('aod_user', JSON.stringify({ ...user, name, email }));
     } catch (e: any) {
       setProfileErr(e?.response?.data?.detail || e.message);
@@ -46,63 +57,98 @@ export default function Profile() {
   };
 
   return (
-    <div className="p-8 max-w-3xl mx-auto">
-      <h1 className="text-3xl font-bold text-white mb-1">Profile</h1>
-      <p className="text-gray-400 mb-8">Manage your account settings</p>
+    <div className="p-6 lg:p-8 max-w-3xl mx-auto">
 
-      <div className="bg-brand-panel border border-brand-border rounded-xl p-6 mb-6">
-        <div className="mb-4">
-          <h2 className="text-lg font-semibold text-white">Basic Information</h2>
-          <p className="text-xs text-gray-500 mt-1">Role: <span className="capitalize text-brand-accent">{user?.role}</span></p>
+      {/* Header */}
+      <div className="mb-6 flex items-center gap-4">
+        <div className="w-14 h-14 rounded-xl bg-accent flex items-center justify-center text-accent-fg">
+          <UserIcon size={24} />
         </div>
-        <form onSubmit={saveProfile} className="space-y-4">
-          {profileMsg && <div className="bg-emerald-900/30 border border-emerald-700 rounded-lg p-3 flex gap-2"><CheckCircle2 className="text-emerald-400" size={18} /><p className="text-emerald-300 text-sm">{profileMsg}</p></div>}
-          {profileErr && <div className="bg-red-900/30 border border-red-700 rounded-lg p-3 flex gap-2"><AlertCircle className="text-red-400" size={18} /><p className="text-red-300 text-sm">{profileErr}</p></div>}
-          <div>
-            <label className="block text-sm text-gray-400 mb-1">Name</label>
-            <input type="text" value={name} onChange={e => setName(e.target.value)} required
-              className="w-full bg-brand-dark border border-brand-border rounded-lg px-4 py-3 text-white" />
+        <div>
+          <h1 className="text-2xl font-bold text-ink tracking-tight">{user?.name}</h1>
+          <div className="flex items-center gap-2 mt-1">
+            <span className="text-sm text-ink-3">{user?.email}</span>
+            <span className="badge bg-accent/10 text-accent border border-accent/30 capitalize">
+              {user?.role}
+            </span>
           </div>
-          <div>
-            <label className="block text-sm text-gray-400 mb-1">Email</label>
-            <input type="email" value={email} onChange={e => setEmail(e.target.value)} required
-              className="w-full bg-brand-dark border border-brand-border rounded-lg px-4 py-3 text-white" />
-          </div>
-          <button type="submit" disabled={savingProfile}
-            className="bg-brand-accent hover:bg-indigo-600 disabled:opacity-50 text-white px-6 py-2 rounded-lg font-medium flex items-center gap-2">
-            {savingProfile && <Loader2 className="animate-spin" size={16} />}
-            {savingProfile ? 'Saving...' : 'Save changes'}
-          </button>
-        </form>
+        </div>
       </div>
 
-      <div className="bg-brand-panel border border-brand-border rounded-xl p-6">
-        <h2 className="text-lg font-semibold text-white mb-4">Change Password</h2>
-        <form onSubmit={savePassword} className="space-y-4">
-          {pwMsg && <div className="bg-emerald-900/30 border border-emerald-700 rounded-lg p-3 flex gap-2"><CheckCircle2 className="text-emerald-400" size={18} /><p className="text-emerald-300 text-sm">{pwMsg}</p></div>}
-          {pwErr && <div className="bg-red-900/30 border border-red-700 rounded-lg p-3 flex gap-2"><AlertCircle className="text-red-400" size={18} /><p className="text-red-300 text-sm">{pwErr}</p></div>}
+      {/* Basic info */}
+      <form onSubmit={saveProfile} className="bg-surface border border-edge rounded-lg p-6 mb-5">
+        <div className="flex items-center gap-2 mb-5">
+          <UserIcon size={14} className="text-accent" />
+          <h2 className="text-xs font-medium text-ink uppercase tracking-wider">Basic information</h2>
+        </div>
+
+        <div className="space-y-4">
+          {profileMsg && <Alert type="success">{profileMsg}</Alert>}
+          {profileErr && <Alert type="error">{profileErr}</Alert>}
+
           <div>
-            <label className="block text-sm text-gray-400 mb-1">Current password</label>
-            <input type="password" value={oldPw} onChange={e => setOldPw(e.target.value)} required
-              className="w-full bg-brand-dark border border-brand-border rounded-lg px-4 py-3 text-white" />
+            <label className="block text-xs font-medium text-ink-2 mb-1.5">Name</label>
+            <input type="text" value={name} onChange={e => setName(e.target.value)} required className="input" />
           </div>
+
           <div>
-            <label className="block text-sm text-gray-400 mb-1">New password</label>
-            <input type="password" value={newPw} onChange={e => setNewPw(e.target.value)} required
-              className="w-full bg-brand-dark border border-brand-border rounded-lg px-4 py-3 text-white" />
+            <label className="block text-xs font-medium text-ink-2 mb-1.5">Email</label>
+            <input type="email" value={email} onChange={e => setEmail(e.target.value)} required className="input" />
           </div>
+
+          <div className="flex justify-end pt-2">
+            <button type="submit" disabled={savingProfile} className="btn-primary text-xs">
+              {savingProfile && <Loader2 className="animate-spin" size={12} />}
+              {savingProfile ? 'Saving…' : 'Save changes'}
+            </button>
+          </div>
+        </div>
+      </form>
+
+      {/* Password */}
+      <form onSubmit={savePassword} className="bg-surface border border-edge rounded-lg p-6">
+        <div className="flex items-center gap-2 mb-5">
+          <Lock size={14} className="text-warning" />
+          <h2 className="text-xs font-medium text-ink uppercase tracking-wider">Change password</h2>
+        </div>
+
+        <div className="space-y-4">
+          {pwMsg && <Alert type="success">{pwMsg}</Alert>}
+          {pwErr && <Alert type="error">{pwErr}</Alert>}
+
           <div>
-            <label className="block text-sm text-gray-400 mb-1">Confirm new password</label>
-            <input type="password" value={confirmPw} onChange={e => setConfirmPw(e.target.value)} required
-              className="w-full bg-brand-dark border border-brand-border rounded-lg px-4 py-3 text-white" />
+            <label className="block text-xs font-medium text-ink-2 mb-1.5">Current password</label>
+            <input type="password" value={oldPw} onChange={e => setOldPw(e.target.value)} required className="input" />
           </div>
-          <button type="submit" disabled={savingPw}
-            className="bg-brand-accent hover:bg-indigo-600 disabled:opacity-50 text-white px-6 py-2 rounded-lg font-medium flex items-center gap-2">
-            {savingPw && <Loader2 className="animate-spin" size={16} />}
-            {savingPw ? 'Changing...' : 'Change password'}
-          </button>
-        </form>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-medium text-ink-2 mb-1.5">New password</label>
+              <input type="password" value={newPw} onChange={e => setNewPw(e.target.value)} required className="input" />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-ink-2 mb-1.5">Confirm new password</label>
+              <input type="password" value={confirmPw} onChange={e => setConfirmPw(e.target.value)} required className="input" />
+            </div>
+          </div>
+
+          <div className="flex justify-end pt-2">
+            <button type="submit" disabled={savingPw} className="btn-primary text-xs">
+              {savingPw && <Loader2 className="animate-spin" size={12} />}
+              {savingPw ? 'Changing…' : 'Change password'}
+            </button>
+          </div>
+        </div>
+      </form>
+
+      {/* Security note */}
+      <div className="mt-5 flex items-start gap-3 px-1">
+        <Shield size={14} className="text-ink-4 flex-shrink-0 mt-0.5" />
+        <p className="text-2xs text-ink-4 leading-relaxed">
+          Your password is protected with bcrypt hashing. Changing it will sign you out of all other devices automatically.
+        </p>
       </div>
+
     </div>
   );
 }

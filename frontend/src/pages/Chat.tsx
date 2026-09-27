@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { askAI, getChatHistory, getChatSession } from '../services/api';
-import { Send, Loader2, Bot, User, History, Plus } from 'lucide-react';
+import { Send, Loader2, Bot, User, History, Plus, MessageSquare, X } from 'lucide-react';
 
 interface Message { role: 'user' | 'assistant'; content: string; }
 interface Session { id: number; title: string; created_at: string; messages?: Message[]; }
@@ -55,100 +55,137 @@ export default function Chat() {
   const newChat = () => {
     setMessages([]);
     setSessionId(undefined);
+    setShowHistory(false);
   };
 
   return (
-    <div className="flex h-screen">
+    <div className="flex h-screen bg-canvas">
+
+      {/* History sidebar */}
       {showHistory && (
-        <aside className="w-72 border-r border-brand-border bg-brand-panel p-4 overflow-auto">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-white font-semibold flex items-center gap-2">
-              <History size={18} /> History
-            </h2>
-            <button
-              onClick={() => setShowHistory(false)}
-              className="text-gray-400 hover:text-white text-xs"
-            >Close</button>
-          </div>
-          <button
-            onClick={newChat}
-            className="w-full mb-4 bg-brand-accent hover:bg-indigo-600 text-white py-2 rounded-lg flex items-center justify-center gap-2 text-sm"
-          >
-            <Plus size={16} /> New Chat
-          </button>
-          <div className="space-y-2">
-            {sessions.length === 0 ? (
-              <p className="text-xs text-gray-500 text-center py-4">No sessions yet</p>
-            ) : (
-              sessions.map(s => (
-                <button
-                  key={s.id}
-                  onClick={() => loadSession(s.id)}
-                  className={`w-full text-left p-3 rounded-lg text-xs transition-colors ${
-                    sessionId === s.id ? 'bg-brand-accent text-white' : 'bg-brand-dark text-gray-300 hover:bg-brand-border'
-                  }`}
-                >
-                  <p className="truncate">{s.title || 'Untitled'}</p>
-                  <p className="text-gray-500 text-[10px] mt-1">
-                    {new Date(s.created_at).toLocaleDateString()}
-                  </p>
-                </button>
-              ))
-            )}
-          </div>
-        </aside>
+        <>
+          <div className="fixed inset-0 bg-black/40 z-30 md:hidden" onClick={() => setShowHistory(false)} />
+          <aside className="w-72 border-r border-edge bg-surface flex flex-col z-40 md:relative md:z-auto fixed inset-y-0 left-0">
+            <div className="px-3.5 py-3 border-b border-edge flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <History size={14} className="text-ink-3" />
+                <h2 className="text-xs font-medium text-ink uppercase tracking-wider">Sessions</h2>
+              </div>
+              <button onClick={() => setShowHistory(false)} className="p-1 rounded text-ink-4 hover:text-ink hover:bg-overlay">
+                <X size={14} />
+              </button>
+            </div>
+
+            <div className="p-3">
+              <button onClick={newChat} className="btn-primary w-full text-xs py-2">
+                <Plus size={13} /> New chat
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto px-2 pb-3">
+              {sessions.length === 0 ? (
+                <p className="text-xs text-ink-4 text-center py-6">No sessions yet</p>
+              ) : (
+                <div className="space-y-0.5">
+                  {sessions.map(s => (
+                    <button
+                      key={s.id}
+                      onClick={() => loadSession(s.id)}
+                      className={`w-full text-left px-2.5 py-2 rounded-md transition-colors ${
+                        sessionId === s.id
+                          ? 'bg-accent/10 text-ink'
+                          : 'text-ink-2 hover:bg-overlay'
+                      }`}
+                    >
+                      <p className="text-xs truncate">{s.title || 'Untitled'}</p>
+                      <p className="text-2xs text-ink-4 mt-0.5">
+                        {new Date(s.created_at).toLocaleDateString()}
+                      </p>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </aside>
+        </>
       )}
 
-      <div className="flex flex-col flex-1">
-        <div className="border-b border-brand-border p-4 bg-brand-panel flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold text-white">AI Chat</h1>
-            <p className="text-sm text-gray-400 mt-0.5">Ask about opportunities, research gaps, or trends.</p>
+      {/* Main chat */}
+      <div className="flex flex-col flex-1 min-w-0">
+
+        {/* Header */}
+        <div className="border-b border-edge px-6 py-4 bg-surface flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-md bg-accent/10 flex items-center justify-center">
+              <MessageSquare className="text-accent" size={15} />
+            </div>
+            <div>
+              <h1 className="text-base font-semibold text-ink tracking-tight">AI Chat</h1>
+              <p className="text-2xs text-ink-4">Ask about opportunities, gaps, or trends</p>
+            </div>
           </div>
           <button
             onClick={() => setShowHistory(h => !h)}
-            className="bg-brand-dark border border-brand-border hover:border-brand-accent text-white px-3 py-2 rounded-lg flex items-center gap-2 text-sm"
+            className="btn-secondary text-xs"
           >
-            <History size={16} /> {showHistory ? 'Hide' : 'History'}
+            <History size={13} /> {showHistory ? 'Hide' : 'History'}
           </button>
         </div>
 
+        {/* Messages */}
         <div className="flex-1 overflow-auto p-6">
           {messages.length === 0 ? (
-            <div className="max-w-2xl mx-auto mt-12">
+            <div className="max-w-2xl mx-auto mt-8 lg:mt-16">
               <div className="text-center mb-8">
-                <Bot className="mx-auto text-brand-accent mb-3" size={48} />
-                <h2 className="text-xl font-semibold text-white">How can I help?</h2>
-                <p className="text-gray-400 mt-1">Try one of these:</p>
+                <div className="w-12 h-12 rounded-lg bg-accent/10 flex items-center justify-center mx-auto mb-4">
+                  <Bot className="text-accent" size={22} />
+                </div>
+                <h2 className="text-lg font-semibold text-ink tracking-tight">How can I help?</h2>
+                <p className="text-sm text-ink-3 mt-1">Try one of these prompts to get started:</p>
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
                 {SUGGESTIONS.map(s => (
-                  <button key={s} onClick={() => send(s)}
-                    className="text-left bg-brand-panel border border-brand-border hover:border-brand-accent rounded-lg p-4 text-sm text-gray-300 transition-colors">
+                  <button
+                    key={s}
+                    onClick={() => send(s)}
+                    className="text-left bg-surface border border-edge hover:border-accent/40 hover:bg-overlay rounded-lg p-3.5 text-sm text-ink-2 transition-colors"
+                  >
                     {s}
                   </button>
                 ))}
               </div>
             </div>
           ) : (
-            <div className="max-w-3xl mx-auto space-y-4">
+            <div className="max-w-3xl mx-auto space-y-5">
               {messages.map((m, i) => (
                 <div key={i} className={`flex gap-3 ${m.role === 'user' ? 'justify-end' : ''}`}>
                   {m.role === 'assistant' && (
-                    <div className="w-8 h-8 rounded-full bg-brand-accent flex items-center justify-center flex-shrink-0"><Bot size={18} /></div>
+                    <div className="w-7 h-7 rounded-md bg-accent flex items-center justify-center flex-shrink-0 text-accent-fg">
+                      <Bot size={14} />
+                    </div>
                   )}
-                  <div className={`max-w-[80%] rounded-2xl px-4 py-3 ${m.role === 'user' ? 'bg-brand-accent text-white' : 'bg-brand-panel border border-brand-border text-gray-200'}`}>
+                  <div className={`max-w-[80%] rounded-lg px-3.5 py-2.5 ${
+                    m.role === 'user'
+                      ? 'bg-accent text-accent-fg'
+                      : 'bg-surface border border-edge text-ink-2'
+                  }`}>
                     <p className="whitespace-pre-wrap text-sm leading-relaxed">{m.content}</p>
                   </div>
                   {m.role === 'user' && (
-                    <div className="w-8 h-8 rounded-full bg-gray-700 flex items-center justify-center flex-shrink-0"><User size={18} /></div>
+                    <div className="w-7 h-7 rounded-md bg-overlay border border-edge flex items-center justify-center flex-shrink-0 text-ink-3">
+                      <User size={14} />
+                    </div>
                   )}
                 </div>
               ))}
               {loading && (
                 <div className="flex gap-3">
-                  <div className="w-8 h-8 rounded-full bg-brand-accent flex items-center justify-center"><Bot size={18} /></div>
-                  <div className="bg-brand-panel border border-brand-border rounded-2xl px-4 py-3"><Loader2 className="animate-spin text-gray-400" size={18} /></div>
+                  <div className="w-7 h-7 rounded-md bg-accent flex items-center justify-center text-accent-fg">
+                    <Bot size={14} />
+                  </div>
+                  <div className="bg-surface border border-edge rounded-lg px-3.5 py-2.5">
+                    <Loader2 className="animate-spin text-ink-4" size={14} />
+                  </div>
                 </div>
               )}
               <div ref={bottomRef} />
@@ -156,17 +193,24 @@ export default function Chat() {
           )}
         </div>
 
-        <div className="border-t border-brand-border p-6 bg-brand-panel">
-          <div className="max-w-3xl mx-auto flex gap-3">
+        {/* Composer */}
+        <div className="border-t border-edge p-4 bg-surface">
+          <div className="max-w-3xl mx-auto flex gap-2">
             <input
-              type="text" value={input} onChange={e => setInput(e.target.value)}
+              type="text"
+              value={input}
+              onChange={e => setInput(e.target.value)}
               onKeyDown={e => e.key === 'Enter' && send()}
-              placeholder="Ask about opportunities, trends, research gaps..." disabled={loading}
-              className="flex-1 bg-brand-dark border border-brand-border rounded-lg px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-brand-accent disabled:opacity-50"
+              placeholder="Ask anything…"
+              disabled={loading}
+              className="input flex-1"
             />
-            <button onClick={() => send()} disabled={loading || !input.trim()}
-              className="bg-brand-accent hover:bg-indigo-600 disabled:opacity-50 text-white px-5 rounded-lg flex items-center justify-center transition-colors">
-              <Send size={18} />
+            <button
+              onClick={() => send()}
+              disabled={loading || !input.trim()}
+              className="btn-primary px-3.5"
+            >
+              <Send size={14} />
             </button>
           </div>
         </div>

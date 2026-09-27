@@ -1,13 +1,15 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { Activity, Loader2, AlertCircle } from 'lucide-react';
+import AuthShell from '../components/AuthShell';
+import { Field, Alert } from '../components/Field';
+import { Loader2 } from 'lucide-react';
 
 const ROLES = [
-  { value: 'student', label: 'Student' },
-  { value: 'researcher', label: 'Researcher' },
-  { value: 'entrepreneur', label: 'Entrepreneur' },
-  { value: 'investor', label: 'Investor' },
+  { value: 'student',      label: 'Student',       hint: 'Project ideas, topics' },
+  { value: 'researcher',   label: 'Researcher',    hint: 'Gaps, papers, trends' },
+  { value: 'entrepreneur', label: 'Entrepreneur',  hint: 'Startup opportunities' },
+  { value: 'investor',     label: 'Investor',      hint: 'Market signals' },
 ];
 
 export default function Register() {
@@ -32,88 +34,69 @@ export default function Register() {
       navigate('/');
     } catch (err: any) {
       setError(err.message || 'Registration failed');
-    } finally {
-      setLoading(false);
-    }
+    } finally { setLoading(false); }
   };
 
   return (
-    <div className="min-h-screen bg-brand-dark flex items-center justify-center p-4">
-      <div className="w-full max-w-md">
-        <div className="text-center mb-8">
-          <Activity className="mx-auto text-brand-accent mb-3" size={40} />
-          <h1 className="text-2xl font-bold text-white">Create your account</h1>
-          <p className="text-gray-400 mt-1 text-sm">Join the opportunity discovery platform</p>
-        </div>
+    <AuthShell
+      title="Create your account"
+      subtitle="Start discovering opportunities in under a minute."
+      footer={
+        <>
+          Already have an account?{' '}
+          <Link to="/login" className="text-accent hover:text-accent-hover font-medium">Sign in</Link>
+        </>
+      }
+    >
+      <form onSubmit={submit} className="space-y-4">
+        {error && <Alert type="error">{error}</Alert>}
 
-        <form onSubmit={submit} className="bg-brand-panel border border-brand-border rounded-xl p-6 space-y-4">
-          {error && (
-            <div className="bg-red-900/30 border border-red-700 rounded-lg p-3 flex items-start gap-2">
-              <AlertCircle className="text-red-400 mt-0.5 flex-shrink-0" size={18} />
-              <p className="text-red-300 text-sm">{error}</p>
-            </div>
-          )}
+        <Field label="Full name" htmlFor="name">
+          <input id="name" type="text" required value={name}
+            onChange={e => setName(e.target.value)} placeholder="Jane Doe" className="input" />
+        </Field>
 
-          <div>
-            <label className="block text-sm text-gray-400 mb-1">Full name</label>
-            <input
-              type="text" value={name} onChange={e => setName(e.target.value)} required
-              className="w-full bg-brand-dark border border-brand-border rounded-lg px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-brand-accent"
-              placeholder="Jane Doe"
-            />
+        <Field label="Email" htmlFor="email">
+          <input id="email" type="email" autoComplete="email" required value={email}
+            onChange={e => setEmail(e.target.value)} placeholder="you@example.com" className="input" />
+        </Field>
+
+        <Field label="I am a…" hint={ROLES.find(r => r.value === role)?.hint}>
+          <div className="grid grid-cols-2 gap-2">
+            {ROLES.map(r => (
+              <button
+                key={r.value}
+                type="button"
+                onClick={() => setRole(r.value)}
+                className={`px-3 py-2 text-sm rounded-md border text-left transition-all ${
+                  role === r.value
+                    ? 'bg-accent/10 border-accent/50 text-ink font-medium'
+                    : 'bg-canvas border-edge text-ink-2 hover:border-edge-strong'
+                }`}
+              >
+                {r.label}
+              </button>
+            ))}
           </div>
+        </Field>
 
-          <div>
-            <label className="block text-sm text-gray-400 mb-1">Email</label>
-            <input
-              type="email" value={email} onChange={e => setEmail(e.target.value)} required
-              className="w-full bg-brand-dark border border-brand-border rounded-lg px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-brand-accent"
-              placeholder="you@example.com"
-            />
-          </div>
+        <Field label="Password" htmlFor="password" hint="Minimum 6 characters">
+          <input id="password" type="password" autoComplete="new-password" required
+            value={password} onChange={e => setPassword(e.target.value)}
+            placeholder="••••••••" className="input" />
+        </Field>
 
-          <div>
-            <label className="block text-sm text-gray-400 mb-1">I am a…</label>
-            <select
-              value={role} onChange={e => setRole(e.target.value)}
-              className="w-full bg-brand-dark border border-brand-border rounded-lg px-4 py-3 text-white focus:outline-none focus:border-brand-accent"
-            >
-              {ROLES.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
-            </select>
-          </div>
+        <Field label="Confirm password" htmlFor="confirm">
+          <input id="confirm" type="password" autoComplete="new-password" required
+            value={confirm} onChange={e => setConfirm(e.target.value)}
+            placeholder="••••••••" className="input" />
+        </Field>
 
-          <div>
-            <label className="block text-sm text-gray-400 mb-1">Password</label>
-            <input
-              type="password" value={password} onChange={e => setPassword(e.target.value)} required
-              className="w-full bg-brand-dark border border-brand-border rounded-lg px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-brand-accent"
-              placeholder="At least 6 characters"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm text-gray-400 mb-1">Confirm password</label>
-            <input
-              type="password" value={confirm} onChange={e => setConfirm(e.target.value)} required
-              className="w-full bg-brand-dark border border-brand-border rounded-lg px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-brand-accent"
-              placeholder="Repeat password"
-            />
-          </div>
-
-          <button
-            type="submit" disabled={loading}
-            className="w-full bg-brand-accent hover:bg-indigo-600 disabled:opacity-50 text-white py-3 rounded-lg font-medium flex items-center justify-center gap-2 transition-colors"
-          >
-            {loading ? <Loader2 className="animate-spin" size={18} /> : null}
-            {loading ? 'Creating account...' : 'Create account'}
-          </button>
-
-          <p className="text-center text-sm text-gray-400 pt-2">
-            Already have an account?{' '}
-            <Link to="/login" className="text-brand-accent hover:underline">Sign in</Link>
-          </p>
-        </form>
-      </div>
-    </div>
+        <button type="submit" disabled={loading} className="btn-primary w-full py-2.5">
+          {loading ? <Loader2 className="animate-spin" size={15} /> : null}
+          {loading ? 'Creating account…' : 'Create account'}
+        </button>
+      </form>
+    </AuthShell>
   );
 }

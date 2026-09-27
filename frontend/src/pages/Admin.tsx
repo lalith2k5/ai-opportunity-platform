@@ -3,7 +3,11 @@ import {
   adminGetStats, adminGetUsers, adminUpdateRole, adminDeleteUser,
   adminGetLogs, adminGetScheduler, adminTriggerScheduler,
 } from '../services/api';
-import { Loader2, Users, Activity, AlertCircle, Trash2, RefreshCw, Play } from 'lucide-react';
+import {
+  Loader2, Users, Activity, Trash2, RefreshCw, Play, Shield, FileText, Clock,
+} from 'lucide-react';
+
+const ROLE_OPTIONS = ['student', 'researcher', 'entrepreneur', 'investor', 'admin'];
 
 export default function Admin() {
   const [stats, setStats] = useState<any>(null);
@@ -22,26 +26,20 @@ export default function Admin() {
       setStats(s); setUsers(u); setLogs(l); setScheduler(sc);
     } catch (e: any) {
       alert(`Admin access error: ${e?.response?.data?.detail || e.message}`);
-    } finally {
-      setLoading(false);
-    }
+    } finally { setLoading(false); }
   };
 
   useEffect(() => { load(); }, []);
 
   const handleRoleChange = async (id: number, role: string) => {
-    try {
-      await adminUpdateRole(id, role);
-      await load();
-    } catch (e: any) { alert(e.message); }
+    try { await adminUpdateRole(id, role); await load(); }
+    catch (e: any) { alert(e.message); }
   };
 
   const handleDelete = async (id: number) => {
-    if (!confirm(`Delete user #${id}?`)) return;
-    try {
-      await adminDeleteUser(id);
-      await load();
-    } catch (e: any) { alert(e.message); }
+    if (!confirm(`Delete user #${id}? This cannot be undone.`)) return;
+    try { await adminDeleteUser(id); await load(); }
+    catch (e: any) { alert(e.message); }
   };
 
   const handleTrigger = async () => {
@@ -51,130 +49,190 @@ export default function Admin() {
     } catch (e: any) { alert(e.message); }
   };
 
-  if (loading) return <div className="flex items-center justify-center h-screen"><Loader2 className="animate-spin text-brand-accent" size={48} /></div>;
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-screen">
+        <Loader2 className="animate-spin text-accent" size={32} />
+      </div>
+    );
+  }
+
+  const tabs = [
+    { id: 'overview',  label: 'Overview',  icon: FileText },
+    { id: 'users',     label: 'Users',     icon: Users },
+    { id: 'logs',      label: 'Logs',      icon: Activity },
+    { id: 'scheduler', label: 'Scheduler', icon: Clock },
+  ] as const;
 
   return (
-    <div className="p-8">
-      <div className="mb-6 flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold text-white">Admin Panel</h1>
-          <p className="text-gray-400 mt-1">System overview and management</p>
+    <div className="p-6 lg:p-8 max-w-[1500px] mx-auto">
+
+      {/* Header */}
+      <div className="mb-6 flex items-center justify-between gap-4 flex-wrap">
+        <div className="flex items-center gap-3">
+          <div className="w-8 h-8 rounded-md bg-warning/10 flex items-center justify-center">
+            <Shield className="text-warning" size={16} />
+          </div>
+          <div>
+            <h1 className="text-2xl font-bold text-ink tracking-tight">Admin panel</h1>
+            <p className="text-sm text-ink-3">System overview and management</p>
+          </div>
         </div>
-        <button onClick={load} className="bg-brand-panel border border-brand-border hover:border-brand-accent text-white px-4 py-2 rounded-lg flex items-center gap-2">
-          <RefreshCw size={16} /> Refresh
+        <button onClick={load} className="btn-secondary text-xs">
+          <RefreshCw size={13} /> Refresh
         </button>
       </div>
 
-      <div className="flex gap-2 mb-6">
-        {(['overview', 'users', 'logs', 'scheduler'] as const).map(t => (
-          <button
-            key={t}
-            onClick={() => setTab(t)}
-            className={`px-4 py-2 rounded-lg text-sm font-medium capitalize transition-colors ${
-              tab === t ? 'bg-brand-accent text-white' : 'bg-brand-panel border border-brand-border text-gray-300 hover:text-white'
-            }`}
-          >{t}</button>
-        ))}
+      {/* Tabs */}
+      <div className="flex gap-1 mb-6 border-b border-edge">
+        {tabs.map(t => {
+          const Icon = t.icon;
+          const active = tab === t.id;
+          return (
+            <button
+              key={t.id}
+              onClick={() => setTab(t.id)}
+              className={`relative flex items-center gap-2 px-3 py-2.5 text-sm transition-colors ${
+                active ? 'text-ink font-medium' : 'text-ink-3 hover:text-ink-2'
+              }`}
+            >
+              <Icon size={14} />
+              {t.label}
+              {active && <span className="absolute left-0 right-0 -bottom-px h-[2px] bg-accent rounded-full" />}
+            </button>
+          );
+        })}
       </div>
 
+      {/* Overview */}
       {tab === 'overview' && stats && (
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
           {Object.entries(stats).map(([k, v]) => (
-            <div key={k} className="bg-brand-panel border border-brand-border rounded-xl p-5">
-              <p className="text-xs text-gray-500 uppercase">{k.replace(/_/g, ' ')}</p>
-              <p className="text-2xl font-bold text-white mt-1">{String(v)}</p>
+            <div key={k} className="bg-surface border border-edge rounded-lg p-4">
+              <p className="text-2xs font-medium text-ink-4 uppercase tracking-wider mb-2">
+                {k.replace(/_/g, ' ')}
+              </p>
+              <p className="text-2xl font-semibold text-ink font-mono tabular-nums">{String(v)}</p>
             </div>
           ))}
         </div>
       )}
 
+      {/* Users */}
       {tab === 'users' && (
-        <div className="bg-brand-panel border border-brand-border rounded-xl overflow-hidden">
-          <table className="w-full text-sm">
-            <thead className="bg-brand-dark text-gray-500 text-xs uppercase">
-              <tr>
-                <th className="text-left px-4 py-3">ID</th>
-                <th className="text-left px-4 py-3">Name</th>
-                <th className="text-left px-4 py-3">Email</th>
-                <th className="text-left px-4 py-3">Role</th>
-                <th className="text-right px-4 py-3">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {users.map(u => (
-                <tr key={u.id} className="border-t border-brand-border">
-                  <td className="px-4 py-3 text-gray-400">{u.id}</td>
-                  <td className="px-4 py-3 text-white">{u.name}</td>
-                  <td className="px-4 py-3 text-gray-300">{u.email}</td>
-                  <td className="px-4 py-3">
-                    <select
-                      value={u.role}
-                      onChange={e => handleRoleChange(u.id, e.target.value)}
-                      className="bg-brand-dark border border-brand-border rounded px-2 py-1 text-white text-xs"
-                    >
-                      {['student', 'researcher', 'entrepreneur', 'investor', 'admin'].map(r => (
-                        <option key={r} value={r}>{r}</option>
-                      ))}
-                    </select>
-                  </td>
-                  <td className="px-4 py-3 text-right">
-                    <button onClick={() => handleDelete(u.id)} className="text-red-400 hover:text-red-300">
-                      <Trash2 size={16} />
-                    </button>
-                  </td>
+        <div className="bg-surface border border-edge rounded-lg overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-edge bg-overlay">
+                  <th className="text-left text-2xs font-medium text-ink-4 uppercase tracking-wider px-4 py-2.5 w-14">ID</th>
+                  <th className="text-left text-2xs font-medium text-ink-4 uppercase tracking-wider px-4 py-2.5">Name</th>
+                  <th className="text-left text-2xs font-medium text-ink-4 uppercase tracking-wider px-4 py-2.5">Email</th>
+                  <th className="text-left text-2xs font-medium text-ink-4 uppercase tracking-wider px-4 py-2.5 w-40">Role</th>
+                  <th className="text-right text-2xs font-medium text-ink-4 uppercase tracking-wider px-4 py-2.5 w-16"></th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {users.map(u => (
+                  <tr key={u.id} className="border-b border-edge-subtle last:border-0 hover:bg-overlay/60 transition-colors">
+                    <td className="px-4 py-3 text-ink-4 font-mono text-xs">{u.id}</td>
+                    <td className="px-4 py-3 text-ink text-xs">{u.name}</td>
+                    <td className="px-4 py-3 text-ink-2 text-xs">{u.email}</td>
+                    <td className="px-4 py-3">
+                      <select
+                        value={u.role}
+                        onChange={e => handleRoleChange(u.id, e.target.value)}
+                        className="input text-xs py-1 px-2"
+                      >
+                        {ROLE_OPTIONS.map(r => <option key={r} value={r}>{r}</option>)}
+                      </select>
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      <button
+                        onClick={() => handleDelete(u.id)}
+                        className="p-1.5 rounded-md text-ink-4 hover:text-danger hover:bg-danger/10 transition-colors"
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 
+      {/* Logs */}
       {tab === 'logs' && (
-        <div className="bg-brand-panel border border-brand-border rounded-xl p-4 max-h-[600px] overflow-auto">
+        <div className="bg-surface border border-edge rounded-lg p-3 max-h-[640px] overflow-y-auto">
           {logs.length === 0 ? (
-            <p className="text-gray-500 text-center py-4">No logs</p>
-          ) : logs.map(l => (
-            <div key={l.id} className="border-b border-brand-border last:border-0 py-3 text-xs">
-              <div className="flex items-center gap-2">
-                <span className={`px-2 py-0.5 rounded ${l.status === 'success' ? 'bg-emerald-900/30 text-emerald-300' : 'bg-red-900/30 text-red-300'}`}>
-                  {l.status}
-                </span>
-                <span className="text-brand-accent font-medium">{l.agent_name}</span>
-                <span className="text-gray-400">{l.action}</span>
-                <span className="text-gray-600 ml-auto">{new Date(l.created_at).toLocaleString()}</span>
-              </div>
-              {l.details && (
-                <pre className="mt-1 text-gray-500 text-[10px]">{JSON.stringify(l.details)}</pre>
-              )}
+            <p className="text-sm text-ink-4 text-center py-8">No logs</p>
+          ) : (
+            <div className="space-y-0.5">
+              {logs.map(l => (
+                <div key={l.id} className="flex items-center gap-3 px-2.5 py-2 rounded-md hover:bg-overlay transition-colors">
+                  <span className={`badge ${
+                    l.status === 'success'
+                      ? 'bg-success/15 text-success border border-success/30'
+                      : 'bg-danger/15 text-danger border border-danger/30'
+                  }`}>
+                    {l.status}
+                  </span>
+                  <span className="text-xs text-accent font-medium flex-shrink-0">{l.agent_name}</span>
+                  <span className="text-xs text-ink-2 truncate flex-1">{l.action}</span>
+                  <span className="text-2xs text-ink-4 font-mono flex-shrink-0">
+                    {new Date(l.created_at).toLocaleTimeString()}
+                  </span>
+                </div>
+              ))}
             </div>
-          ))}
+          )}
         </div>
       )}
 
+      {/* Scheduler */}
       {tab === 'scheduler' && scheduler && (
-        <div className="bg-brand-panel border border-brand-border rounded-xl p-6">
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-2">
-              <Activity className={scheduler.running ? 'text-emerald-400' : 'text-red-400'} size={20} />
-              <h2 className="text-lg font-semibold text-white">
-                Scheduler: {scheduler.running ? 'Running' : 'Stopped'}
-              </h2>
+        <div className="space-y-4">
+          <div className="bg-surface border border-edge rounded-lg p-5 flex items-center justify-between gap-4 flex-wrap">
+            <div className="flex items-center gap-3">
+              <div className={`w-2 h-2 rounded-full ${scheduler.running ? 'bg-success animate-pulse' : 'bg-danger'}`} />
+              <div>
+                <h2 className="text-sm font-semibold text-ink">
+                  Scheduler is {scheduler.running ? 'running' : 'stopped'}
+                </h2>
+                <p className="text-xs text-ink-3 mt-0.5">
+                  Continuous monitoring every 6 hours · cleanup daily at 3 AM
+                </p>
+              </div>
             </div>
-            <button onClick={handleTrigger} className="bg-brand-accent hover:bg-indigo-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 text-sm">
-              <Play size={14} /> Trigger Now
+            <button onClick={handleTrigger} className="btn-primary text-xs">
+              <Play size={13} /> Trigger now
             </button>
           </div>
-          <div className="space-y-3">
-            {scheduler.jobs.map((j: any) => (
-              <div key={j.id} className="border border-brand-border rounded-lg p-3 text-sm">
-                <p className="text-white font-medium">{j.name}</p>
-                <p className="text-xs text-gray-500 mt-1">ID: {j.id}</p>
-                <p className="text-xs text-gray-500">Next run: {j.next_run || 'N/A'}</p>
-              </div>
-            ))}
+
+          <div className="bg-surface border border-edge rounded-lg p-5">
+            <h3 className="text-xs font-medium text-ink uppercase tracking-wider mb-4">Scheduled jobs</h3>
+            <div className="space-y-2">
+              {scheduler.jobs.map((j: any) => (
+                <div key={j.id} className="flex items-center justify-between gap-3 py-2.5 border-b border-edge-subtle last:border-0">
+                  <div>
+                    <p className="text-sm text-ink font-medium">{j.name}</p>
+                    <p className="text-2xs text-ink-4 font-mono mt-0.5">{j.id}</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-2xs text-ink-4 uppercase tracking-wider">Next run</p>
+                    <p className="text-xs text-ink-2 font-mono">
+                      {j.next_run ? new Date(j.next_run).toLocaleString() : '—'}
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       )}
+
     </div>
   );
 }

@@ -1,13 +1,33 @@
+import type { LucideIcon } from 'lucide-react';
+
 export default function StatCard({
-  label, value, sublabel, color = 'text-brand-accent',
+  label,
+  value,
+  sublabel,
+  icon: Icon,
+  accent = false,
 }: {
-  label: string; value: string | number; sublabel?: string; color?: string;
+  label: string;
+  value: string | number;
+  sublabel?: string;
+  icon?: LucideIcon;
+  accent?: boolean;
 }) {
   return (
-    <div className="bg-brand-panel border border-brand-border rounded-xl p-5">
-      <p className="text-sm text-gray-400 mb-1">{label}</p>
-      <p className={`text-3xl font-bold ${color}`}>{value}</p>
-      {sublabel && <p className="text-xs text-gray-500 mt-1">{sublabel}</p>}
+    <div className="group relative bg-surface border border-edge rounded-lg p-4 hover:border-edge-strong transition-colors">
+      <div className="flex items-center justify-between mb-3">
+        <p className="text-2xs font-medium text-ink-4 uppercase tracking-wider">{label}</p>
+        {Icon && (
+          <Icon
+            size={14}
+            className={accent ? 'text-accent' : 'text-ink-4 group-hover:text-ink-3 transition-colors'}
+          />
+        )}
+      </div>
+      <p className="text-2xl font-semibold text-ink font-mono tabular-nums tracking-tight">
+        {value}
+      </p>
+      {sublabel && <p className="text-2xs text-ink-4 mt-1">{sublabel}</p>}
     </div>
   );
 }

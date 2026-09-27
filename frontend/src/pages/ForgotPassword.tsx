@@ -1,7 +1,9 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { forgotPassword } from '../services/api';
-import { Activity, Loader2, AlertCircle, CheckCircle2 } from 'lucide-react';
+import AuthShell from '../components/AuthShell';
+import { Field, Alert } from '../components/Field';
+import { Loader2, ArrowRight } from 'lucide-react';
 
 export default function ForgotPassword() {
   const [email, setEmail] = useState('');
@@ -21,51 +23,51 @@ export default function ForgotPassword() {
   };
 
   return (
-    <div className="min-h-screen bg-brand-dark flex items-center justify-center p-4">
-      <div className="w-full max-w-md">
-        <div className="text-center mb-8">
-          <Activity className="mx-auto text-brand-accent mb-3" size={40} />
-          <h1 className="text-2xl font-bold text-white">Reset your password</h1>
-          <p className="text-gray-400 mt-1 text-sm">We'll send you a reset link</p>
-        </div>
-        <form onSubmit={submit} className="bg-brand-panel border border-brand-border rounded-xl p-6 space-y-4">
-          {error && (
-            <div className="bg-red-900/30 border border-red-700 rounded-lg p-3 flex gap-2">
-              <AlertCircle className="text-red-400 flex-shrink-0" size={18} />
-              <p className="text-red-300 text-sm">{error}</p>
-            </div>
-          )}
-          {resetLink && (
-            <div className="bg-emerald-900/30 border border-emerald-700 rounded-lg p-3">
-              <div className="flex gap-2 mb-2">
-                <CheckCircle2 className="text-emerald-400 flex-shrink-0" size={18} />
-                <p className="text-emerald-300 text-sm">Reset link generated (dev mode)</p>
-              </div>
-              <Link to={resetLink.replace('http://localhost:5173', '')} className="text-brand-accent hover:underline text-xs break-all">
-                {resetLink}
-              </Link>
-            </div>
-          )}
-          <div>
-            <label className="block text-sm text-gray-400 mb-1">Email</label>
-            <input
-              type="email" value={email} onChange={e => setEmail(e.target.value)} required
-              className="w-full bg-brand-dark border border-brand-border rounded-lg px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-brand-accent"
-              placeholder="you@example.com"
-            />
-          </div>
-          <button
-            type="submit" disabled={loading}
-            className="w-full bg-brand-accent hover:bg-indigo-600 disabled:opacity-50 text-white py-3 rounded-lg font-medium flex items-center justify-center gap-2"
-          >
-            {loading && <Loader2 className="animate-spin" size={18} />}
-            {loading ? 'Sending...' : 'Send reset link'}
-          </button>
-          <p className="text-center text-sm text-gray-400 pt-2">
-            Remembered? <Link to="/login" className="text-brand-accent hover:underline">Sign in</Link>
-          </p>
-        </form>
-      </div>
-    </div>
+    <AuthShell
+      title="Reset your password"
+      subtitle="Enter your email and we'll generate a reset link."
+      footer={
+        <Link to="/login" className="text-accent hover:text-accent-hover font-medium">
+          Back to sign in
+        </Link>
+      }
+    >
+      <form onSubmit={submit} className="space-y-4">
+        {error && <Alert type="error">{error}</Alert>}
+
+        {resetLink ? (
+          <>
+            <Alert type="success">
+              Reset link generated (dev mode).
+            </Alert>
+            <Link
+              to={resetLink.replace('http://localhost:5173', '')}
+              className="btn-primary w-full py-2.5"
+            >
+              Open reset link <ArrowRight size={15} />
+            </Link>
+            <button
+              type="button"
+              onClick={() => setResetLink('')}
+              className="btn-ghost w-full text-xs"
+            >
+              Send to a different email
+            </button>
+          </>
+        ) : (
+          <>
+            <Field label="Email" htmlFor="email">
+              <input id="email" type="email" required value={email}
+                onChange={e => setEmail(e.target.value)}
+                placeholder="you@example.com" className="input" />
+            </Field>
+            <button type="submit" disabled={loading} className="btn-primary w-full py-2.5">
+              {loading ? <Loader2 className="animate-spin" size={15} /> : null}
+              {loading ? 'Sending…' : 'Send reset link'}
+            </button>
+          </>
+        )}
+      </form>
+    </AuthShell>
   );
 }
