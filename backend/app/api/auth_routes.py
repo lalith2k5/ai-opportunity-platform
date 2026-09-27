@@ -171,8 +171,13 @@ def change_password(
     if len(payload.new_password) < 6:
         raise HTTPException(400, "New password must be at least 6 characters")
     user.password_hash = hash_password(payload.new_password)
+    # Revoke all existing sessions
+    db.query(models.RefreshToken).filter(
+        models.RefreshToken.user_id == user.id,
+        models.RefreshToken.revoked == False,
+    ).update({"revoked": True})
     db.commit()
-    return {"message": "Password changed successfully"}
+    return {"message": "Password changed. All other sessions revoked."}
 
 
 # ---------- Forgot password ----------

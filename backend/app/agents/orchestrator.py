@@ -115,13 +115,19 @@ class OrchestratorAgent:
                 ))
 
             # 6. Log search history
+            logger.debug(f"DB operation: insert_search_history query={query[:40]}")
             db.add(models.SearchHistory(
                 user_id=user_id,
                 query=query,
                 results_count=len(opportunities),
             ))
 
+            import time as _t
+            _t0 = _t.time()
             db.commit()
+            _ms = int((_t.time() - _t0) * 1000)
+            logger.info(f"DB operation: commit_pipeline ({_ms}ms)")
+
             generate_pipeline_notifications(opportunities, gaps, trends, query)
             logger.info(f"Saved: {len(clusters)} clusters, {len(gaps)} gaps, {len(trends)} trends, {len(opportunities)} opps")
         except Exception as e:

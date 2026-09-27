@@ -57,6 +57,7 @@ export interface Opportunity {
   feasibility_score: number;
   market_readiness_score: number;
   explanation?: string;
+  created_at?: string;
 }
 
 export interface ProblemCluster {

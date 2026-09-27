@@ -80,7 +80,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         </nav>
 
         <button
-          onClick={logout}
+          onClick={async () => { await logout(); window.location.href = '/login'; }}
           className="mt-auto flex items-center gap-3 px-4 py-3 rounded-lg text-gray-400 hover:bg-brand-border hover:text-white transition-colors"
         >
           <LogOut size={20} />

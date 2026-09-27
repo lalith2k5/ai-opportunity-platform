@@ -4,6 +4,8 @@ import StatCard from '../components/StatCard';
 import OpportunityCard from '../components/OpportunityCard';
 import InnovationTimeline from '../components/InnovationTimeline';
 import AlertsPanel from '../components/AlertsPanel';
+import ResearchGapSummary from '../components/ResearchGapSummary';
+import AIRecommendationsPanel from '../components/AIRecommendationsPanel';
 import { Loader2, TrendingUp, AlertCircle, Zap, FileText } from 'lucide-react';
 
 export default function Dashboard() {
@@ -110,6 +112,14 @@ export default function Dashboard() {
 
           <div className="mt-6">
             <AlertsPanel />
+          </div>
+
+          <div className="mt-6">
+            <AIRecommendationsPanel />
+          </div>
+
+          <div className="mt-6">
+            <ResearchGapSummary />
           </div>
 
           <div className="flex items-center gap-2 mb-4 mt-8">

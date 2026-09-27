@@ -2,11 +2,32 @@ import { useEffect, useState } from 'react';
 import { getOpportunities, type Opportunity } from '../services/api';
 import { Clock, TrendingUp } from 'lucide-react';
 
+function relativeTime(iso: string): string {
+  if (!iso) return 'Recently';
+  const then = new Date(iso).getTime();
+  const now = Date.now();
+  const diffMin = Math.floor((now - then) / 60000);
+  if (diffMin < 1) return 'Just now';
+  if (diffMin < 60) return `${diffMin}m ago`;
+  const diffHr = Math.floor(diffMin / 60);
+  if (diffHr < 24) return `${diffHr}h ago`;
+  const diffDay = Math.floor(diffHr / 24);
+  if (diffDay < 7) return `${diffDay}d ago`;
+  return new Date(iso).toLocaleDateString();
+}
+
 export default function InnovationTimeline() {
   const [opps, setOpps] = useState<Opportunity[]>([]);
 
   useEffect(() => {
-    getOpportunities().then(d => setOpps(d.slice(0, 8))).catch(() => {});
+    getOpportunities().then(d => {
+      const sorted = [...d].sort((a, b) => {
+        const ta = a.created_at ? new Date(a.created_at).getTime() : 0;
+        const tb = b.created_at ? new Date(b.created_at).getTime() : 0;
+        return tb - ta;
+      });
+      setOpps(sorted.slice(0, 8));
+    }).catch(() => {});
   }, []);
 
   return (
@@ -26,9 +47,9 @@ export default function InnovationTimeline() {
                 o.opportunity_score > 0.6 ? 'bg-emerald-400' : 'bg-brand-accent'
               }`} />
               <p className="text-xs text-gray-500 mb-0.5">
-                {i === 0 ? 'Latest' : `${i * 3}h ago`}
+                {relativeTime(o.created_at || '')}
               </p>
-              <p className="text-xs text-gray-300 leading-tight">{o.title}</p>
+              <p className="text-xs text-gray-300 leading-tight truncate">{o.title}</p>
               <p className="text-[10px] text-gray-500 flex items-center gap-1 mt-0.5">
                 <TrendingUp size={10} /> score {o.opportunity_score.toFixed(2)}
               </p>

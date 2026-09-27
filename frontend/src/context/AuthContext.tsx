@@ -12,7 +12,7 @@ interface AuthContextValue {
   token: string | null;
   login: (email: string, password: string) => Promise<void>;
   register: (name: string, email: string, password: string, role: string) => Promise<void>;
-  logout: () => void;
+  logout: () => Promise<void>;
   isLoading: boolean;
 }
 
@@ -33,11 +33,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const savedUser = localStorage.getItem(USER_KEY);
     if (savedToken && savedUser) {
       setToken(savedToken);
-      try {
-        setUser(JSON.parse(savedUser));
-      } catch {
-        localStorage.removeItem(USER_KEY);
-      }
+      try { setUser(JSON.parse(savedUser)); } catch { localStorage.removeItem(USER_KEY); }
     }
     setIsLoading(false);
   }, []);
@@ -46,7 +42,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const body = new URLSearchParams();
     body.append('username', email);
     body.append('password', password);
-
     const res = await fetch(`${API_BASE}/auth/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -77,7 +72,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await login(email, password);
   };
 
-  const logout = () => {
+  const logout = async () => {
+    // Revoke refresh token on server before clearing localStorage
+    const refresh = localStorage.getItem(REFRESH_KEY);
+    if (refresh) {
+      try {
+        await fetch(`${API_BASE}/auth/logout`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ refresh_token: refresh }),
+        });
+      } catch {
+        // Ignore network errors — still clear client state
+      }
+    }
     setToken(null);
     setUser(null);
     localStorage.removeItem(TOKEN_KEY);

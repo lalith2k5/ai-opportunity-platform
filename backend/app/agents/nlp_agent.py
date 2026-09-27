@@ -70,9 +70,28 @@ class NLPAgent:
             print(f"NMF topic modeling error: {e}")
             return []
 
+
+    def tokenize(self, text: str) -> list:
+        """Tokenize into lowercase word tokens."""
+        if not text:
+            return []
+        if self.nlp:
+            doc = self.nlp(text[:5000])
+            return [t.text.lower() for t in doc if t.is_alpha]
+        # fallback: simple split
+        import re
+        return re.findall(r"\b[a-zA-Z]+\b", text.lower())
+
+    def remove_stopwords(self, tokens: list) -> list:
+        """Filter out English stopwords."""
+        return [t for t in tokens if t not in self.stop_words and len(t) > 2]
+
     def process(self, text: str) -> dict:
+        tokens = self.tokenize(text)
         return {
             "cleaned_text": self.clean_text(text),
+            "tokens": tokens[:50],
+            "filtered_tokens": self.remove_stopwords(tokens)[:30],
             "keywords": self.extract_keywords(text),
             "entities": self.extract_entities(text),
             "topics": self.extract_keywords(text, top_n=5),
