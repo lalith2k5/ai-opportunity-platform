@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { Activity, Sparkles, Zap, Shield, TrendingUp } from 'lucide-react';
+import { Sparkles, Zap, Shield, TrendingUp } from 'lucide-react';
 
 const features = [
   { icon: Sparkles, title: 'Multi-source intelligence', text: 'GitHub, arXiv, Reddit, News — analyzed by 10 AI agents.' },
@@ -47,9 +47,6 @@ export default function AuthShell({
 
           {/* Logo */}
           <div className="flex items-center gap-3 mb-16">
-            <div className="w-10 h-10 rounded-xl bg-accent flex items-center justify-center shadow-[0_8px_24px_-4px_rgb(var(--accent)/0.55),inset_0_1px_0_0_rgb(255_255_255/0.2)]">
-              <Activity className="text-accent-fg" size={20} />
-            </div>
             <div>
               <h2 className="text-ink font-semibold text-base leading-tight tracking-tight">Opportunity AI</h2>
               <p className="text-2xs text-ink-4 uppercase tracking-[0.1em] leading-tight mt-0.5">Innovation Intelligence</p>
@@ -95,9 +92,6 @@ export default function AuthShell({
       <div className="flex-1 flex flex-col relative z-10">
         {/* Mobile logo */}
         <div className="lg:hidden flex items-center gap-2.5 p-6 border-b border-edge/60">
-          <div className="w-8 h-8 rounded-lg bg-accent flex items-center justify-center shadow-[0_4px_12px_-2px_rgb(var(--accent)/0.5)]">
-            <Activity className="text-accent-fg" size={16} />
-          </div>
           <h2 className="text-ink font-semibold text-sm">Opportunity AI</h2>
         </div>
 

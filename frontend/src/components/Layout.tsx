@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import {
-  LayoutDashboard, Search, MessageSquare, FileText, Activity,
+  LayoutDashboard, Search, MessageSquare, FileText,
   TrendingUp, BarChart3, Zap, Shield, Menu, X, Sparkles, Network, Target,
   GraduationCap, FlaskConical, Factory, Building2,
 } from 'lucide-react';
@@ -47,9 +47,6 @@ function SidebarContent({
   return (
     <>
       <div className="px-4 pt-5 pb-4 flex items-center gap-2.5">
-        <div className="w-8 h-8 rounded-lg bg-accent flex items-center justify-center flex-shrink-0 shadow-[0_4px_12px_-2px_rgb(var(--accent)/0.5),inset_0_1px_0_0_rgb(255_255_255/0.2)]">
-          <Activity className="text-accent-fg" size={17} />
-        </div>
         <div className="min-w-0 flex-1">
           <h1 className="text-ink font-semibold text-sm leading-tight tracking-tight">Opportunity AI</h1>
           <p className="text-2xs text-ink-4 uppercase tracking-wider leading-tight">Innovation Intelligence</p>
@@ -158,9 +155,6 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           <Menu size={18} />
         </button>
         <div className="flex items-center gap-2">
-          <div className="w-6 h-6 rounded-md bg-accent flex items-center justify-center">
-            <Activity className="text-accent-fg" size={13} />
-          </div>
           <span className="text-ink font-semibold text-sm tracking-tight">Opportunity AI</span>
         </div>
         <div className="flex items-center gap-0.5">
