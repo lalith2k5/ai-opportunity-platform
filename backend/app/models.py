@@ -199,6 +199,9 @@ class ProblemProfile(Base):
     id = Column(Integer, primary_key=True, index=True)
     organization = Column(String)
     problem_title = Column(String, index=True)
+    # Canonical hash of the normalized problem_title (ProblemAgent.compute_hash).
+    # Used to collapse near-duplicate titles across sources. See problem_agent.py.
+    canonical_hash = Column(String(16), index=True)
     problem_description = Column(Text)
     industry_domain = Column(String, index=True)
     problem_type = Column(String, index=True)

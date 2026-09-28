@@ -14,6 +14,7 @@ from app.logger import logger
 from app.services.notification_service import generate_pipeline_notifications
 from app.services.challenge_portal_service import ChallengePortalService
 from app.agents.problem_extractor import ProblemExtractorAgent
+from app.agents.problem_agent import ProblemAgent
 
 import threading
 
@@ -35,32 +36,59 @@ class OrchestratorAgent:
         self.embedding = EmbeddingService()
         self.challenge_portal = ChallengePortalService()
         self.problem_extractor = ProblemExtractorAgent()
+        self.problem_agent = ProblemAgent()
 
     def _save_problem_profiles(self, profiles: list):
-        """Persist extracted ProblemProfile rows. Dedup by source_url or title."""
+        """Persist extracted ProblemProfile rows.
+
+        Dedup layers (first match short-circuits):
+          1. Intra-batch: ProblemAgent.dedup() collapses near-dupes by
+             canonical_hash before any DB lookups.
+          2. Exact source_url match (strongest provenance signal).
+          3. canonical_hash match (catches title variants across runs/sources).
+          4. Exact problem_title fallback (for legacy rows without a hash).
+        """
         if not profiles:
             return 0
         from app.database import SessionLocal as _SL
         db = _SL()
         inserted = 0
+        skipped = 0
         try:
+            # Layer 1: intra-batch dedup
+            before = len(profiles)
+            profiles = self.problem_agent.dedup(profiles)
+            intra_batch_skipped = before - len(profiles)
+
             for pr in profiles:
                 key_url = (pr.get("source_url") or "").strip()
                 key_title = (pr.get("problem_title") or "").strip()[:200]
+                canonical_hash = pr.get("_canonical_hash") or self.problem_agent.compute_hash(key_title)
+
                 exists = False
+                # Layer 2: exact source_url
                 if key_url:
                     exists = db.query(models.ProblemProfile.id).filter(
                         models.ProblemProfile.source_url == key_url
                     ).first() is not None
+                # Layer 3: canonical_hash
+                if not exists and canonical_hash:
+                    exists = db.query(models.ProblemProfile.id).filter(
+                        models.ProblemProfile.canonical_hash == canonical_hash
+                    ).first() is not None
+                # Layer 4: exact title (legacy fallback)
                 if not exists and key_title:
                     exists = db.query(models.ProblemProfile.id).filter(
                         models.ProblemProfile.problem_title == key_title
                     ).first() is not None
                 if exists:
+                    skipped += 1
                     continue
+
                 db.add(models.ProblemProfile(
                     organization=pr.get("organization", "")[:500],
                     problem_title=pr.get("problem_title", "")[:500],
+                    canonical_hash=canonical_hash or None,
                     problem_description=pr.get("problem_description", ""),
                     industry_domain=pr.get("industry_domain", "Other"),
                     problem_type=pr.get("problem_type", "Other"),
@@ -78,7 +106,10 @@ class OrchestratorAgent:
                 ))
                 inserted += 1
             db.commit()
-            logger.info(f"Saved {inserted} new ProblemProfile rows")
+            logger.info(
+                f"Saved {inserted} new ProblemProfile rows "
+                f"({skipped} db-dupes, {intra_batch_skipped} intra-batch dupes skipped)"
+            )
             return inserted
         except Exception as e:
             db.rollback()
