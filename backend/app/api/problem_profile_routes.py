@@ -72,6 +72,9 @@ def list_profiles(
                 "problem_status": r.problem_status,
                 "student_suitability": r.student_suitability,
                 "extracted_by": r.extracted_by,
+                "affected_stakeholders": r.affected_stakeholders or [],
+                "evidence": r.evidence or [],
+                "confidence": r.confidence,
                 "created_at": r.created_at.isoformat() if r.created_at else None,
             }
             for r in rows
@@ -133,5 +136,8 @@ def get_profile(
         "problem_status": r.problem_status,
         "student_suitability": r.student_suitability,
         "extracted_by": r.extracted_by,
+        "affected_stakeholders": r.affected_stakeholders or [],
+        "evidence": r.evidence or [],
+        "confidence": r.confidence,
         "created_at": r.created_at.isoformat() if r.created_at else None,
     }

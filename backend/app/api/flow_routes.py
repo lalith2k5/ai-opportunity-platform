@@ -118,7 +118,10 @@ def researcher_flow(
             ],
             "papers": [
                 {"title": p.title, "url": p.url, "arxiv_id": p.arxiv_id,
-                 "relevance_score": p.relevance_score, "authors": p.authors or []}
+                 "relevance_score": p.relevance_score, "authors": p.authors or [],
+                 "research_methods": p.research_methods or [],
+                 "results_summary": p.results_summary,
+                 "research_areas": p.research_areas or []}
                 for p in sorted(papers, key=lambda x: -(x.relevance_score or 0))[:10]
             ],
             "limitations": lims[:12],
@@ -202,6 +205,9 @@ def rd_flow(
                 "title": p.title, "url": p.url, "arxiv_id": p.arxiv_id,
                 "relevance_score": p.relevance_score,
                 "limitations_count": len(p.limitations or []),
+                "research_methods": p.research_methods or [],
+                "results_summary": p.results_summary,
+                "research_areas": p.research_areas or [],
             }
     research = sorted(paper_map.values(), key=lambda x: -(x["relevance_score"] or 0))[:20]
 

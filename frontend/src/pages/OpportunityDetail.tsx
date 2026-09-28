@@ -95,6 +95,8 @@ export default function OpportunityDetail() {
   const cluster = data.problem_cluster;
   const gap = data.research_gap;
   const organization = data.opportunity?.organization;
+  const problemProfile = data.problem_profile;
+  const linkedPapers = data.linked_papers || [];
   const isHigh = opp.opportunity_score > 0.6;
 
   const techs: string[] = Array.isArray(opp.related_technologies) ? opp.related_technologies : [];
@@ -364,6 +366,91 @@ export default function OpportunityDetail() {
             technologies, papers, limitations, and suggested directions.
           </EmptyNote>
         </div>
+      )}
+
+      {/* SRS 11: rich problem profile fields */}
+      {problemProfile && (problemProfile.affected_stakeholders?.length || problemProfile.evidence?.length) && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-5">
+          {problemProfile.affected_stakeholders?.length > 0 && (
+            <div className="bg-surface border border-edge rounded-lg p-5">
+              <h2 className="text-xs font-medium text-ink uppercase tracking-wider mb-3 flex items-center gap-2">
+                Affected stakeholders
+              </h2>
+              <ul className="space-y-1.5">
+                {problemProfile.affected_stakeholders.slice(0, 8).map((s: string, i: number) => (
+                  <li key={i} className="text-xs text-ink-2 leading-relaxed flex items-start gap-2">
+                    <span className="text-accent flex-shrink-0 mt-0.5">•</span>
+                    <span>{s}</span>
+                  </li>
+                ))}
+              </ul>
+              {problemProfile.confidence !== null && problemProfile.confidence !== undefined && (
+                <p className="text-2xs text-ink-4 mt-3 pt-3 border-t border-edge-subtle">
+                  Extraction confidence: <span className="text-ink-2 font-mono">{problemProfile.confidence.toFixed(2)}</span>
+                </p>
+              )}
+            </div>
+          )}
+          {problemProfile.evidence?.length > 0 && (
+            <div className="bg-surface border border-edge rounded-lg p-5">
+              <h2 className="text-xs font-medium text-ink uppercase tracking-wider mb-3 flex items-center gap-2">
+                Source evidence
+              </h2>
+              <ul className="space-y-2 max-h-64 overflow-y-auto pr-1">
+                {problemProfile.evidence.slice(0, 8).map((e: string, i: number) => (
+                  <li key={i} className="text-xs text-ink-2 leading-relaxed pl-3 border-l-2 border-accent/40">
+                    {e}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* SRS 13: linked papers with methods/results/areas */}
+      {linkedPapers.length > 0 && (
+        <Section icon={BookOpen} title={`Research papers (${linkedPapers.length})`} accent="text-success">
+          <div className="space-y-4">
+            {linkedPapers.slice(0, 6).map((p: any) => (
+              <div key={p.id} className="pb-4 border-b border-edge-subtle last:border-0 last:pb-0">
+                <div className="flex items-start justify-between gap-3 mb-2">
+                  <a
+                    href={p.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-sm text-ink leading-snug flex-1 hover:text-accent transition-colors"
+                  >
+                    {p.title}
+                    <ExternalLink size={11} className="inline ml-1 text-ink-4" />
+                  </a>
+                  <span className="text-xs font-mono tabular-nums text-success flex-shrink-0">
+                    {p.relevance_score?.toFixed(2)}
+                  </span>
+                </div>
+                {p.results_summary && (
+                  <p className="text-xs text-ink-2 leading-relaxed mb-2">{p.results_summary}</p>
+                )}
+                {p.research_methods?.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5 mb-1.5">
+                    <span className="text-2xs text-ink-4 uppercase tracking-wider">Methods:</span>
+                    {p.research_methods.slice(0, 5).map((m: string, i: number) => (
+                      <span key={i} className="badge bg-accent/10 text-accent border border-accent/30">{m}</span>
+                    ))}
+                  </div>
+                )}
+                {p.research_areas?.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5">
+                    <span className="text-2xs text-ink-4 uppercase tracking-wider">Areas:</span>
+                    {p.research_areas.slice(0, 4).map((a: string, i: number) => (
+                      <span key={i} className="badge bg-overlay text-ink-3 border border-edge">{a}</span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </Section>
       )}
 
       {/* Problem cluster */}

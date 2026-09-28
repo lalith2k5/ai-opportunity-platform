@@ -73,7 +73,33 @@ export interface Opportunity {
   suggested_project_direction?: string | null;
   emerging_trend?: string | null;
   evidence_sources?: { source: string; url: string; title: string }[];
+  organization?: { name: string; industry_domain: string | null; source: string | null } | null;
   created_at?: string;
+}
+
+export interface LinkedPaper {
+  id: number;
+  title: string;
+  url: string;
+  arxiv_id: string | null;
+  relevance_score: number;
+  research_methods: string[];
+  results_summary: string | null;
+  research_areas: string[];
+  limitations: string[];
+}
+
+export interface ProblemProfileRich {
+  id: number;
+  organization: string | null;
+  problem_title: string;
+  problem_description: string | null;
+  industry_domain: string | null;
+  problem_type: string | null;
+  affected_stakeholders: string[];
+  evidence: string[];
+  confidence: number | null;
+  required_technology: string[];
 }
 
 export interface ProblemCluster {

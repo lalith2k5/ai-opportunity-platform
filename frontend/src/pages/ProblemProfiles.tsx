@@ -20,6 +20,9 @@ interface ProblemProfile {
   problem_status: string;
   student_suitability: 'high' | 'medium' | 'low';
   extracted_by: string;
+  affected_stakeholders?: string[];
+  evidence?: string[];
+  confidence?: number | null;
   created_at: string;
 }
 
@@ -211,6 +214,30 @@ export default function ProblemProfiles() {
                       {t}
                     </span>
                   ))}
+                </div>
+              )}
+
+              {p.affected_stakeholders && p.affected_stakeholders.length > 0 && (
+                <div className="pt-3 mt-3 border-t border-edge-subtle">
+                  <p className="text-2xs text-ink-4 uppercase tracking-wider mb-2">Affected stakeholders</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {p.affected_stakeholders.slice(0, 8).map((s, i) => (
+                      <span key={i} className="badge bg-overlay text-ink-3 border border-edge">{s}</span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {p.evidence && p.evidence.length > 0 && (
+                <div className="pt-3 mt-3 border-t border-edge-subtle">
+                  <p className="text-2xs text-ink-4 uppercase tracking-wider mb-2">Source evidence ({p.evidence.length})</p>
+                  <ul className="space-y-1.5">
+                    {p.evidence.slice(0, 4).map((e, i) => (
+                      <li key={i} className="text-xs text-ink-2 leading-relaxed pl-3 border-l-2 border-accent/40">
+                        {e}
+                      </li>
+                    ))}
+                  </ul>
                 </div>
               )}
             </div>

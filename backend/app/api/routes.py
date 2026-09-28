@@ -587,6 +587,50 @@ def get_opportunity(opp_id: int, db: Session = Depends(get_db)):
                         "source": best.source,
                     }
 
+    # ---- Phase 10.14: expose matched profile + linked papers ----
+    problem_profile_data = None
+    linked_papers_data = []
+    if cluster and cluster.keywords:
+        ck2 = {str(k).lower() for k in (cluster.keywords or [])[:10] if k}
+        if ck2:
+            _allp = db.query(models.ProblemProfile).all()
+            _best, _best_n = None, 0
+            for p in _allp:
+                pk = {str(k).lower() for k in (p.keywords or [])[:10] if k}
+                n = len(ck2 & pk)
+                if n > _best_n:
+                    _best, _best_n = p, n
+            if _best:
+                problem_profile_data = {
+                    "id": _best.id,
+                    "organization": _best.organization,
+                    "problem_title": _best.problem_title,
+                    "problem_description": _best.problem_description,
+                    "industry_domain": _best.industry_domain,
+                    "problem_type": _best.problem_type,
+                    "affected_stakeholders": _best.affected_stakeholders or [],
+                    "evidence": _best.evidence or [],
+                    "confidence": _best.confidence,
+                    "required_technology": _best.required_technology or [],
+                }
+                _papers = db.query(models.ProblemPaper).filter(
+                    models.ProblemPaper.problem_profile_id == _best.id
+                ).order_by(models.ProblemPaper.relevance_score.desc()).limit(10).all()
+                linked_papers_data = [
+                    {
+                        "id": pp.id,
+                        "title": pp.title,
+                        "url": pp.url,
+                        "arxiv_id": pp.arxiv_id,
+                        "relevance_score": pp.relevance_score,
+                        "research_methods": pp.research_methods or [],
+                        "results_summary": pp.results_summary,
+                        "research_areas": pp.research_areas or [],
+                        "limitations": pp.limitations or [],
+                    }
+                    for pp in _papers
+                ]
+
     return {
         "opportunity": {
             "id": opp.id,
@@ -619,6 +663,8 @@ def get_opportunity(opp_id: int, db: Session = Depends(get_db)):
             "organization": organization,
             "created_at": opp.created_at,
         },
+        "problem_profile": problem_profile_data,
+        "linked_papers": linked_papers_data,
         "problem_cluster": {
             "id": cluster.id,
             "title": cluster.title,

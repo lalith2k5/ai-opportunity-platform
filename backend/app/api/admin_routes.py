@@ -108,6 +108,10 @@ def delete_user(
             models.Report.user_id == user_id
         ).delete(synchronize_session=False)
 
+        db.query(models.Recommendation).filter(
+            models.Recommendation.user_id == user_id
+        ).delete(synchronize_session=False)
+
         db.delete(target)
         db.commit()
     except Exception as e:

@@ -846,6 +846,21 @@ class OrchestratorAgent:
             if _s.ENABLE_CHALLENGE_PORTALS and _cp_active:
                 challenge_items = self.challenge_portal.fetch_all(query, limit=_s.CHALLENGE_PORTAL_CAP)
                 raw["challenge_portal"] = challenge_items
+                # ---- Phase 10.14: update last_fetched ----
+                try:
+                    from datetime import datetime as _dtcp, timezone as _tzcp
+                    _dbcp2 = _SLcp()
+                    try:
+                        _rowcp = _dbcp2.query(_mcp.DataSource).filter(
+                            _mcp.DataSource.name == "challenge_portal"
+                        ).first()
+                        if _rowcp:
+                            _rowcp.last_fetched = _dtcp.now(_tzcp.utc)
+                            _dbcp2.commit()
+                    finally:
+                        _dbcp2.close()
+                except Exception as _ecp:
+                    logger.warning(f"[Pipeline] challenge_portal last_fetched update failed: {_ecp}")
             elif not _cp_active:
                 logger.info("[Pipeline] challenge_portal DataSource is disabled -- skipping")
         except Exception as e:
