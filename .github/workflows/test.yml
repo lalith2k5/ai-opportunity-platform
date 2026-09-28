@@ -1,0 +1,25 @@
+name: backend-tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements-dev.txt
+      - name: Run smoke tests
+        # The suite skips itself cleanly when the backend isn't reachable,
+        # so this job serves as a "does the test file at least import and
+        # collect" check. Full end-to-end testing requires the live stack.
+        run: pytest backend/tests -v --collect-only
