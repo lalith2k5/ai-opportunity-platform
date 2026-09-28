@@ -1,6 +1,6 @@
 import { useEffect, useState, useMemo } from 'react';
 import { Link } from 'react-router-dom';
-import { getOpportunities, type Opportunity } from '../services/api';
+import { getOpportunities, getRecentRecommendations, type Opportunity, type RecommendationRow } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import OpportunityCard from '../components/OpportunityCard';
 import {
@@ -121,10 +121,14 @@ function TopPickCard({ opp, rank, reason }: { opp: Opportunity; rank: number; re
 export default function Recommendations() {
   const { user } = useAuth();
   const [opps, setOpps] = useState<Opportunity[]>([]);
+  const [recentRecs, setRecentRecs] = useState<RecommendationRow[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     getOpportunities().then(setOpps).finally(() => setLoading(false));
+    getRecentRecommendations(12)
+      .then(d => setRecentRecs(d.recommendations || []))
+      .catch(() => setRecentRecs([]));
   }, []);
 
   const role = ((user?.role || 'student') as RoleKey);
@@ -214,6 +218,49 @@ export default function Recommendations() {
           <p className="text-xs text-ink-2 leading-relaxed">{roleInfo.blurb}</p>
         </div>
       </div>
+
+      {recentRecs.length > 0 && (
+        <section className="mb-10">
+          <div className="flex items-center gap-2 mb-1">
+            <Sparkles size={15} className="text-accent" />
+            <h2 className="text-ink font-semibold text-base tracking-tight">Recently generated</h2>
+            <span className="badge bg-overlay text-ink-3 border border-edge ml-1">{recentRecs.length}</span>
+          </div>
+          <p className="text-xs text-ink-4 mb-4">
+            The newest AI-generated research and project directions across the platform.
+          </p>
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+            {recentRecs.slice(0, 9).map(r => (
+              <Link
+                key={r.id}
+                to={r.opportunity_id ? `/opportunities/${r.opportunity_id}` : '#'}
+                className="group block bg-surface border border-edge rounded-lg p-4 hover:border-accent/40 transition-colors"
+              >
+                <div className="flex items-start justify-between gap-2 mb-2">
+                  <p className="text-xs text-ink font-medium leading-snug line-clamp-2 flex-1 group-hover:text-accent transition-colors">
+                    {r.opportunity?.title || `Opportunity #${r.opportunity_id}`}
+                  </p>
+                  {r.score_at_time !== null && (
+                    <span className="text-2xs font-mono tabular-nums text-accent flex-shrink-0">
+                      {r.score_at_time?.toFixed(2)}
+                    </span>
+                  )}
+                </div>
+                {r.suggested_research_direction && (
+                  <p className="text-2xs text-ink-3 leading-relaxed line-clamp-3 mb-2">
+                    {r.suggested_research_direction}
+                  </p>
+                )}
+                {r.suggested_project_direction && (
+                  <p className="text-2xs text-ink-4 leading-relaxed line-clamp-2 pt-2 border-t border-edge-subtle">
+                    {r.suggested_project_direction}
+                  </p>
+                )}
+              </Link>
+            ))}
+          </div>
+        </section>
+      )}
 
       {opps.length === 0 ? (
         <div className="bg-surface border border-edge border-dashed rounded-lg p-12 text-center">
