@@ -33,7 +33,10 @@ Return ONLY valid JSON. No markdown fences, no explanations, no preamble. Use th
   "expected_outcome": "string — what a successful solution achieves",
   "problem_status": "active|solved|ongoing|unknown",
   "student_suitability": "high|medium|low",
-  "keywords": ["normalized", "keywords"]
+  "keywords": ["normalized", "keywords"],
+  "affected_stakeholders": ["who is impacted — roles, orgs, or user types"],
+  "evidence": ["direct facts or claims copied or paraphrased from the source"],
+  "confidence": 0.5
 }
 
 STRICT RULES:
@@ -161,6 +164,28 @@ class ProblemExtractorAgent:
         if suitability not in _VALID_SUITABILITY:
             suitability = "medium"
 
+        stakeholders = data.get("affected_stakeholders") or []
+        if not isinstance(stakeholders, list):
+            stakeholders = [str(stakeholders)]
+        stakeholders = [
+            str(s).strip()[:120]
+            for s in stakeholders if s and str(s).strip()
+        ][:10]
+
+        evidence_items = data.get("evidence") or []
+        if not isinstance(evidence_items, list):
+            evidence_items = [str(evidence_items)]
+        evidence_items = [
+            str(e).strip()[:400]
+            for e in evidence_items if e and str(e).strip()
+        ][:10]
+
+        try:
+            confidence = float(data.get("confidence", 0.5))
+        except Exception:
+            confidence = 0.5
+        confidence = max(0.0, min(1.0, confidence))
+
         techs = data.get("required_technology") or []
         if not isinstance(techs, list):
             techs = [str(techs)]
@@ -185,6 +210,9 @@ class ProblemExtractorAgent:
             "problem_status": status,
             "student_suitability": suitability,
             "keywords": kws,
+            "affected_stakeholders": stakeholders,
+            "evidence": evidence_items,
+            "confidence": round(confidence, 3),
             "source": item.get("source") or source_type,
             "source_url": item.get("url") or item.get("html_url") or "",
             "extracted_by": self.llm.last_used or "unknown",

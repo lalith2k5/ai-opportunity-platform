@@ -36,12 +36,20 @@ For each paper below, return:
     or unaddressed aspects of the paper's approach relative to THIS problem.
     Only list limitations the paper itself mentions OR that are evident from
     the abstract. Do NOT invent.
+  - research_methods: array of 1 to 4 short strings naming the methodology
+    (e.g. "transformer", "federated learning", "case study"). Only from abstract.
+  - results_summary: one short sentence (max 200 chars) summarising the paper's
+    main result. Empty string if not stated.
+  - research_areas: array of 1 to 3 broad topic labels (e.g. "NLP", "robotics").
+    Only labels clearly implied by the abstract.
 
 Return ONLY valid JSON, no markdown, no preamble:
 {{
   "assessments": [
-    {{"paper_index": 0, "relevance_score": 0.0, "limitations": ["..."]}},
-    {{"paper_index": 1, "relevance_score": 0.0, "limitations": ["..."]}}
+    {{"paper_index": 0, "relevance_score": 0.0, "limitations": ["..."],
+      "research_methods": ["..."], "results_summary": "...", "research_areas": ["..."]}},
+    {{"paper_index": 1, "relevance_score": 0.0, "limitations": ["..."],
+      "research_methods": ["..."], "results_summary": "...", "research_areas": ["..."]}}
   ]
 }}
 
@@ -139,7 +147,34 @@ class ResearchDiscoveryAgent:
                 s = str(L).strip()
                 if s and len(s) <= 400:
                     lims.append(s)
-            out[idx] = {"relevance_score": round(score, 3), "limitations": lims}
+            rm_raw = a.get("research_methods") or []
+            if not isinstance(rm_raw, list):
+                rm_raw = [str(rm_raw)]
+            methods = []
+            for m in rm_raw[:4]:
+                s = str(m).strip()
+                if s and len(s) <= 120:
+                    methods.append(s)
+
+            rs_raw = a.get("results_summary") or ""
+            results_summary = str(rs_raw).strip()[:400] if rs_raw else ""
+
+            ra_raw = a.get("research_areas") or []
+            if not isinstance(ra_raw, list):
+                ra_raw = [str(ra_raw)]
+            areas = []
+            for ar in ra_raw[:3]:
+                s = str(ar).strip()
+                if s and len(s) <= 60:
+                    areas.append(s)
+
+            out[idx] = {
+                "relevance_score": round(score, 3),
+                "limitations": lims,
+                "research_methods": methods,
+                "results_summary": results_summary,
+                "research_areas": areas,
+            }
         return out
 
     def _process_one(self, problem_row) -> list:
@@ -169,6 +204,9 @@ class ResearchDiscoveryAgent:
                 "published": "",
                 "relevance_score": a["relevance_score"],
                 "limitations": a["limitations"],
+                "research_methods": a.get("research_methods") or [],
+                "results_summary": a.get("results_summary") or "",
+                "research_areas": a.get("research_areas") or [],
             })
         return out
 

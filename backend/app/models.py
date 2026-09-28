@@ -252,6 +252,10 @@ class ProblemProfile(Base):
     student_suitability = Column(String, default="medium")
     raw_document_id = Column(Integer, ForeignKey("raw_documents.id"))
     extracted_by = Column(String)
+    # ---- Phase 10.2: SRS §11 completion ----
+    affected_stakeholders = Column(JSON, default=list)
+    evidence = Column(JSON, default=list)
+    confidence = Column(Float, default=0.5)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 
@@ -301,6 +305,10 @@ class ProblemPaper(Base):
     relevance_score = Column(Float, default=0.5)
     limitations = Column(JSON, default=list)
     published = Column(String(100))
+    # ---- Phase 10.2: SRS §13 completion ----
+    research_methods = Column(JSON, default=list)
+    results_summary = Column(Text)
+    research_areas = Column(JSON, default=list)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 
