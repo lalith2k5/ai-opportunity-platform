@@ -71,9 +71,21 @@ export default function Admin() {
 
   const handleTrigger = async () => {
     try {
-      await adminTriggerScheduler();
-      toast.success('Scheduler triggered', 'Check logs in a minute for results.');
-    } catch (e: any) { toast.error('Trigger failed', e.message); }
+      const res: any = await adminTriggerScheduler();
+      const outcome = res?.outcome || {};
+      if (outcome.status === 'busy') {
+        toast.info('Pipeline busy', 'A pipeline was already running — scheduler tick skipped.');
+      } else if (outcome.status === 'error') {
+        toast.error('Scheduler error', outcome.message || 'unknown');
+      } else if (outcome.status === 'success') {
+        toast.success('Scheduler tick complete', outcome.message || 'Check logs for details.');
+      } else {
+        toast.success('Scheduler triggered', 'Check logs in a minute for results.');
+      }
+      load();
+    } catch (e: any) {
+      toast.error('Trigger failed', e?.response?.data?.detail || e.message);
+    }
   };
 
   if (loading) {

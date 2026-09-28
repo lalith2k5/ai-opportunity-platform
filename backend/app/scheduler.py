@@ -27,6 +27,7 @@ def _run_monitored_pipeline():
     from app.agents.orchestrator import OrchestratorAgent
 
     logger.info("[Scheduler] Starting scheduled monitoring run")
+    outcome = {"status": "error", "topic": None, "message": None}
     db = SessionLocal()
     try:
         # Pick the least-used topic from the list
@@ -45,6 +46,8 @@ def _run_monitored_pipeline():
         logger.info(f"[Scheduler] Pipeline complete for '{topic}': "
                     f"{result['documents_count']} docs, "
                     f"{len(result['opportunities'])} opportunities")
+        outcome = {"status": "success", "topic": topic,
+                   "message": f"{len(result['opportunities'])} opps"}
 
         # Log to agent_logs
         db.add(models.AgentLog(
@@ -55,19 +58,30 @@ def _run_monitored_pipeline():
         ))
         db.commit()
     except Exception as e:
-        logger.error(f"[Scheduler] Pipeline error: {e}")
+        msg = str(e)
+        is_busy = "already running" in msg.lower()
+        if is_busy:
+            logger.info(f"[Scheduler] Pipeline busy, skipping this tick: {msg}")
+            status = "skipped"
+            outcome = {"status": "busy", "topic": None, "message": msg}
+        else:
+            logger.error(f"[Scheduler] Pipeline error: {msg}")
+            status = "error"
+            outcome = {"status": "error", "topic": None, "message": msg}
         try:
             db.add(models.AgentLog(
                 agent_name="Scheduler",
                 action="scheduled_pipeline",
-                status="error",
-                details={"error": str(e)},
+                status=status,
+                details={"error": msg, "busy": is_busy},
             ))
             db.commit()
         except Exception:
             pass
     finally:
         db.close()
+
+    return outcome
 
 
 def _cleanup_old_logs():

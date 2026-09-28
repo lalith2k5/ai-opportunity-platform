@@ -146,8 +146,14 @@ def scheduler_status_admin(
 def trigger_scheduler(
     user: models.User = Depends(require_role("admin")),
 ):
-    _run_monitored_pipeline()
-    return {"triggered": True, "at": datetime.now(timezone.utc).isoformat()}
+    """Kick off one monitored-pipeline tick. Returns the outcome so the UI
+    can react: success / busy / error."""
+    outcome = _run_monitored_pipeline() or {"status": "error", "message": "unknown"}
+    return {
+        "triggered": True,
+        "at": datetime.now(timezone.utc).isoformat(),
+        "outcome": outcome,
+    }
 
 
 @router.post("/pipeline/run")
