@@ -73,3 +73,58 @@ class ProblemAgent:
             p["_canonical_hash"] = h
             out.append(p)
         return out
+
+    def merge_provenance(self, existing_row, new_profile: dict) -> bool:
+        """Cross-source merge: append new provenance to an existing row.
+
+        Called when a new profile matches an existing DB row by canonical_hash
+        or source_url. Records where else this same problem was seen, unions
+        keywords and required_technology. Returns True if anything changed.
+        """
+        new_source = (new_profile.get("source") or "").strip()
+        new_url = (new_profile.get("source_url") or "").strip()
+        new_org = (new_profile.get("organization") or "").strip()[:500]
+
+        # No-op if the new profile is the row's own primary source
+        if new_source == (existing_row.source or "") and new_url == (existing_row.source_url or ""):
+            return False
+
+        current = existing_row.additional_sources or []
+        if not isinstance(current, list):
+            current = []
+
+        for entry in current:
+            if (isinstance(entry, dict)
+                    and entry.get("source") == new_source
+                    and entry.get("source_url") == new_url):
+                return False
+
+        current = list(current)
+        current.append({
+            "source": new_source,
+            "source_url": new_url,
+            "organization": new_org,
+        })
+        existing_row.additional_sources = current
+
+        # Union keywords
+        if isinstance(new_profile.get("keywords"), list):
+            seen_kw = set()
+            merged_kw = []
+            for kw in list(existing_row.keywords or []) + list(new_profile["keywords"]):
+                if kw and kw not in seen_kw:
+                    seen_kw.add(kw)
+                    merged_kw.append(kw)
+            existing_row.keywords = merged_kw
+
+        # Union required_technology
+        if isinstance(new_profile.get("required_technology"), list):
+            seen_tech = set()
+            merged_tech = []
+            for t in list(existing_row.required_technology or []) + list(new_profile["required_technology"]):
+                if t and t not in seen_tech:
+                    seen_tech.add(t)
+                    merged_tech.append(t)
+            existing_row.required_technology = merged_tech
+
+        return True

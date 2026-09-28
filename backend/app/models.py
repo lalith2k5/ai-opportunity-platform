@@ -202,6 +202,9 @@ class ProblemProfile(Base):
     # Canonical hash of the normalized problem_title (ProblemAgent.compute_hash).
     # Used to collapse near-duplicate titles across sources. See problem_agent.py.
     canonical_hash = Column(String(16), index=True)
+    # Cross-source provenance. Each entry: {source, source_url, organization}.
+    # Populated when a near-duplicate profile is seen from a different source.
+    additional_sources = Column(JSON, default=list)
     problem_description = Column(Text)
     industry_domain = Column(String, index=True)
     problem_type = Column(String, index=True)

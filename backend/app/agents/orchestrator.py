@@ -54,6 +54,7 @@ class OrchestratorAgent:
         db = _SL()
         inserted = 0
         skipped = 0
+        merged = 0
         try:
             # Layer 1: intra-batch dedup
             before = len(profiles)
@@ -65,24 +66,31 @@ class OrchestratorAgent:
                 key_title = (pr.get("problem_title") or "").strip()[:200]
                 canonical_hash = pr.get("_canonical_hash") or self.problem_agent.compute_hash(key_title)
 
-                exists = False
+                # Look up the existing row (if any) via the four-layer chain
+                existing_row = None
                 # Layer 2: exact source_url
                 if key_url:
-                    exists = db.query(models.ProblemProfile.id).filter(
+                    existing_row = db.query(models.ProblemProfile).filter(
                         models.ProblemProfile.source_url == key_url
-                    ).first() is not None
+                    ).first()
                 # Layer 3: canonical_hash
-                if not exists and canonical_hash:
-                    exists = db.query(models.ProblemProfile.id).filter(
+                if not existing_row and canonical_hash:
+                    existing_row = db.query(models.ProblemProfile).filter(
                         models.ProblemProfile.canonical_hash == canonical_hash
-                    ).first() is not None
+                    ).first()
                 # Layer 4: exact title (legacy fallback)
-                if not exists and key_title:
-                    exists = db.query(models.ProblemProfile.id).filter(
+                if not existing_row and key_title:
+                    existing_row = db.query(models.ProblemProfile).filter(
                         models.ProblemProfile.problem_title == key_title
-                    ).first() is not None
-                if exists:
-                    skipped += 1
+                    ).first()
+
+                if existing_row:
+                    # Cross-source merge: enrich the existing row with the
+                    # new source's provenance, keywords, and technologies.
+                    if self.problem_agent.merge_provenance(existing_row, pr):
+                        merged += 1
+                    else:
+                        skipped += 1
                     continue
 
                 db.add(models.ProblemProfile(
@@ -108,7 +116,8 @@ class OrchestratorAgent:
             db.commit()
             logger.info(
                 f"Saved {inserted} new ProblemProfile rows "
-                f"({skipped} db-dupes, {intra_batch_skipped} intra-batch dupes skipped)"
+                f"({merged} cross-source merged, {skipped} exact dupes, "
+                f"{intra_batch_skipped} intra-batch dupes skipped)"
             )
             return inserted
         except Exception as e:
