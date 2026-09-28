@@ -9,6 +9,7 @@ from app.api.admin_config_routes import router as admin_config_router
 from app.api.export_routes import router as export_router
 from app.api.kg_routes import router as kg_router
 from app.api.problem_profile_routes import router as problem_profile_router
+from app.api.flow_routes import router as flow_router
 from app.database import engine, Base
 from app import models
 from app.logger import logger
@@ -53,6 +54,7 @@ app.include_router(export_router, prefix="/api")
 app.include_router(notif_router, prefix="/api")
 app.include_router(kg_router, prefix="/api")
 app.include_router(problem_profile_router, prefix="/api")
+app.include_router(flow_router, prefix="/api")
 
 
 @app.get("/")
