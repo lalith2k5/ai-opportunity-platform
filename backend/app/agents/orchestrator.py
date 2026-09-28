@@ -278,7 +278,7 @@ class OrchestratorAgent:
         finally:
             db.close()
 
-    def _enrich_opportunities(self):
+    def _enrich_opportunities(self, opp_ids=None):
         """Populate the 10 Phase-6 enrichment columns for recent opportunities.
 
         Data-derived fields (technologies, papers, approaches, limitations,
@@ -291,12 +291,19 @@ class OrchestratorAgent:
 
         db = _SL()
         try:
-            opps = (
-                db.query(models.Opportunity)
-                .order_by(models.Opportunity.id.desc())
-                .limit(10)
-                .all()
-            )
+            if opp_ids:
+                opps = (
+                    db.query(models.Opportunity)
+                    .filter(models.Opportunity.id.in_(opp_ids))
+                    .all()
+                )
+            else:
+                opps = (
+                    db.query(models.Opportunity)
+                    .order_by(models.Opportunity.id.desc())
+                    .limit(50)
+                    .all()
+                )
             if not opps:
                 return {"updated": 0}
 
@@ -323,19 +330,63 @@ class OrchestratorAgent:
             # clusters share only one meaningful keyword with any profile.
             # Fallback: if no profile clears the threshold, use the
             # best-scoring one as long as it has at least one keyword.
+            # Pre-compute profile embeddings once for semantic fallback.
+            # Local SentenceTransformer only -- no LLM, no quota burn.
+            profile_embs = None
+            if all_profiles:
+                try:
+                    _ptexts = [
+                        ((p.problem_title or "") + " " + " ".join(
+                            str(k) for k in (p.keywords or [])[:10]
+                        ))[:500]
+                        for p in all_profiles
+                    ]
+                    profile_embs = self.embedding.model.encode(
+                        _ptexts, normalize_embeddings=True, batch_size=32
+                    )
+                    logger.info(
+                        f"[Enrichment] precomputed {len(_ptexts)} profile embeddings"
+                    )
+                except Exception as _e:
+                    logger.warning(f"[Enrichment] profile embedding failed: {_e}")
+                    profile_embs = None
+
             def best_profile_for_cluster(cluster):
                 if not cluster or not cluster.keywords:
                     return None
                 ck = {str(k).lower() for k in cluster.keywords[:10] if k}
                 if not ck:
                     return None
+                # Pass 1: exact keyword overlap
                 best, best_n = None, 0
                 for p in all_profiles:
                     pk = {str(k).lower() for k in (p.keywords or [])[:10] if k}
                     n = len(ck & pk)
                     if n > best_n:
                         best, best_n = p, n
-                return best
+                if best is not None:
+                    return best
+                # Pass 2: semantic fallback (cosine on local embeddings)
+                if profile_embs is None:
+                    return None
+                try:
+                    ctext = ((cluster.title or "") + " " + " ".join(
+                        str(k) for k in (cluster.keywords or [])[:10]
+                    ))[:500]
+                    c_emb = self.embedding.model.encode(
+                        [ctext], normalize_embeddings=True
+                    )[0]
+                    sims = profile_embs @ c_emb
+                    idx = int(sims.argmax())
+                    if float(sims[idx]) >= 0.30:
+                        logger.debug(
+                            f"[Enrichment] semantic match cluster->profile "
+                            f"(sim={float(sims[idx]):.3f})"
+                        )
+                        return all_profiles[idx]
+                except Exception as _e:
+                    logger.warning(f"[Enrichment] semantic match failed: {_e}")
+                return None
 
             snapshots = []
             for opp in opps:

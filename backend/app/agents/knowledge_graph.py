@@ -416,7 +416,7 @@ class KnowledgeGraphAgent:
                     if not p_kws:
                         continue
                     overlap = len(opp_kws & p_kws)
-                    if overlap < 2:
+                    if overlap < 1:
                         continue
                     for t in tech_rows:
                         if t.problem_profile_id != p.id:
@@ -456,7 +456,7 @@ class KnowledgeGraphAgent:
                     if not p_kws:
                         continue
                     overlap = len(g_kws & p_kws)
-                    if overlap < 2:
+                    if overlap < 1:
                         continue
                     self.add_relationship(p.problem_title, "HAS_POTENTIAL_GAP", g_title)
 

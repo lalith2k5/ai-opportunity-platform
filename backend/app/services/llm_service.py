@@ -29,7 +29,11 @@ class GeminiProvider(BaseProvider):
         if settings.GEMINI_API_KEY:
             try:
                 from google import genai
-                self.client = genai.Client(api_key=settings.GEMINI_API_KEY)
+                from google.genai import types as _genai_types
+                self.client = genai.Client(
+                    api_key=settings.GEMINI_API_KEY,
+                    http_options=_genai_types.HttpOptions(timeout=90_000),
+                )
             except Exception as e:
                 logger.warning(f"Gemini init failed: {e}")
                 self.client = None
