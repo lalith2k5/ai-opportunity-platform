@@ -40,7 +40,13 @@ def run_pipeline(
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/opportunities")
-def get_opportunities(db: Session = Depends(get_db), _=Depends(get_current_user)):
+def get_opportunities(
+    domain: Optional[str] = None,
+    industry: Optional[str] = None,
+    technology: Optional[str] = None,
+    db: Session = Depends(get_db),
+    _=Depends(get_current_user),
+):
     from sqlalchemy import func
     # Show only the highest-scoring row per unique title
     subq = (
@@ -51,17 +57,60 @@ def get_opportunities(db: Session = Depends(get_db), _=Depends(get_current_user)
         .group_by(models.Opportunity.title)
         .subquery()
     )
-    return (
+    q = (
         db.query(models.Opportunity)
         .join(
             subq,
             (models.Opportunity.title == subq.c.title)
             & (models.Opportunity.opportunity_score == subq.c.max_score),
         )
-        .order_by(models.Opportunity.opportunity_score.desc())
-        .limit(50)
-        .all()
     )
+    # ---- Phase 10.6: SRS 22 filters ----
+    if domain:
+        q = q.filter(models.Opportunity.domain == domain)
+    if industry:
+        q = q.filter(models.Opportunity.industry == industry)
+    if technology:
+        # related_technologies is a JSONB array; use containment
+        q = q.filter(
+            models.Opportunity.related_technologies.op("@>")(
+                func.cast(
+                    func.jsonb_build_array(technology),
+                    __import__("sqlalchemy").dialects.postgresql.JSONB,
+                )
+            )
+        )
+    return q.order_by(models.Opportunity.opportunity_score.desc()).limit(200).all()
+
+
+@router.get("/opportunities/filters")
+def get_opportunity_filters(
+    db: Session = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    """Distinct domain / industry / technology values for the filter dropdowns."""
+    from sqlalchemy import func
+    domains = [
+        r[0] for r in db.query(models.Opportunity.domain).distinct().all()
+        if r[0]
+    ]
+    industries = [
+        r[0] for r in db.query(models.Opportunity.industry).distinct().all()
+        if r[0]
+    ]
+    # Explode JSONB array into rows and pull unique tech names
+    tech_rows = db.execute(
+        __import__("sqlalchemy").text(
+            "SELECT DISTINCT jsonb_array_elements_text(related_technologies) "
+            "FROM opportunities WHERE related_technologies IS NOT NULL"
+        )
+    ).all()
+    technologies = sorted({r[0] for r in tech_rows if r[0]})
+    return {
+        "domains": sorted(domains),
+        "industries": sorted(industries),
+        "technologies": technologies,
+    }
 
 @router.get("/problems")
 def get_problems(db: Session = Depends(get_db), _=Depends(get_current_user)):

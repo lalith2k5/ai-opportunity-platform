@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo } from 'react';
-import { getOpportunities, type Opportunity } from '../services/api';
+import { getOpportunities, getOpportunityFilters, type Opportunity } from '../services/api';
 import OpportunityCard from '../components/OpportunityCard';
 import { Loader2, Zap, ArrowUpDown, Search, SlidersHorizontal } from 'lucide-react';
 
@@ -13,14 +13,23 @@ export default function Opportunities() {
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
   const [minScore, setMinScore] = useState(0);
   const [page, setPage] = useState(1);
+  const [domain, setDomain] = useState('');
+  const [industry, setIndustry] = useState('');
+  const [technology, setTechnology] = useState('');
+  const [filterOptions, setFilterOptions] = useState<{ domains: string[]; industries: string[]; technologies: string[] }>({ domains: [], industries: [], technologies: [] });
   const pageSize = 12;
 
   useEffect(() => {
     getOpportunities().then(setOpps).finally(() => setLoading(false));
+    getOpportunityFilters().then(setFilterOptions).catch(() => {});
   }, []);
 
   const filtered = useMemo(() => {
     let result = [...opps];
+    // ---- Phase 10.6: SRS 22 domain/industry/technology filters ----
+    if (domain)     result = result.filter(o => o.domain === domain);
+    if (industry)   result = result.filter(o => o.industry === industry);
+    if (technology) result = result.filter(o => (o.related_technologies || []).includes(technology));
     if (search.trim()) {
       const q = search.toLowerCase();
       result = result.filter(o =>
@@ -40,7 +49,7 @@ export default function Opportunities() {
       return sortDir === 'asc' ? an - bn : bn - an;
     });
     return result;
-  }, [opps, search, sortBy, sortDir, minScore]);
+  }, [opps, search, sortBy, sortDir, minScore, domain, industry, technology]);
 
   const totalPages = Math.ceil(filtered.length / pageSize);
   const paginated = filtered.slice((page - 1) * pageSize, page * pageSize);
@@ -70,8 +79,8 @@ export default function Opportunities() {
         </p>
       </div>
 
-      {/* Filter bar */}
-      <div className="bg-surface border border-edge rounded-lg p-3 mb-6 flex flex-col md:flex-row gap-3 items-stretch md:items-center">
+      {/* Filter bar — row 1 (search + sort) */}
+      <div className="bg-surface border border-edge rounded-lg p-3 mb-3 flex flex-col md:flex-row gap-3 items-stretch md:items-center">
 
         <div className="relative flex-1 md:max-w-md">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-ink-4" size={14} />
@@ -124,6 +133,42 @@ export default function Opportunities() {
           </span>
         </div>
 
+      </div>
+
+      {/* Filter bar — row 2 (SRS 22 domain / industry / technology) */}
+      <div className="bg-surface border border-edge rounded-lg p-3 mb-6 flex flex-col md:flex-row gap-3 items-stretch md:items-center">
+        <select
+          value={domain}
+          onChange={e => { setDomain(e.target.value); setPage(1); }}
+          className="input text-sm md:flex-1"
+        >
+          <option value="">All domains</option>
+          {filterOptions.domains.map(d => <option key={d} value={d}>{d}</option>)}
+        </select>
+        <select
+          value={industry}
+          onChange={e => { setIndustry(e.target.value); setPage(1); }}
+          className="input text-sm md:flex-1"
+        >
+          <option value="">All industries</option>
+          {filterOptions.industries.map(i => <option key={i} value={i}>{i}</option>)}
+        </select>
+        <select
+          value={technology}
+          onChange={e => { setTechnology(e.target.value); setPage(1); }}
+          className="input text-sm md:flex-1"
+        >
+          <option value="">All technologies</option>
+          {filterOptions.technologies.map(t => <option key={t} value={t}>{t}</option>)}
+        </select>
+        {(domain || industry || technology) && (
+          <button
+            onClick={() => { setDomain(''); setIndustry(''); setTechnology(''); setPage(1); }}
+            className="btn-ghost text-xs whitespace-nowrap"
+          >
+            Clear filters
+          </button>
+        )}
       </div>
 
       {/* Results */}

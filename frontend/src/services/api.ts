@@ -105,7 +105,11 @@ export interface Trend {
 }
 
 export const getHealth = () => api.get('/health').then(r => r.data);
-export const getOpportunities = () => api.get<Opportunity[]>('/opportunities').then(r => r.data);
+export const getOpportunities = (filters?: { domain?: string; industry?: string; technology?: string }) =>
+  api.get<Opportunity[]>('/opportunities', { params: filters }).then(r => r.data);
+
+export const getOpportunityFilters = () =>
+  api.get<{ domains: string[]; industries: string[]; technologies: string[] }>('/opportunities/filters').then(r => r.data);
 export const getProblems = () => api.get<ProblemCluster[]>('/problems').then(r => r.data);
 export const getResearchGaps = () => api.get<ResearchGap[]>('/research-gaps').then(r => r.data);
 export const getTrends = () => api.get<Trend[]>('/trends').then(r => r.data);
