@@ -15,6 +15,7 @@ from app.services.notification_service import generate_pipeline_notifications
 from app.services.challenge_portal_service import ChallengePortalService
 from app.agents.problem_extractor import ProblemExtractorAgent
 from app.agents.problem_agent import ProblemAgent
+from app.agents.technology_agent import TechnologyAgent
 
 import threading
 
@@ -37,6 +38,7 @@ class OrchestratorAgent:
         self.challenge_portal = ChallengePortalService()
         self.problem_extractor = ProblemExtractorAgent()
         self.problem_agent = ProblemAgent()
+        self.technology_agent = TechnologyAgent()
 
     def _save_problem_profiles(self, profiles: list):
         """Persist extracted ProblemProfile rows.
@@ -123,6 +125,46 @@ class OrchestratorAgent:
         except Exception as e:
             db.rollback()
             logger.error(f"ProblemProfile save error: {e}")
+            return 0
+        finally:
+            db.close()
+
+    def _save_technologies(self, profile_rows_with_techs: list):
+        """Persist problem_technologies rows. Skips exact (profile, name) dups."""
+        if not profile_rows_with_techs:
+            return 0
+        from app.database import SessionLocal as _SL
+        db = _SL()
+        inserted = 0
+        try:
+            # Collect existing (profile_id, lower(name)) to avoid dup inserts
+            existing = set()
+            for pid, name in db.query(
+                models.ProblemTechnology.problem_profile_id,
+                models.ProblemTechnology.technology_name,
+            ).all():
+                existing.add((pid, (name or "").lower()))
+
+            for row, techs in profile_rows_with_techs:
+                for t in techs:
+                    key = (row.id, (t["name"] or "").lower())
+                    if key in existing:
+                        continue
+                    db.add(models.ProblemTechnology(
+                        problem_profile_id=row.id,
+                        technology_name=t["name"],
+                        stage=t["stage"],
+                        confidence=t["confidence"],
+                        evidence=t.get("evidence") or "",
+                    ))
+                    existing.add(key)
+                    inserted += 1
+            db.commit()
+            logger.info(f"Saved {inserted} new ProblemTechnology rows")
+            return inserted
+        except Exception as e:
+            db.rollback()
+            logger.error(f"ProblemTechnology save error: {e}")
             return 0
         finally:
             db.close()
@@ -466,6 +508,26 @@ class OrchestratorAgent:
                     logger.warning(f"ProblemProfile extraction failed for {src_name}: {e}")
         except Exception as e:
             logger.error(f"ProblemProfile extraction setup failed: {e}")
+
+        # ---- Phase 2.1: technology extraction for the profiles just saved ----
+        try:
+            from app.database import SessionLocal as _SL2
+            db2 = _SL2()
+            try:
+                rows = (
+                    db2.query(models.ProblemProfile)
+                    .order_by(models.ProblemProfile.id.desc())
+                    .limit(10)
+                    .all()
+                )
+            finally:
+                db2.close()
+            if rows:
+                tech_results = self.technology_agent.extract_batch(rows)
+                if tech_results:
+                    self._save_technologies(tech_results)
+        except Exception as e:
+            logger.error(f"Technology extraction failed: {e}")
 
         # Strip private helper keys before returning to API
         for c in clusters:

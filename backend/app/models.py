@@ -222,3 +222,25 @@ class ProblemProfile(Base):
     raw_document_id = Column(Integer, ForeignKey("raw_documents.id"))
     extracted_by = Column(String)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class ProblemTechnology(Base):
+    """Technology associated with a ProblemProfile (SRS Module 5 / §12).
+
+    Stage taxonomy (uppercase in code, lowercase in DB values):
+      used / proposed / emerging / potentially_applicable
+    Populated by TechnologyAgent (Phase 2.1). KG wiring is deferred to
+    Phase 5 (relations: Problem -RELATED_TO-> Technology per spec §31).
+    """
+    __tablename__ = "problem_technologies"
+
+    id = Column(Integer, primary_key=True, index=True)
+    problem_profile_id = Column(
+        Integer, ForeignKey("problem_profiles.id", ondelete="CASCADE"),
+        index=True, nullable=False,
+    )
+    technology_name = Column(String(200), index=True, nullable=False)
+    stage = Column(String(32), default="potentially_applicable")
+    confidence = Column(Float, default=0.5)
+    evidence = Column(Text)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
