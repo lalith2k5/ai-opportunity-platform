@@ -224,6 +224,21 @@ class RefreshToken(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 
+class Organization(Base):
+    """First-class organization entity (SRS 30).
+
+    Populated from ProblemProfile.organization strings via
+    backfill_d3b_organizations.py; kept in sync by the extractor pipeline.
+    """
+    __tablename__ = "organizations"
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(300), nullable=False)
+    canonical_name = Column(String(200), nullable=False, unique=True, index=True)
+    industry_domain = Column(String(120))
+    source = Column(String(64))
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
 class ProblemProfile(Base):
     """Structured problem statement extracted from industry/R&D/gov challenge portals.
 
@@ -234,6 +249,7 @@ class ProblemProfile(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     organization = Column(String)
+    organization_id = Column(Integer, ForeignKey("organizations.id", ondelete="SET NULL"), index=True)
     problem_title = Column(String, index=True)
     # Canonical hash of the normalized problem_title (ProblemAgent.compute_hash).
     # Used to collapse near-duplicate titles across sources. See problem_agent.py.

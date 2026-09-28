@@ -29,6 +29,37 @@ def _is_more_specific(new_type: str, old_type: str) -> bool:
     return _TYPE_RANK.get(new_type, 0) > _TYPE_RANK.get(old_type, 0)
 
 
+# ---- Phase 10.4: canonical source display names (SRS 31) ----
+_SOURCE_CANONICAL = {
+    "github":           "GitHub",
+    "github_issues":    "GitHub",
+    "arxiv":            "arXiv",
+    "news":             "News",
+    "reddit":           "Reddit",
+    "rd_cells":         "R&D Labs",
+    "patents":          "PatentsView",
+    "challenge_portal": "SBIR/Challenge.gov",
+    "sbir":             "SBIR",
+    "challenge_gov":    "Challenge.gov",
+    "nasa":             "NASA",
+    "nsf":              "NSF",
+    "nist":             "NIST",
+    "darpa":            "DARPA",
+    "nih":              "NIH",
+    "energy_gov":       "DOE",
+    "cdc":              "CDC",
+}
+
+
+def _canonical_source(raw: str) -> str:
+    if not raw:
+        return ""
+    key = str(raw).strip().lower()
+    if key in _SOURCE_CANONICAL:
+        return _SOURCE_CANONICAL[key]
+    return str(raw).strip().replace("_", " ").title()
+
+
 class KnowledgeGraphAgent:
     def __init__(self):
         self.graph = nx.DiGraph()
@@ -316,6 +347,7 @@ class KnowledgeGraphAgent:
                 return {"new_nodes": 0, "new_edges": 0}
 
             profile_by_id = {p.id: p for p in profiles}
+            org_by_id = {o.id: o for o in db.query(models.Organization).all()}
 
             # Problem nodes (from ProblemProfile titles)
             for p in profiles:
@@ -329,16 +361,34 @@ class KnowledgeGraphAgent:
                 })
 
                 # Problem —REPORTED_BY-> Organization
-                org = (p.organization or "").strip()
-                if org and org.lower() != "unknown":
-                    self.add_entity("Organization", org, {})
-                    self.add_relationship(title, "REPORTED_BY", org)
+                # Prefer the linked Organization row (canonical name + metadata);
+                # fall back to the raw string if no FK is set yet.
+                org_name = ""
+                org_meta = {}
+                if p.organization_id:
+                    org_row = org_by_id.get(p.organization_id)
+                    if org_row:
+                        org_name = org_row.name
+                        org_meta = {
+                            "canonical_name": org_row.canonical_name,
+                            "industry_domain": org_row.industry_domain,
+                            "source": org_row.source,
+                        }
+                if not org_name:
+                    org_name = (p.organization or "").strip()
+                if org_name and org_name.lower() != "unknown":
+                    self.add_entity("Organization", org_name, org_meta)
+                    self.add_relationship(title, "REPORTED_BY", org_name)
 
-                # Problem —FOUND_IN-> Source
-                src = (p.source or "").strip()
-                if src and src.lower() != "unknown":
-                    self.add_entity("Source", src, {"type": "source"})
-                    self.add_relationship(title, "FOUND_IN", src)
+                # Problem —FOUND_IN-> Source (SRS 31, canonical name)
+                src_raw = (p.source or "").strip()
+                if src_raw and src_raw.lower() != "unknown":
+                    src_name = _canonical_source(src_raw)
+                    self.add_entity("Source", src_name, {
+                        "type": "source",
+                        "raw_source": src_raw,
+                    })
+                    self.add_relationship(title, "FOUND_IN", src_name)
 
             # ---------------- Problem —RELATED_TO-> Technology ----------------
             tech_rows = db.query(models.ProblemTechnology).all()
