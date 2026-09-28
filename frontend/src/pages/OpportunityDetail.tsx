@@ -283,7 +283,7 @@ export default function OpportunityDetail() {
                   <AlertCircle size={11} /> Known limitations
                 </p>
                 <ul className="space-y-1.5">
-                  {limitations.slice(0, 8).map((lim, i) => (
+                  {limitations.slice(0, 8).map((lim: string, i: number) => (
                     <li key={i} className="flex items-start gap-2 text-xs text-ink-2 leading-relaxed">
                       <span className="text-warning flex-shrink-0 mt-0.5">•</span>
                       <span>{lim}</span>

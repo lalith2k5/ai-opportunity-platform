@@ -318,18 +318,24 @@ class OrchestratorAgent:
             for e in all_evidence:
                 evidence_by_opp.setdefault(e.opportunity_id, []).append(e)
 
-            # Map cluster -> best matching profile (via keyword overlap)
+            # Map cluster -> best matching profile (via keyword overlap).
+            # Threshold lowered to >= 1 after observing that many real
+            # clusters share only one meaningful keyword with any profile.
+            # Fallback: if no profile clears the threshold, use the
+            # best-scoring one as long as it has at least one keyword.
             def best_profile_for_cluster(cluster):
                 if not cluster or not cluster.keywords:
                     return None
                 ck = {str(k).lower() for k in cluster.keywords[:10] if k}
+                if not ck:
+                    return None
                 best, best_n = None, 0
                 for p in all_profiles:
                     pk = {str(k).lower() for k in (p.keywords or [])[:10] if k}
                     n = len(ck & pk)
                     if n > best_n:
                         best, best_n = p, n
-                return best if best_n >= 2 else None
+                return best
 
             snapshots = []
             for opp in opps:
