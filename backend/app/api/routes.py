@@ -317,6 +317,37 @@ def scheduler_status():
     return get_scheduler_status()
 
 
+@router.get("/opportunities/{opp_id}/history")
+def get_opportunity_history(
+    opp_id: int,
+    days: int = 30,
+    db: Session = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    """Time-series of opportunity_score + rank (Phase 8.2)."""
+    from datetime import datetime, timedelta, timezone
+    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+    rows = (
+        db.query(models.OpportunityScoreHistory)
+        .filter(models.OpportunityScoreHistory.opportunity_id == opp_id)
+        .filter(models.OpportunityScoreHistory.recorded_at >= cutoff)
+        .order_by(models.OpportunityScoreHistory.recorded_at.asc())
+        .all()
+    )
+    return {
+        "opportunity_id": opp_id,
+        "days": days,
+        "history": [
+            {
+                "score": r.opportunity_score,
+                "rank": r.rank,
+                "recorded_at": r.recorded_at.isoformat() if r.recorded_at else None,
+            }
+            for r in rows
+        ],
+    }
+
+
 @router.get("/opportunities/{opp_id}")
 def get_opportunity(opp_id: int, db: Session = Depends(get_db)):
     opp = db.query(models.Opportunity).filter(models.Opportunity.id == opp_id).first()

@@ -410,6 +410,86 @@ class OrchestratorAgent:
         finally:
             db.close()
 
+    def _snapshot_and_notify(self):
+        """Phase 8.2/8.3: snapshot top-N opportunity scores + emit rank alerts.
+
+        For the top 100 opportunities by current score:
+          - Insert a new row into opportunity_score_history.
+          - Compare to the previous snapshot; if the rank jumped by
+            RANK_DELTA_THRESHOLD or more places, create a Notification
+            for the user's attention.
+        Returns a small stats dict.
+        """
+        from app.database import SessionLocal as _SL
+        from app.services.notification_service import create_notification
+
+        RANK_DELTA_THRESHOLD = 5
+        TOP_N = 100
+
+        db = _SL()
+        try:
+            opps = (
+                db.query(models.Opportunity)
+                .order_by(models.Opportunity.opportunity_score.desc())
+                .limit(TOP_N)
+                .all()
+            )
+            if not opps:
+                return {"snapshots": 0, "rank_changes": 0}
+
+            # Fetch previous snapshot ranks (latest per opportunity)
+            opp_ids = [o.id for o in opps]
+            prev_ranks = {}
+            prev_rows = (
+                db.query(models.OpportunityScoreHistory)
+                .filter(models.OpportunityScoreHistory.opportunity_id.in_(opp_ids))
+                .order_by(models.OpportunityScoreHistory.recorded_at.desc())
+                .all()
+            )
+            for r in prev_rows:
+                if r.opportunity_id not in prev_ranks:
+                    prev_ranks[r.opportunity_id] = r.rank
+
+            snapshots = 0
+            rank_changes = 0
+            for i, o in enumerate(opps, start=1):
+                db.add(models.OpportunityScoreHistory(
+                    opportunity_id=o.id,
+                    opportunity_score=o.opportunity_score or 0.0,
+                    rank=i,
+                ))
+                snapshots += 1
+
+                prev = prev_ranks.get(o.id)
+                if prev is None:
+                    continue
+                delta = prev - i   # positive = moved up
+                if abs(delta) >= RANK_DELTA_THRESHOLD:
+                    direction = "up" if delta > 0 else "down"
+                    try:
+                        create_notification(
+                            "rank_change",
+                            f"Opportunity {direction} {abs(delta)} places: {(o.title or '')[:80]}",
+                            f"Now ranked #{i} (was #{prev}). Score {o.opportunity_score:.2f}.",
+                            link=f"/opportunities/{o.id}",
+                            severity="success" if direction == "up" else "warning",
+                        )
+                        rank_changes += 1
+                    except Exception as e:
+                        logger.warning(f"[ScoreSnapshot] notification failed: {e}")
+
+            db.commit()
+            logger.info(
+                f"[ScoreSnapshot] snapshots={snapshots} rank_changes={rank_changes}"
+            )
+            return {"snapshots": snapshots, "rank_changes": rank_changes}
+        except Exception as e:
+            db.rollback()
+            logger.error(f"[ScoreSnapshot] error: {e}")
+            return {"snapshots": 0, "rank_changes": 0, "error": str(e)}
+        finally:
+            db.close()
+
     def _save_to_db(self, query, raw, processed, clusters, gaps, trends, opportunities, user_id=None):
         db = SessionLocal()
         try:
@@ -825,6 +905,13 @@ class OrchestratorAgent:
             logger.info(f"Opportunity enrichment: {enriched_stats}")
         except Exception as e:
             logger.error(f"Opportunity enrichment block failed: {e}")
+
+        # ---- Phase 8.2/8.3: score snapshots + rank-change alerts ----
+        try:
+            snap_stats = self._snapshot_and_notify()
+            logger.info(f"Score snapshot: {snap_stats}")
+        except Exception as e:
+            logger.error(f"Score snapshot block failed: {e}")
 
         # Strip private helper keys before returning to API
         for c in clusters:

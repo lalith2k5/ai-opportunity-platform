@@ -98,6 +98,24 @@ class Opportunity(Base):
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
+
+class OpportunityScoreHistory(Base):
+    """Time-series snapshot of opportunity scores and ranks (Phase 8.2).
+
+    One row per opportunity per pipeline run (top-N only). Enables
+    trend charts on the opportunity detail page and rank-change
+    notifications (Phase 8.3).
+    """
+    __tablename__ = "opportunity_score_history"
+    id = Column(Integer, primary_key=True, index=True)
+    opportunity_id = Column(
+        Integer, ForeignKey("opportunities.id", ondelete="CASCADE"),
+        index=True, nullable=False,
+    )
+    opportunity_score = Column(Float, default=0.0)
+    rank = Column(Integer)
+    recorded_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
+
 class SearchHistory(Base):
     __tablename__ = "search_history"
     id = Column(Integer, primary_key=True, index=True)
