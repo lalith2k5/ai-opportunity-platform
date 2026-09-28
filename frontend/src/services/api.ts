@@ -195,6 +195,34 @@ export const getSchedulerStatus = () =>
   api.get('/scheduler/status').then(r => r.data);
 
 
+// SRS 30: organizations + recent recommendations
+export interface Organization {
+  id: number;
+  name: string;
+  canonical_name: string;
+  industry_domain: string | null;
+  source: string | null;
+  profile_count: number;
+}
+export const getOrganizations = () =>
+  api.get<Organization[]>('/organizations').then(r => r.data);
+
+export interface RecommendationRow {
+  id: number;
+  opportunity_id: number;
+  opportunity: { id: number; title: string } | null;
+  suggested_research_direction: string | null;
+  suggested_project_direction: string | null;
+  score_at_time: number | null;
+  rank_at_time: number | null;
+  created_at: string | null;
+}
+export const getRecentRecommendations = (limit = 20) =>
+  api.get<{ count: number; recommendations: RecommendationRow[] }>('/recommendations/recent', { params: { limit } }).then(r => r.data);
+
+export const getOpportunityRecommendations = (oppId: number, limit = 20) =>
+  api.get<{ opportunity_id: number; count: number; recommendations: RecommendationRow[] }>(`/opportunities/${oppId}/recommendations`, { params: { limit } }).then(r => r.data);
+
 // Admin
 export const adminGetStats = () => api.get('/admin/stats').then(r => r.data);
 export const adminGetUsers = () => api.get('/admin/users').then(r => r.data);

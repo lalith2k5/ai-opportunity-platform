@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useParams, useLocation, Link } from 'react-router-dom';
-import { getOpportunityDetail } from '../services/api';
+import { getOpportunityDetail, getOpportunityRecommendations } from '../services/api';
 import ScoreHistoryChart from '../components/ScoreHistoryChart';
 import {
   Loader2, ArrowLeft, Lightbulb, AlertCircle, TrendingUp,
@@ -60,6 +60,7 @@ export default function OpportunityDetail() {
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [recHistory, setRecHistory] = useState<any[]>([]);
 
   useEffect(() => {
     if (!id) return;
@@ -67,6 +68,13 @@ export default function OpportunityDetail() {
       .then(setData)
       .catch(e => setError(e?.response?.data?.detail || e.message))
       .finally(() => setLoading(false));
+  }, [id]);
+
+  useEffect(() => {
+    if (!id) return;
+    getOpportunityRecommendations(Number(id), 20)
+      .then((d: any) => setRecHistory(d.recommendations || []))
+      .catch(() => setRecHistory([]));
   }, [id]);
 
   if (loading) {
@@ -576,6 +584,46 @@ export default function OpportunityDetail() {
           )}
         </div>
       </Section>
+
+      {/* Recommendation history (SRS 30) */}
+      {recHistory.length > 0 && (
+        <div className="mt-5 bg-surface border border-edge rounded-lg p-5">
+          <div className="flex items-center gap-2 mb-4">
+            <Sparkles size={14} className="text-warning" />
+            <h2 className="text-xs font-medium text-ink uppercase tracking-wider">
+              Recommendation history ({recHistory.length})
+            </h2>
+          </div>
+          <div className="space-y-4">
+            {recHistory.slice(0, 10).map((r: any) => (
+              <div key={r.id} className="pb-4 border-b border-edge-subtle last:border-0 last:pb-0">
+                <div className="flex items-center justify-between gap-3 mb-2">
+                  <span className="text-2xs text-ink-4 font-mono">
+                    {new Date(r.created_at).toLocaleString()}
+                  </span>
+                  {r.score_at_time !== null && (
+                    <span className="text-2xs font-mono tabular-nums text-accent">
+                      score {r.score_at_time?.toFixed(2)}
+                    </span>
+                  )}
+                </div>
+                {r.suggested_research_direction && (
+                  <div className="mb-2">
+                    <p className="text-2xs text-ink-4 uppercase tracking-wider mb-1">Research direction</p>
+                    <p className="text-xs text-ink-2 leading-relaxed">{r.suggested_research_direction}</p>
+                  </div>
+                )}
+                {r.suggested_project_direction && (
+                  <div>
+                    <p className="text-2xs text-ink-4 uppercase tracking-wider mb-1">Project direction</p>
+                    <p className="text-xs text-ink-2 leading-relaxed">{r.suggested_project_direction}</p>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Score history */}
       <div className="mt-5">

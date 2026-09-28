@@ -125,16 +125,31 @@ export default function ResearcherWorkflow() {
                     <BookOpen size={11} /> Existing research ({c.papers?.length || 0})
                   </p>
                   {c.papers?.length ? (
-                    <ul className="space-y-1.5 max-h-40 overflow-y-auto pr-1">
+                    <div className="space-y-2.5 max-h-64 overflow-y-auto pr-1">
                       {c.papers.map((p: any, j: number) => (
-                        <li key={j} className="text-xs text-ink-2 leading-snug">
-                          <a href={p.url} target="_blank" rel="noreferrer" className="hover:text-accent transition-colors">
-                            <span className="text-ink-4 font-mono mr-1.5">{p.relevance_score?.toFixed(2)}</span>
-                            {p.title}
+                        <div key={j} className="pb-2 border-b border-edge-subtle last:border-0 last:pb-0">
+                          <a
+                            href={p.url}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-xs text-ink-2 leading-snug hover:text-accent transition-colors flex items-start gap-1.5"
+                          >
+                            <span className="text-ink-4 font-mono flex-shrink-0">{p.relevance_score?.toFixed(2)}</span>
+                            <span className="flex-1">{p.title}</span>
                           </a>
-                        </li>
+                          {p.results_summary && (
+                            <p className="text-2xs text-ink-3 mt-1 leading-relaxed">{p.results_summary}</p>
+                          )}
+                          {p.research_methods?.length > 0 && (
+                            <div className="flex flex-wrap gap-1 mt-1.5">
+                              {p.research_methods.slice(0, 4).map((m: string, k: number) => (
+                                <span key={k} className="badge bg-accent/10 text-accent border border-accent/30">{m}</span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
                       ))}
-                    </ul>
+                    </div>
                   ) : <p className="text-xs text-ink-4 italic">No papers linked yet.</p>}
                 </div>
 

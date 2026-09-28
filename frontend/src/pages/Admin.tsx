@@ -9,7 +9,7 @@ import {
 import {
   Loader2, Users, Activity, Trash2, RefreshCw, Play, Shield, FileText, Clock,
   Settings as SettingsIcon, Database, CheckCircle2, XCircle, Eye, EyeOff,
-  Save, ExternalLink, Zap, Globe, AlertCircle, Cpu,
+  Save, ExternalLink, Zap, AlertCircle, Cpu,
 } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
 import { useConfirm } from '../context/ConfirmContext';
@@ -17,33 +17,6 @@ import { useConfirm } from '../context/ConfirmContext';
 const ROLE_OPTIONS = ['student', 'researcher', 'entrepreneur', 'investor', 'admin'];
 
 type Tab = 'overview' | 'users' | 'logs' | 'scheduler' | 'config' | 'sync';
-
-function SourceStatus({ label, source, icon: Icon }: {
-  label: string;
-  source: { documents: number; last_collected: string | null; configured: boolean; enabled: boolean };
-  icon: any;
-}) {
-  const last = source.last_collected ? new Date(source.last_collected).toLocaleString() : 'Never';
-  return (
-    <div className="bg-surface border border-edge rounded-lg p-4">
-      <div className="flex items-center justify-between mb-3">
-        <div className="flex items-center gap-2">
-          <Icon size={14} className="text-accent" />
-          <p className="text-xs font-medium text-ink uppercase tracking-wider">{label}</p>
-        </div>
-        {source.configured
-          ? <span className="badge bg-success/15 text-success border border-success/30">Connected</span>
-          : <span className="badge bg-danger/15 text-danger border border-danger/30">Not configured</span>
-        }
-      </div>
-      <p className="text-2xl font-semibold text-ink font-mono tabular-nums">{source.documents}</p>
-      <p className="text-2xs text-ink-4 mt-1">documents stored</p>
-      <p className="text-2xs text-ink-3 mt-2 pt-2 border-t border-edge-subtle">
-        Last fetch: <span className="text-ink-2">{last}</span>
-      </p>
-    </div>
-  );
-}
 
 export default function Admin() {
   const [stats, setStats] = useState<any>(null);
@@ -509,14 +482,6 @@ function SyncTab({ status, reload }: { status: any; reload: () => void }) {
     return <p className="text-sm text-ink-4 text-center py-12">Loading sync status…</p>;
   }
 
-  const sourceIcons: Record<string, any> = {
-    github:   Globe,
-    arxiv:    FileText,
-    news:     Zap,
-    reddit:   Activity,
-    rd_cells: Cpu,
-  };
-
   return (
     <div className="space-y-5">
 
@@ -565,21 +530,6 @@ function SyncTab({ status, reload }: { status: any; reload: () => void }) {
           </p>
         </div>
       )}
-
-      {/* Sources (live counts) */}
-      <div>
-        <h3 className="text-xs font-medium text-ink uppercase tracking-wider mb-3">Data sources</h3>
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-          {status.sources.map((s: any) => (
-            <SourceStatus
-              key={s.source}
-              label={s.source}
-              source={s}
-              icon={sourceIcons[s.source] || Globe}
-            />
-          ))}
-        </div>
-      </div>
 
       {/* DB summary */}
       <div className="bg-surface border border-edge rounded-lg p-4">

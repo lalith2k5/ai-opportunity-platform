@@ -113,23 +113,35 @@ export default function RDWorkflow() {
                 <h2 className="text-xs font-medium text-ink uppercase tracking-wider">Research landscape</h2>
               </div>
               {data.research?.length ? (
-                <ul className="space-y-2 max-h-80 overflow-y-auto pr-1">
+                <div className="space-y-2.5 max-h-80 overflow-y-auto pr-1">
                   {data.research.map((p: any) => (
-                    <li key={p.arxiv_id} className="flex items-start justify-between gap-3">
-                      <a
-                        href={p.url}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="text-xs text-ink-2 leading-snug flex-1 hover:text-accent transition-colors"
-                      >
-                        {p.title}
-                      </a>
-                      <span className="text-2xs text-ink-4 font-mono flex-shrink-0">
-                        {p.relevance_score?.toFixed(2)}
-                      </span>
-                    </li>
+                    <div key={p.arxiv_id} className="pb-2 border-b border-edge-subtle last:border-0 last:pb-0">
+                      <div className="flex items-start justify-between gap-3">
+                        <a
+                          href={p.url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-xs text-ink-2 leading-snug flex-1 hover:text-accent transition-colors"
+                        >
+                          {p.title}
+                        </a>
+                        <span className="text-2xs text-ink-4 font-mono flex-shrink-0">
+                          {p.relevance_score?.toFixed(2)}
+                        </span>
+                      </div>
+                      {p.results_summary && (
+                        <p className="text-2xs text-ink-3 mt-1 leading-relaxed">{p.results_summary}</p>
+                      )}
+                      {p.research_methods?.length > 0 && (
+                        <div className="flex flex-wrap gap-1 mt-1.5">
+                          {p.research_methods.slice(0, 4).map((m: string, k: number) => (
+                            <span key={k} className="badge bg-accent/10 text-accent border border-accent/30">{m}</span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                   ))}
-                </ul>
+                </div>
               ) : <p className="text-xs text-ink-4 italic">No research papers linked.</p>}
             </div>
 

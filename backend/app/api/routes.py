@@ -482,6 +482,44 @@ def scheduler_status():
     return get_scheduler_status()
 
 
+@router.get("/recommendations/recent")
+def recent_recommendations(
+    limit: int = 20,
+    db: Session = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    """Latest Recommendation rows across all opportunities (D3 aggregate)."""
+    rows = (
+        db.query(models.Recommendation)
+        .order_by(models.Recommendation.created_at.desc())
+        .limit(max(1, min(limit, 100)))
+        .all()
+    )
+    opp_ids = [r.opportunity_id for r in rows]
+    opp_map = {}
+    if opp_ids:
+        for o in db.query(models.Opportunity).filter(
+            models.Opportunity.id.in_(opp_ids)
+        ).all():
+            opp_map[o.id] = {"id": o.id, "title": o.title}
+    return {
+        "count": len(rows),
+        "recommendations": [
+            {
+                "id": r.id,
+                "opportunity_id": r.opportunity_id,
+                "opportunity": opp_map.get(r.opportunity_id),
+                "suggested_research_direction": r.suggested_research_direction,
+                "suggested_project_direction": r.suggested_project_direction,
+                "score_at_time": r.score_at_time,
+                "rank_at_time": r.rank_at_time,
+                "created_at": r.created_at.isoformat() if r.created_at else None,
+            }
+            for r in rows
+        ],
+    }
+
+
 @router.get("/opportunities/{opp_id}/history")
 def get_opportunity_history(
     opp_id: int,
