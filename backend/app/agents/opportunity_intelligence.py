@@ -195,14 +195,18 @@ def _clean_keywords(keywords: list) -> dict:
 
 class OpportunityIntelligenceAgent:
     WEIGHTS = {
-        "demand": 0.23,
-        "research_gap": 0.18,
-        "trend": 0.14,
-        "innovation": 0.08,
-        "competition": 0.09,
-        "feasibility": 0.14,
-        "market_readiness": 0.09,
+        "demand": 0.18,
+        "research_gap": 0.15,
+        "trend": 0.12,
+        "innovation": 0.07,
+        "competition": 0.07,
+        "feasibility": 0.12,
+        "market_readiness": 0.08,
         "confidence": 0.05,
+        # ---- Phase 10.3: SRS 21 completion ----
+        "technology_suitability": 0.06,
+        "evidence_strength": 0.06,
+        "recency": 0.04,
     }
 
     def _generate_title(self, cluster: dict, gap: dict = None) -> str:
@@ -322,6 +326,73 @@ class OpportunityIntelligenceAgent:
         score = 0.5 * diversity + 0.3 * balance + 0.2 * breadth
         return round(score, 3)
 
+    # ---------- Phase 10.3: SRS 21 new factors ----------
+    def _derive_technology_suitability_score(
+        self, profile_techs: list, cluster_techs: list
+    ) -> float:
+        """Suitability = how real/actionable the technologies tied to this opp are.
+
+        Inputs:
+          profile_techs: list of dicts {name, stage, confidence} from
+                         problem_technologies for the matched profile
+          cluster_techs: list of tech names from the KG Technology nodes
+                         linked to the cluster (fallback signal)
+
+        Stages (SRS 12): used > proposed > emerging > potentially_applicable.
+        Weighted mean of stage scores times avg confidence. Falls back to
+        the cluster techs count if profile techs are empty.
+        """
+        stage_vals = {
+            "used": 1.0,
+            "proposed": 0.8,
+            "emerging": 0.6,
+            "potentially_applicable": 0.3,
+        }
+        if profile_techs:
+            total = 0.0
+            n = 0
+            for t in profile_techs:
+                stage = str(t.get("stage") or "potentially_applicable").lower()
+                conf = float(t.get("confidence") or 0.5)
+                total += stage_vals.get(stage, 0.3) * (0.5 + 0.5 * conf)
+                n += 1
+            score = total / max(n, 1)
+            return round(max(0.2, min(1.0, score)), 3)
+        if cluster_techs:
+            score = min(1.0, len(cluster_techs) / 8.0)
+            return round(0.4 + 0.4 * score, 3)
+        return 0.2
+
+    def _derive_evidence_strength_score(self, evidence_count: int) -> float:
+        """Log-scale from evidence row count (SRS 21): 0 -> 0.2, 5+ -> 1.0."""
+        import math
+        n = max(0, int(evidence_count))
+        score = 0.2 + 0.8 * (math.log1p(n) / math.log1p(8))
+        return round(min(1.0, score), 3)
+
+    def _derive_recency_score(self, created_at) -> float:
+        """Freshness of the opportunity (SRS 21): today -> 1.0, 30d -> 0.4, 90d+ -> 0.2."""
+        if created_at is None:
+            return 0.5
+        try:
+            from datetime import datetime, timezone
+            now = datetime.now(timezone.utc)
+            ts = created_at
+            if ts.tzinfo is None:
+                ts = ts.replace(tzinfo=timezone.utc)
+            days = max(0.0, (now - ts).total_seconds() / 86400.0)
+            if days <= 1:
+                return 1.0
+            if days <= 7:
+                return 0.9
+            if days <= 30:
+                return 0.4 + 0.5 * (1 - (days - 1) / 29)
+            if days <= 90:
+                return 0.2 + 0.2 * (1 - (days - 30) / 60)
+            return 0.2
+        except Exception:
+            return 0.5
+
     def _derive_market_readiness_score(self, keywords: list, news_items: list) -> float:
         """More news coverage → higher market readiness."""
         if not keywords or not news_items:
@@ -336,7 +407,9 @@ class OpportunityIntelligenceAgent:
 
     def score(self, problem_cluster: dict, research_gap: dict = None, trend: dict = None,
               github_items: list = None, arxiv_items: list = None, news_items: list = None,
-              raw_items: dict = None, avg_sentiment: float = None) -> dict:
+              raw_items: dict = None, avg_sentiment: float = None,
+              profile_techs: list = None, cluster_techs: list = None,
+              evidence_count: int = 0, created_at=None) -> dict:
         demand = problem_cluster.get("demand_score", 0.5)
         gap = research_gap.get("gap_score", 0.5) if research_gap else 0.5
         trend_score = trend.get("trend_score", 0.5) if trend else 0.5
@@ -358,6 +431,13 @@ class OpportunityIntelligenceAgent:
         innovation = self._derive_innovation_score(keywords, raw_items or {})
         confidence = 0.8
 
+        # ---- Phase 10.3: SRS 21 new factors ----
+        technology_suitability = self._derive_technology_suitability_score(
+            profile_techs or [], cluster_techs or []
+        )
+        evidence_strength = self._derive_evidence_strength_score(evidence_count or 0)
+        recency = self._derive_recency_score(created_at)
+
         opportunity_score = (
             self.WEIGHTS["demand"] * demand +
             self.WEIGHTS["research_gap"] * gap +
@@ -366,7 +446,10 @@ class OpportunityIntelligenceAgent:
             self.WEIGHTS["competition"] * (1 - competition) +
             self.WEIGHTS["feasibility"] * feasibility +
             self.WEIGHTS["market_readiness"] * market_readiness +
-            self.WEIGHTS["confidence"] * confidence
+            self.WEIGHTS["confidence"] * confidence +
+            self.WEIGHTS["technology_suitability"] * technology_suitability +
+            self.WEIGHTS["evidence_strength"] * evidence_strength +
+            self.WEIGHTS["recency"] * recency
         )
 
         title = self._generate_title(problem_cluster, research_gap)
@@ -387,5 +470,8 @@ class OpportunityIntelligenceAgent:
             "feasibility_score": feasibility,
             "market_readiness_score": market_readiness,
             "confidence_score": confidence,
+            "technology_suitability_score": technology_suitability,
+            "evidence_strength_score": evidence_strength,
+            "recency_score": recency,
             "opportunity_score": round(opportunity_score, 3),
         }

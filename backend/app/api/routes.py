@@ -406,6 +406,10 @@ def get_opportunity(opp_id: int, db: Session = Depends(get_db)):
             "competition_score": opp.competition_score,
             "feasibility_score": opp.feasibility_score,
             "market_readiness_score": opp.market_readiness_score,
+            # ---- Phase 10.3: SRS §21 new scoring factors ----
+            "technology_suitability_score": opp.technology_suitability_score or 0.0,
+            "evidence_strength_score": opp.evidence_strength_score or 0.0,
+            "recency_score": opp.recency_score or 0.0,
             "explanation": opp.explanation,
             # ---- Phase 6.1 enrichment (SRS §34) ----
             "domain": opp.domain,

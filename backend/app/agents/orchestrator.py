@@ -435,6 +435,30 @@ class OrchestratorAgent:
                     for e in evs[:12]
                 ]
 
+                # ---- Phase 10.3: recompute 3 new SRS 21 scoring factors ----
+                try:
+                    _profile_techs = [
+                        {
+                            "name": t.technology_name,
+                            "stage": t.stage,
+                            "confidence": t.confidence,
+                        }
+                        for t in (techs or [])
+                    ]
+                    opp.technology_suitability_score = (
+                        self.opportunity._derive_technology_suitability_score(
+                            _profile_techs, []
+                        )
+                    )
+                    opp.evidence_strength_score = (
+                        self.opportunity._derive_evidence_strength_score(len(evs))
+                    )
+                    opp.recency_score = self.opportunity._derive_recency_score(
+                        opp.created_at
+                    )
+                except Exception as _e:
+                    logger.warning(f"[Enrichment] new-score calc failed: {_e}")
+
                 snapshots.append({
                     "opportunity_row": opp,
                     "title": opp.title,
