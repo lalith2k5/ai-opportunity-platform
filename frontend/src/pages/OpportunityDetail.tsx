@@ -215,6 +215,9 @@ export default function OpportunityDetail() {
             <ScoreRow label="Competition"            value={opp.competition_score}       color="bg-danger" />
             <ScoreRow label="Technical feasibility"  value={opp.feasibility_score}       color="bg-sky-500" />
             <ScoreRow label="Market readiness"       value={opp.market_readiness_score}  color="bg-purple-500" />
+            <ScoreRow label="Technology suitability" value={opp.technology_suitability_score ?? 0} color="bg-cyan-500" />
+            <ScoreRow label="Evidence strength"      value={opp.evidence_strength_score ?? 0}      color="bg-lime-500" />
+            <ScoreRow label="Recency"                value={opp.recency_score ?? 0}                color="bg-orange-500" />
           </div>
         </Section>
 

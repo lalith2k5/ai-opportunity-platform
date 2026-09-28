@@ -29,6 +29,17 @@ import threading
 _PIPELINE_LOCK = threading.Lock()
 
 
+# ---- Phase 10.9: canonical organization name (used to dedup by name) ----
+import re as _re_org
+_ORG_CLEAN = _re_org.compile(r"[^a-z0-9]+")
+
+
+def _canonicalize_org_name(name: str) -> str:
+    if not name:
+        return ""
+    return _ORG_CLEAN.sub(" ", name.lower()).strip()
+
+
 class OrchestratorAgent:
     def __init__(self):
         self.data_collection = DataCollectionAgent()
@@ -103,8 +114,29 @@ class OrchestratorAgent:
                         skipped += 1
                     continue
 
+                # ---- Phase 10.9: link to Organization ----
+                org_name = (pr.get("organization") or "").strip()
+                org_id = None
+                if org_name and org_name.lower() != "unknown":
+                    cn = _canonicalize_org_name(org_name)
+                    if cn:
+                        org_row = db.query(models.Organization).filter(
+                            models.Organization.canonical_name == cn
+                        ).first()
+                        if not org_row:
+                            org_row = models.Organization(
+                                name=org_name[:300],
+                                canonical_name=cn[:200],
+                                industry_domain=(pr.get("industry_domain") or "")[:120] or None,
+                                source=(pr.get("source") or "")[:64] or None,
+                            )
+                            db.add(org_row)
+                            db.flush()
+                        org_id = org_row.id
+
                 db.add(models.ProblemProfile(
-                    organization=pr.get("organization", "")[:500],
+                    organization=org_name[:500],
+                    organization_id=org_id,
                     problem_title=pr.get("problem_title", "")[:500],
                     canonical_hash=canonical_hash or None,
                     problem_description=pr.get("problem_description", ""),
@@ -477,6 +509,24 @@ class OrchestratorAgent:
                     row.suggested_research_direction = out["suggested_research_direction"][:1500]
                 if out.get("suggested_project_direction"):
                     row.suggested_project_direction = out["suggested_project_direction"][:1500]
+
+                # ---- Phase 10.10: auditable Recommendation row (SRS 30) ----
+                try:
+                    db.add(models.Recommendation(
+                        opportunity_id=row.id,
+                        user_id=None,
+                        suggested_research_direction=(
+                            out.get("suggested_research_direction") or ""
+                        )[:2000],
+                        suggested_project_direction=(
+                            out.get("suggested_project_direction") or ""
+                        )[:2000],
+                        rationale=(row.explanation or "")[:2000],
+                        score_at_time=float(row.opportunity_score or 0.0),
+                        rank_at_time=None,
+                    ))
+                except Exception as _re:
+                    logger.warning(f"[Enrichment] Recommendation insert failed: {_re}")
 
             db.commit()
             logger.info(

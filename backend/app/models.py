@@ -11,11 +11,12 @@ class User(Base):
     role = Column(String, default="student")
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
-class DataSource(Base):
-    """Registered data source for the pipeline (SRS FR-01).
+class Source(Base):
+    """Registered data source for the pipeline (SRS FR-01 + SRS 30 'Source').
 
-    Seeded once, toggled from Admin. is_active=False makes the pipeline
-    skip this source's fetchers without removing historical rows.
+    Table name is data_sources for backwards compatibility with earlier
+    migrations. Seeded once, toggled from Admin. is_active=False makes
+    the pipeline skip this source's fetchers without removing historical rows.
     """
     __tablename__ = "data_sources"
     id = Column(Integer, primary_key=True, index=True)
@@ -23,6 +24,10 @@ class DataSource(Base):
     source_type = Column(String)
     last_fetched = Column(DateTime(timezone=True))
     is_active = Column(Boolean, default=True)
+
+
+# Backwards-compat alias -- older code imports models.DataSource
+DataSource = Source
 
 
 class RawDocument(Base):
@@ -134,6 +139,29 @@ class OpportunityScoreHistory(Base):
     opportunity_score = Column(Float, default=0.0)
     rank = Column(Integer)
     recorded_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
+
+class Recommendation(Base):
+    """Per-opportunity recommendation (SRS 30).
+
+    One row per opportunity per pipeline run that produced a direction.
+    Stores a snapshot of the AI-generated directions at that moment so
+    the recommendation is auditable / trailable even if the opp later
+    changes.
+    """
+    __tablename__ = "recommendations"
+    id = Column(Integer, primary_key=True, index=True)
+    opportunity_id = Column(
+        Integer, ForeignKey("opportunities.id", ondelete="CASCADE"),
+        index=True, nullable=False,
+    )
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
+    suggested_research_direction = Column(Text)
+    suggested_project_direction = Column(Text)
+    rationale = Column(Text)
+    score_at_time = Column(Float)
+    rank_at_time = Column(Integer)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
+
 
 class SearchHistory(Base):
     __tablename__ = "search_history"
