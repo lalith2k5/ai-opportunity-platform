@@ -59,13 +59,13 @@ fi
 
 echo
 echo "Waiting for backend to respond…"
-for i in {1..45}; do
+for i in {1..90}; do
   if curl -sf http://localhost:8000/api/health >/dev/null 2>&1; then
     echo -e "${GREEN}[ok]${RESET} Backend healthy after ${i}s"
     break
   fi
   sleep 1
-  [ $i -eq 45 ] && echo -e "${RED}[fail]${RESET} Backend did not become healthy in 45s — check logs"
+  [ $i -eq 90 ] && echo -e "${RED}[fail]${RESET} Backend did not become healthy in 90s — check logs"
 done
 
 echo
