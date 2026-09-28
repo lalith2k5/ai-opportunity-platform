@@ -83,6 +83,19 @@ class Opportunity(Base):
     opportunity_score = Column(Float, default=0.0)
     evidence = Column(JSON)
     explanation = Column(Text)
+
+    # ---- Phase 6.1: Opportunity Card enrichment (SRS §34) ----
+    domain = Column(String(120))
+    industry = Column(String(120))
+    related_technologies = Column(JSON, default=list)
+    existing_research = Column(JSON, default=list)
+    existing_approaches = Column(Text)
+    known_limitations = Column(Text)
+    suggested_research_direction = Column(Text)
+    suggested_project_direction = Column(Text)
+    emerging_trend = Column(String(200))
+    evidence_sources = Column(JSON, default=list)
+
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 class SearchHistory(Base):
