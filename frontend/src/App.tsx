@@ -18,6 +18,9 @@ import Recommendations from './pages/Recommendations';
 import Analytics from './pages/Analytics';
 import KnowledgeGraph from './pages/KnowledgeGraph';
 import ProblemProfiles from './pages/ProblemProfiles';
+import StudentWorkflow from './pages/StudentWorkflow';
+import ResearcherWorkflow from './pages/ResearcherWorkflow';
+import RDWorkflow from './pages/RDWorkflow';
 
 const wrap = (el: React.ReactNode) => (
   <ProtectedRoute><Layout>{el}</Layout></ProtectedRoute>
@@ -42,6 +45,9 @@ export default function App() {
       <Route path="/analytics" element={wrap(<Analytics />)} />
       <Route path="/knowledge-graph" element={wrap(<KnowledgeGraph />)} />
       <Route path="/problem-profiles" element={wrap(<ProblemProfiles />)} />
+      <Route path="/workflows/student"    element={wrap(<StudentWorkflow />)} />
+      <Route path="/workflows/researcher" element={wrap(<ResearcherWorkflow />)} />
+      <Route path="/workflows/rd"         element={wrap(<RDWorkflow />)} />
       <Route path="/opportunities/:id" element={wrap(<OpportunityDetail />)} />
     </Routes>
   );

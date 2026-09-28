@@ -137,6 +137,14 @@ export const downloadPDFReport = async () => {
   URL.revokeObjectURL(url);
 };
 
+// Phase 7 flow endpoints
+export const getResearcherFlow = (topic?: string, limit = 20) =>
+  api.get('/researcher/flow', { params: { topic: topic || undefined, limit } }).then(r => r.data);
+export const getRDFlow = (industryProblem?: string, industry?: string, limit = 15) =>
+  api.get('/rd/flow', { params: { industry_problem: industryProblem || undefined, industry: industry || undefined, limit } }).then(r => r.data);
+export const getProblemProfileStats = () =>
+  api.get('/problem-profiles/stats').then(r => r.data);
+
 export const getSearchHistory = () =>
   api.get('/search-history').then(r => r.data);
 

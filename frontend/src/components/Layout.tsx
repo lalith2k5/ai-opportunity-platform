@@ -3,6 +3,7 @@ import { Link, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard, Search, MessageSquare, FileText, Activity,
   TrendingUp, BarChart3, Zap, Shield, Menu, X, Sparkles, Network, Target,
+  GraduationCap, FlaskConical, Factory,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import NotificationBell from './NotificationBell';
@@ -20,6 +21,9 @@ const sections = [
       { path: '/opportunities', label: 'Opportunities', icon: Zap },
       { path: '/problems', label: 'Problems', icon: TrendingUp },
       { path: '/problem-profiles', label: 'Problem Profiles', icon: Target },
+      { path: '/workflows/student',    label: 'Student flow',    icon: GraduationCap },
+      { path: '/workflows/researcher', label: 'Researcher flow', icon: FlaskConical },
+      { path: '/workflows/rd',         label: 'R&D flow',        icon: Factory },
     ],
   },
   {
