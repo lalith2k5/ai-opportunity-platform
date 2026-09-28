@@ -12,7 +12,6 @@ from sqlalchemy import func
 from app.database import get_db
 from app import models
 from app.auth.dependencies import get_current_user
-from app.logger import logger
 
 router = APIRouter(prefix="/problem-profiles", tags=["problem-profiles"])
 

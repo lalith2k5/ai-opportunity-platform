@@ -11,8 +11,7 @@ from app.api.kg_routes import router as kg_router
 from app.api.problem_profile_routes import router as problem_profile_router
 from app.api.flow_routes import router as flow_router
 from app.database import engine, Base
-from app import models
-from app.logger import logger
+from app.logger import logger  # models imported for side effects via routers
 from app.scheduler import start_scheduler, stop_scheduler
 from app.middleware import ActivityLogMiddleware
 

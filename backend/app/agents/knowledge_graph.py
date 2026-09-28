@@ -2,7 +2,7 @@ import networkx as nx
 from app.database import SessionLocal
 from app import models
 from app.logger import logger
-from app.kg_schema import normalize_relation, CANONICAL_RELATIONS
+from app.kg_schema import normalize_relation  # CANONICAL_RELATIONS imported elsewhere
 
 
 # Type specificity ranking — higher number = more specific.
@@ -209,6 +209,11 @@ class KnowledgeGraphAgent:
             for kw in (c.get("keywords") or [])[:5]:
                 self.add_entity("Technology", kw, {})
                 self.add_relationship(clean, "related_to", kw)
+            # ---- Phase 10.13 (C3): register canonical name alias ----
+            if raw and clean and raw != clean:
+                if not hasattr(self, "_problem_node_alias"):
+                    self._problem_node_alias = {}
+                self._problem_node_alias[raw] = clean
 
         # 3. ResearchPaper nodes (arXiv)
         paper_titles = set()

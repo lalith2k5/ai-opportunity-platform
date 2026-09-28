@@ -36,7 +36,7 @@ class EvidenceAgent:
     ]
     MAX_PER_SOURCE = 3
     MAX_TOTAL = 12
-    MIN_KEYWORD_LEN = 3
+    MIN_KEYWORD_LEN = 2
 
     @staticmethod
     def _row_id(obj):

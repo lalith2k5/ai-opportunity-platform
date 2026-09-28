@@ -40,7 +40,11 @@ STRICT RULES:
     used                     = the text says it is already in use here
     proposed                 = the text proposes or plans to use it
     emerging                 = it is gaining traction in this problem domain
+                               (use this when the text describes recent
+                               adoption, growing interest, or new research)
     potentially_applicable   = plausible but not yet mentioned as applied
+- Do NOT default everything to "used". Aim for a realistic mix; use
+  "emerging" whenever recent / rising adoption is implied.
 - confidence is a float 0.0 to 1.0 reflecting how well the text supports it.
 - If the text mentions no technologies, return {"technologies": []}.
 - Do NOT invent specifics that are not in the text.
