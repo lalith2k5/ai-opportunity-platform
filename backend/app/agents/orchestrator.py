@@ -781,9 +781,23 @@ class OrchestratorAgent:
         challenge_items = []
         try:
             from app.config import settings as _s
-            if _s.ENABLE_CHALLENGE_PORTALS:
+            from app.database import SessionLocal as _SLcp
+            from app import models as _mcp
+            _cp_active = True
+            _dbcp = _SLcp()
+            try:
+                _row = _dbcp.query(_mcp.DataSource).filter(
+                    _mcp.DataSource.name == "challenge_portal"
+                ).first()
+                if _row is not None and not _row.is_active:
+                    _cp_active = False
+            finally:
+                _dbcp.close()
+            if _s.ENABLE_CHALLENGE_PORTALS and _cp_active:
                 challenge_items = self.challenge_portal.fetch_all(query, limit=_s.CHALLENGE_PORTAL_CAP)
                 raw["challenge_portal"] = challenge_items
+            elif not _cp_active:
+                logger.info("[Pipeline] challenge_portal DataSource is disabled -- skipping")
         except Exception as e:
             logger.warning(f"Challenge portal fetch failed: {e}")
 

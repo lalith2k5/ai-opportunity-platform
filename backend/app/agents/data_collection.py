@@ -23,6 +23,27 @@ class DataCollectionAgent:
         self.rd_cells = RDCellsService()
         self.patents = PatentsService()
 
+    def _active_source_names(self):
+        """Return the set of active DataSource names, or None if none registered.
+
+        None means 'no registry configured -> allow all'. An empty set means
+        every source is disabled (unlikely but honoured literally).
+        """
+        try:
+            from app.database import SessionLocal
+            from app import models as _m
+            db = SessionLocal()
+            try:
+                rows = db.query(_m.DataSource).all()
+                if not rows:
+                    return None
+                return {r.name for r in rows if r.is_active}
+            finally:
+                db.close()
+        except Exception as e:
+            logger.warning(f"[DataCollection] active-source lookup failed: {e}")
+            return None
+
     def collect_all(self, query: str, mode: str = "quick") -> dict:
         caps = MODES.get(mode, MODES["quick"])
         logger.info(f"[DataCollection] Fetching for '{query}' (mode={mode}, caps={caps})")
@@ -36,6 +57,25 @@ class DataCollectionAgent:
             "rd_cells": lambda: self.rd_cells.search_rd_cells(query, limit=caps["rd_cells"]),
             "patents":  lambda: self.patents.search_patents(query, limit=caps["patents"]),
         }
+
+        # ---- Phase 10.8: SRS FR-01 -- filter by active DataSource registry ----
+        active = self._active_source_names()
+        if active is not None:
+            name_to_ds = {
+                "github": "github",
+                "github_issues": "github",   # shares the github DataSource row
+                "arxiv": "arxiv",
+                "news": "news",
+                "reddit": "reddit",
+                "rd_cells": "rd_cells",
+                "patents": "patents",
+            }
+            before = sorted(tasks.keys())
+            tasks = {k: v for k, v in tasks.items() if name_to_ds.get(k) in active}
+            logger.info(
+                f"[DataCollection] active filter -> kept {sorted(tasks.keys())} "
+                f"(dropped {sorted(set(before) - set(tasks.keys()))})"
+            )
 
         results = {"github": [], "github_issues": [], "arxiv": [], "news": [], "reddit": [], "rd_cells": [], "patents": []}
         with ThreadPoolExecutor(max_workers=4) as ex:

@@ -240,3 +240,17 @@ export const downloadFullJSON = () =>
   downloadFile('/export/full.json', `full_export_${new Date().toISOString().slice(0,10)}.json`);
 
 export const adminGetLLMStatus = () => api.get('/admin/llm/status').then(r => r.data);
+
+// ---- SRS FR-01: data-source registry ----
+export interface DataSourceRow {
+  id: number;
+  name: string;
+  source_type: string;
+  is_active: boolean;
+  last_fetched: string | null;
+  document_count: number;
+}
+export const adminGetDataSources = () =>
+  api.get<DataSourceRow[]>('/admin/data-sources').then(r => r.data);
+export const adminToggleDataSource = (id: number, is_active: boolean) =>
+  api.patch(`/admin/data-sources/${id}`, { is_active }).then(r => r.data);

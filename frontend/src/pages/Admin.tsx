@@ -4,6 +4,7 @@ import {
   adminGetLogs, adminGetScheduler, adminTriggerScheduler,
   adminGetSettings, adminUpdateSetting,
   adminGetSyncStatus, adminTriggerSync, adminGetLLMStatus,
+  adminGetDataSources, adminToggleDataSource,
 } from '../services/api';
 import {
   Loader2, Users, Activity, Trash2, RefreshCw, Play, Shield, FileText, Clock,
@@ -465,7 +466,23 @@ function SyncTab({ status, reload }: { status: any; reload: () => void }) {
   const [mode, setMode] = useState<'quick' | 'deep'>('quick');
   const [running, setRunning] = useState(false);
   const [lastResult, setLastResult] = useState<any>(null);
+  const [dataSources, setDataSources] = useState<any[]>([]);
   const toast = useToast();
+
+  const loadSources = async () => {
+    try { setDataSources(await adminGetDataSources()); } catch {}
+  };
+  useEffect(() => { loadSources(); }, []);
+
+  const toggleSource = async (id: number, next: boolean) => {
+    try {
+      await adminToggleDataSource(id, next);
+      await loadSources();
+      toast.success(next ? 'Source enabled' : 'Source disabled');
+    } catch (e: any) {
+      toast.error('Toggle failed', e?.response?.data?.detail || e.message);
+    }
+  };
 
   const handleTrigger = async () => {
     if (!topic.trim()) {
@@ -503,7 +520,53 @@ function SyncTab({ status, reload }: { status: any; reload: () => void }) {
   return (
     <div className="space-y-5">
 
-      {/* Sources */}
+      {/* SRS FR-01: registered sources with active toggle */}
+      {dataSources.length > 0 && (
+        <div>
+          <h3 className="text-xs font-medium text-ink uppercase tracking-wider mb-3">
+            Registered data sources (FR-01)
+          </h3>
+          <div className="bg-surface border border-edge rounded-lg overflow-hidden">
+            {dataSources.map((s, i) => (
+              <div
+                key={s.id}
+                className={`flex items-center justify-between gap-3 px-4 py-3 ${
+                  i > 0 ? 'border-t border-edge-subtle' : ''
+                }`}
+              >
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2 mb-0.5">
+                    <p className="text-sm font-medium text-ink">{s.name}</p>
+                    <span className="text-2xs text-ink-4 font-mono">{s.source_type}</span>
+                  </div>
+                  <p className="text-2xs text-ink-4">
+                    {s.document_count} docs
+                    {s.last_fetched ? ` · last ${new Date(s.last_fetched).toLocaleString()}` : ''}
+                  </p>
+                </div>
+                <button
+                  onClick={() => toggleSource(s.id, !s.is_active)}
+                  className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors flex-shrink-0 ${
+                    s.is_active ? 'bg-success' : 'bg-overlay border border-edge'
+                  }`}
+                  title={s.is_active ? 'Click to disable' : 'Click to enable'}
+                >
+                  <span
+                    className={`inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform ${
+                      s.is_active ? 'translate-x-5' : 'translate-x-1'
+                    }`}
+                  />
+                </button>
+              </div>
+            ))}
+          </div>
+          <p className="text-2xs text-ink-4 mt-2">
+            Disabled sources are skipped by the next pipeline run.
+          </p>
+        </div>
+      )}
+
+      {/* Sources (live counts) */}
       <div>
         <h3 className="text-xs font-medium text-ink uppercase tracking-wider mb-3">Data sources</h3>
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">

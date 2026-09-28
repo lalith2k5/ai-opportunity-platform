@@ -252,6 +252,76 @@ def sync_trigger(
         raise HTTPException(500, str(e))
 
 
+@router.get("/data-sources")
+def list_data_sources(
+    db: Session = Depends(get_db),
+    user: models.User = Depends(require_role("admin")),
+):
+    """SRS FR-01: registered data sources with live document counts."""
+    rows = (
+        db.query(models.DataSource)
+        .order_by(models.DataSource.name)
+        .all()
+    )
+    # Doc count per source (raw_documents.source == DataSource.name)
+    from sqlalchemy import func
+    counts = dict(
+        db.query(
+            models.RawDocument.source,
+            func.count(models.RawDocument.id),
+        ).group_by(models.RawDocument.source).all()
+    )
+    return [
+        {
+            "id": r.id,
+            "name": r.name,
+            "source_type": r.source_type or "",
+            "is_active": bool(r.is_active),
+            "last_fetched": r.last_fetched.isoformat() if r.last_fetched else None,
+            "document_count": counts.get(r.name, 0),
+        }
+        for r in rows
+    ]
+
+
+class DataSourceToggle(BaseModel):
+    is_active: bool
+
+
+@router.patch("/data-sources/{source_id}")
+def toggle_data_source(
+    source_id: int,
+    payload: DataSourceToggle,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(require_role("admin")),
+):
+    """Enable/disable a registered data source (SRS FR-01)."""
+    row = db.query(models.DataSource).filter(models.DataSource.id == source_id).first()
+    if not row:
+        raise HTTPException(404, "Data source not found")
+    row.is_active = payload.is_active
+    db.commit()
+    logger.info(
+        f"[Admin] DataSource '{row.name}' -> is_active={row.is_active} "
+        f"by {user.email}"
+    )
+    return {"id": row.id, "name": row.name, "is_active": bool(row.is_active)}
+
+
+@router.get("/data-sources/active-names")
+def active_source_names(
+    db: Session = Depends(get_db),
+    _=Depends(require_role("admin")),
+):
+    """Return the set of currently-active source names for pipeline gating."""
+    rows = (
+        db.query(models.DataSource.name)
+        .filter(models.DataSource.is_active == True)  # noqa: E712
+        .all()
+    )
+    return {"active": sorted(r[0] for r in rows)}
+
+
 @router.get("/llm/status")
 def llm_status(
     user: models.User = Depends(require_role("admin")),
