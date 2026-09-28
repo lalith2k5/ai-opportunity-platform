@@ -152,6 +152,9 @@ export const getChatHistory = () =>
   api.get('/chat-history').then(r => r.data);
 
 
+export const getOpportunityHistory = (id: number, days = 30) =>
+  api.get(`/opportunities/${id}/history`, { params: { days } }).then(r => r.data);
+
 export const getOpportunityDetail = (id: number) =>
   api.get(`/opportunities/${id}`).then(r => r.data);
 
