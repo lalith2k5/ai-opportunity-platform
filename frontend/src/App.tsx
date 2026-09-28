@@ -46,6 +46,7 @@ export default function App() {
       <Route path="/knowledge-graph" element={wrap(<KnowledgeGraph />)} />
       <Route path="/problem-profiles" element={wrap(<ProblemProfiles />)} />
       <Route path="/workflows/student"    element={wrap(<StudentWorkflow />)} />
+      <Route path="/workflows/student/:id" element={wrap(<OpportunityDetail />)} />
       <Route path="/workflows/researcher" element={wrap(<ResearcherWorkflow />)} />
       <Route path="/workflows/rd"         element={wrap(<RDWorkflow />)} />
       <Route path="/opportunities/:id" element={wrap(<OpportunityDetail />)} />

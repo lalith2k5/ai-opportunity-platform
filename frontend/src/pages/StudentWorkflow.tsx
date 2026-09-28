@@ -134,7 +134,9 @@ export default function StudentWorkflow() {
       ) : (
         <>
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3 mb-8">
-            {filtered.slice(0, 9).map(o => <OpportunityCard key={o.id} opp={o} />)}
+            {filtered.slice(0, 9).map(o => (
+              <OpportunityCard key={o.id} opp={o} to={`/workflows/student/${o.id}`} />
+            ))}
           </div>
 
           <div className="flex items-center gap-2 mb-4">
@@ -147,7 +149,7 @@ export default function StudentWorkflow() {
             {filtered.filter(o => o.suggested_project_direction).slice(0, 6).map(o => (
               <Link
                 key={o.id}
-                to={`/opportunities/${o.id}`}
+                to={`/workflows/student/${o.id}`}
                 className="group block bg-surface border border-edge hover:border-accent/40 rounded-lg p-4 transition-colors"
               >
                 <div className="flex items-start justify-between gap-3 mb-2">

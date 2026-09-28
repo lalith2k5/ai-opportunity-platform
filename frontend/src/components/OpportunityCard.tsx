@@ -17,10 +17,17 @@ function ScoreBar({ label, value, color }: { label: string; value: number; color
   );
 }
 
-export default function OpportunityCard({ opp }: { opp: Opportunity }) {
+export default function OpportunityCard({
+  opp,
+  to,
+}: {
+  opp: Opportunity;
+  to?: string;
+}) {
+  const href = to ?? `/opportunities/${opp.id}`;
   return (
     <Link
-      to={`/opportunities/${opp.id}`}
+      to={href}
       className="group block bg-surface border border-edge rounded-lg p-4 hover:border-accent/40 hover:bg-overlay hover:-translate-y-[1px] hover:shadow-md transition-all duration-150"
     >
       <div className="flex items-start justify-between gap-4 mb-3">

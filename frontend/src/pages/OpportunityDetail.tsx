@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, useLocation, Link } from 'react-router-dom';
 import { getOpportunityDetail } from '../services/api';
 import ScoreHistoryChart from '../components/ScoreHistoryChart';
 import {
@@ -50,6 +50,13 @@ function AiBadge() {
 
 export default function OpportunityDetail() {
   const { id } = useParams<{ id: string }>();
+  const location = useLocation();
+  const backTo = location.pathname.startsWith('/workflows/student')
+    ? '/workflows/student'
+    : '/opportunities';
+  const backLabel = backTo === '/workflows/student'
+    ? 'Back to student workflow'
+    : 'Back to opportunities';
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -111,10 +118,10 @@ export default function OpportunityDetail() {
 
       {/* Back link */}
       <Link
-        to="/opportunities"
+        to={backTo}
         className="inline-flex items-center gap-1 text-xs text-ink-3 hover:text-ink transition-colors mb-6"
       >
-        <ArrowLeft size={13} /> Back to opportunities
+        <ArrowLeft size={13} /> {backLabel}
       </Link>
 
       {/* Hero */}
