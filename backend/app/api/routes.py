@@ -445,6 +445,35 @@ def get_opportunity(opp_id: int, db: Session = Depends(get_db)):
                 for h, d in scored[:12]
             ]
 
+    organization = None
+    if cluster and cluster.keywords:
+        ck = {str(k).lower() for k in (cluster.keywords or [])[:10] if k}
+        if ck:
+            all_profiles = db.query(models.ProblemProfile).all()
+            best, best_n = None, 0
+            for p in all_profiles:
+                pk = {str(k).lower() for k in (p.keywords or [])[:10] if k}
+                n = len(ck & pk)
+                if n > best_n:
+                    best, best_n = p, n
+            if best:
+                if best.organization_id:
+                    org = db.query(models.Organization).filter(
+                        models.Organization.id == best.organization_id
+                    ).first()
+                    if org:
+                        organization = {
+                            "name": org.name,
+                            "industry_domain": org.industry_domain,
+                            "source": org.source,
+                        }
+                if organization is None and best.organization:
+                    organization = {
+                        "name": best.organization,
+                        "industry_domain": best.industry_domain,
+                        "source": best.source,
+                    }
+
     return {
         "opportunity": {
             "id": opp.id,
@@ -474,6 +503,7 @@ def get_opportunity(opp_id: int, db: Session = Depends(get_db)):
             "suggested_project_direction": opp.suggested_project_direction,
             "emerging_trend": opp.emerging_trend,
             "evidence_sources": opp.evidence_sources or [],
+            "organization": organization,
             "created_at": opp.created_at,
         },
         "problem_cluster": {

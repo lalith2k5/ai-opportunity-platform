@@ -112,6 +112,11 @@ def _cleanup_old_logs():
         n = db.query(models.SearchHistory).filter(models.SearchHistory.created_at < cutoff).delete(synchronize_session=False)
         result["search_history"] = n
 
+        # Recommendations — 180 days (D7: prevents unbounded growth)
+        cutoff = now - timedelta(days=180)
+        n = db.query(models.Recommendation).filter(models.Recommendation.created_at < cutoff).delete(synchronize_session=False)
+        result["recommendations"] = n
+
         db.commit()
         total = sum(result.values())
         logger.info(f"[Scheduler] Cleanup done — {total} rows purged: {result}")

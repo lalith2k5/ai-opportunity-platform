@@ -94,6 +94,7 @@ export default function OpportunityDetail() {
   const opp = data.opportunity;
   const cluster = data.problem_cluster;
   const gap = data.research_gap;
+  const organization = data.opportunity?.organization;
   const isHigh = opp.opportunity_score > 0.6;
 
   const techs: string[] = Array.isArray(opp.related_technologies) ? opp.related_technologies : [];
@@ -149,6 +150,11 @@ export default function OpportunityDetail() {
               {opp.emerging_trend && (
                 <span className="badge bg-warning/15 text-warning border border-warning/30">
                   <TrendingUp size={10} /> {opp.emerging_trend}
+                </span>
+              )}
+              {organization?.name && (
+                <span className="badge bg-overlay text-ink-3 border border-edge">
+                  {organization.name}
                 </span>
               )}
               <span className="text-2xs text-ink-4 font-mono">#{opp.id}</span>
