@@ -47,8 +47,8 @@ function SidebarContent({
   return (
     <>
       <div className="px-4 pt-5 pb-4 flex items-center gap-2.5">
-        <div className="w-7 h-7 rounded-md bg-accent flex items-center justify-center flex-shrink-0">
-          <Activity className="text-accent-fg" size={16} />
+        <div className="w-8 h-8 rounded-lg bg-accent flex items-center justify-center flex-shrink-0 shadow-[0_4px_12px_-2px_rgb(var(--accent)/0.5),inset_0_1px_0_0_rgb(255_255_255/0.2)]">
+          <Activity className="text-accent-fg" size={17} />
         </div>
         <div className="min-w-0 flex-1">
           <h1 className="text-ink font-semibold text-sm leading-tight tracking-tight">Opportunity AI</h1>
@@ -73,7 +73,7 @@ function SidebarContent({
       <nav className="flex-1 overflow-y-auto px-3 py-3">
         {sections.map(section => (
           <div key={section.label} className="mb-4">
-            <p className="px-2 mb-1.5 text-2xs font-semibold text-ink-4 uppercase tracking-wider">
+            <p className="px-2.5 mb-2 text-2xs font-semibold text-ink-4 uppercase tracking-[0.08em]">
               {section.label}
             </p>
             <div className="space-y-0.5">
@@ -84,16 +84,19 @@ function SidebarContent({
                   <Link
                     key={item.path}
                     to={item.path}
-                    className={`relative flex items-center gap-2.5 px-2 py-2 rounded-md text-sm transition-colors ${
+                    className={`group relative flex items-center gap-2.5 px-2.5 py-2 rounded-md text-sm transition-all duration-200 ease-smooth ${
                       isActive
-                        ? 'bg-accent/10 text-ink font-medium'
-                        : 'text-ink-2 hover:bg-overlay hover:text-ink'
+                        ? 'bg-accent/[0.12] text-ink font-medium shadow-[inset_0_1px_0_0_rgb(255_255_255/0.04),0_1px_2px_rgb(0_0_0/0.2)]'
+                        : 'text-ink-2 hover:bg-overlay/60 hover:text-ink'
                     }`}
                   >
                     {isActive && (
-                      <span className="absolute left-0 top-1.5 bottom-1.5 w-[2px] rounded-full bg-accent" />
+                      <span className="absolute left-0 top-1.5 bottom-1.5 w-[2px] rounded-full bg-accent shadow-[0_0_8px_rgb(var(--accent)/0.6)]" />
                     )}
-                    <Icon size={15} className={isActive ? 'text-accent' : ''} />
+                    <Icon
+                      size={15}
+                      className={`transition-transform duration-200 ease-apple group-hover:scale-105 ${isActive ? 'text-accent' : 'group-hover:text-ink'}`}
+                    />
                     <span className="truncate">{item.label}</span>
                   </Link>
                 );
@@ -146,7 +149,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
     <div className="flex h-screen overflow-hidden bg-canvas">
 
       {/* Mobile topbar */}
-      <div className="lg:hidden fixed top-0 left-0 right-0 h-14 bg-surface border-b border-edge flex items-center justify-between px-3 z-30">
+      <div className="lg:hidden fixed top-0 left-0 right-0 h-14 glass border-b border-edge/60 flex items-center justify-between px-3 z-30">
         <button
           onClick={() => setMobileOpen(true)}
           className="p-2 -ml-1 rounded-md text-ink-2 hover:bg-overlay transition-colors"
@@ -167,7 +170,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       </div>
 
       {/* Desktop sidebar — always in flow, hidden below lg */}
-      <aside className="hidden lg:flex w-64 flex-shrink-0 bg-surface border-r border-edge flex-col h-screen">
+      <aside className="hidden lg:flex w-64 flex-shrink-0 flex-col h-screen glass border-r border-edge/60">
         <SidebarContent location={location} user={user} />
       </aside>
 
@@ -179,7 +182,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
             onClick={() => setMobileOpen(false)}
             aria-hidden="true"
           />
-          <aside className="lg:hidden fixed inset-y-0 left-0 z-50 w-64 bg-surface border-r border-edge flex flex-col animate-slide-in-left">
+          <aside className="lg:hidden fixed inset-y-0 left-0 z-50 w-64 glass-strong border-r border-edge/60 flex flex-col animate-slide-in-left">
             <SidebarContent location={location} user={user} onClose={() => setMobileOpen(false)} />
           </aside>
         </>

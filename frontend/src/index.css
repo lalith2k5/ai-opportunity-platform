@@ -2,60 +2,60 @@
 @tailwind components;
 @tailwind utilities;
 
-/* ============================================
-   THEME TOKENS
-   ============================================ */
+/* ============================================================
+   APPLE-GRADE DESIGN TOKENS
+   ============================================================ */
 :root, html.dark {
   color-scheme: dark;
 
-  /* Surfaces */
-  --bg-base:     8 9 11;
-  --bg-elevated: 15 17 21;
-  --bg-overlay:  22 24 28;
-  --bg-subtle:   30 32 37;
+  /* Surfaces — slightly warmer blacks, closer to macOS */
+  --bg-base:     10 10 12;
+  --bg-elevated: 18 18 22;
+  --bg-overlay:  26 26 32;
+  --bg-subtle:   34 34 42;
 
-  /* Borders */
-  --border-subtle:  26 28 32;
-  --border-default: 36 39 44;
-  --border-strong:  52 55 62;
+  /* Borders — very subtle, near-black */
+  --border-subtle:  26 26 32;
+  --border-default: 38 38 46;
+  --border-strong:  56 56 66;
 
-  /* Text */
-  --text-primary:   245 245 246;
-  --text-secondary: 168 172 180;
-  --text-tertiary:  120 124 132;
-  --text-muted:     88 92 100;
+  /* Text — Apple's SF grey ramp */
+  --text-primary:   245 245 247;
+  --text-secondary: 174 174 182;
+  --text-tertiary:  128 128 138;
+  --text-muted:     92 92 102;
 
-  /* Accent */
-  --accent:        94 106 210;
-  --accent-hover:  110 122 222;
-  --accent-subtle: 94 106 210;
+  /* Accent — cooler, more saturated violet-blue */
+  --accent:        110 118 255;
+  --accent-hover:  128 136 255;
+  --accent-subtle: 110 118 255;
   --accent-fg:     255 255 255;
 
-  /* Status */
-  --success:        16 185 129;
-  --success-subtle: 6 78 59;
-  --warning:        245 158 11;
-  --warning-subtle: 120 53 15;
-  --danger:         239 68 68;
-  --danger-subtle:  127 29 29;
+  /* Status — Apple system colors */
+  --success:        50 215 75;
+  --success-subtle: 20 90 40;
+  --warning:        255 179 64;
+  --warning-subtle: 120 70 10;
+  --danger:         255 69 58;
+  --danger-subtle:  130 35 30;
 }
 
 html.light {
   color-scheme: light;
 
-  --bg-base:     255 255 255;
-  --bg-elevated: 250 250 251;
-  --bg-overlay:  244 244 246;
-  --bg-subtle:   249 250 251;
+  --bg-base:     251 251 253;
+  --bg-elevated: 255 255 255;
+  --bg-overlay:  245 245 248;
+  --bg-subtle:   250 250 252;
 
-  --border-subtle:  240 240 243;
-  --border-default: 228 228 231;
-  --border-strong:  212 212 216;
+  --border-subtle:  240 240 244;
+  --border-default: 228 228 234;
+  --border-strong:  210 210 218;
 
-  --text-primary:   9 9 11;
-  --text-secondary: 82 82 91;
-  --text-tertiary:  113 113 122;
-  --text-muted:     161 161 170;
+  --text-primary:   10 10 12;
+  --text-secondary: 78 78 88;
+  --text-tertiary:  118 118 128;
+  --text-muted:     160 160 170;
 
   --accent:        94 106 210;
   --accent-hover:  79 91 195;
@@ -70,81 +70,226 @@ html.light {
   --danger-subtle:  254 226 226;
 }
 
-/* ============================================
+/* ============================================================
    BASE
-   ============================================ */
+   ============================================================ */
 * { border-color: rgb(var(--border-default)); }
 html, body { height: 100%; }
 
 body {
   background-color: rgb(var(--bg-base));
   color: rgb(var(--text-primary));
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11', 'ss01';
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Roboto, sans-serif;
+  font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11', 'ss01', 'ss03';
+  font-variation-settings: 'opsz' 32;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
   margin: 0;
-  transition: background-color 150ms ease, color 150ms ease;
+  transition: background-color 200ms cubic-bezier(0.25, 1, 0.5, 1),
+              color 200ms cubic-bezier(0.25, 1, 0.5, 1);
 }
 
-h1, h2, h3, h4 { letter-spacing: -0.015em; font-weight: 600; }
-h1 { letter-spacing: -0.025em; font-weight: 700; }
+/* Apple-grade ambient glow on canvas */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background:
+    radial-gradient(ellipse 800px 600px at 15% 0%, rgb(var(--accent) / 0.06), transparent 60%),
+    radial-gradient(ellipse 700px 500px at 85% 100%, rgb(var(--accent) / 0.04), transparent 60%);
+  opacity: 0.9;
+}
+html.light body::before { opacity: 0.4; }
 
-/* ============================================
-   SCROLLBAR (Linear-style ghost)
-   ============================================ */
+h1, h2, h3, h4 {
+  letter-spacing: -0.02em;
+  font-weight: 600;
+}
+h1 { letter-spacing: -0.03em; font-weight: 700; }
+
+/* ============================================================
+   SCROLLBAR — macOS overlay style
+   ============================================================ */
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb {
-  background: rgb(var(--border-strong));
-  border-radius: 6px;
-  border: 2px solid rgb(var(--bg-base));
+  background: rgb(var(--border-strong) / 0.6);
+  border-radius: 8px;
+  border: 2px solid transparent;
   background-clip: padding-box;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: rgb(var(--text-muted));
+  background: rgb(var(--text-muted) / 0.7);
   background-clip: padding-box;
-  border: 2px solid rgb(var(--bg-base));
+  border: 2px solid transparent;
 }
 
-/* ============================================
-   FOCUS RING (accessible)
-   ============================================ */
+/* ============================================================
+   FOCUS RING — Apple-style soft halo
+   ============================================================ */
 *:focus-visible {
   outline: none;
-  box-shadow: 0 0 0 2px rgb(var(--bg-base)), 0 0 0 4px rgb(var(--accent) / 0.5);
-  border-radius: 6px;
+  box-shadow: 0 0 0 3px rgb(var(--accent) / 0.35);
+  border-radius: 10px;
+  transition: box-shadow 150ms cubic-bezier(0.25, 1, 0.5, 1);
 }
 
 ::selection {
-  background: rgb(var(--accent) / 0.3);
+  background: rgb(var(--accent) / 0.35);
   color: rgb(var(--text-primary));
 }
 
-/* ============================================
-   COMPONENT PRIMITIVES
-   ============================================ */
+/* ============================================================
+   COMPONENT PRIMITIVES — refined for premium feel
+   ============================================================ */
 @layer components {
-  .surface { @apply bg-surface border border-edge rounded-lg; }
-  .surface-hover { @apply hover:bg-overlay hover:border-edge-strong transition-colors; }
+  /* Surfaces */
+  .surface {
+    @apply bg-surface border border-edge rounded-lg;
+    box-shadow: inset 0 1px 0 0 rgb(255 255 255 / 0.03),
+                0 1px 3px 0 rgb(0 0 0 / 0.30);
+  }
+  .surface-hover {
+    @apply hover:bg-overlay hover:border-edge-strong;
+    transition: background-color 200ms cubic-bezier(0.25, 1, 0.5, 1),
+                border-color 200ms cubic-bezier(0.25, 1, 0.5, 1),
+                transform 250ms cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
 
-  .btn { @apply inline-flex items-center justify-center gap-2 px-3.5 py-2 rounded-md text-sm font-medium transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed; }
-  .btn-primary { @apply btn bg-accent text-accent-fg hover:bg-accent-hover active:scale-[0.98] shadow-sm; }
-  .btn-secondary { @apply btn bg-overlay text-ink border border-edge hover:bg-subtle hover:border-edge-strong active:scale-[0.98]; }
-  .btn-ghost { @apply btn text-ink-2 hover:bg-overlay hover:text-ink; }
+  /* Glass surface — used for overlays, modals, sidebars */
+  .glass {
+    background: rgb(var(--bg-elevated) / 0.72);
+    backdrop-filter: blur(24px) saturate(180%);
+    -webkit-backdrop-filter: blur(24px) saturate(180%);
+    border: 1px solid rgb(var(--border-default) / 0.6);
+  }
+  .glass-strong {
+    background: rgb(var(--bg-overlay) / 0.85);
+    backdrop-filter: blur(40px) saturate(200%);
+    -webkit-backdrop-filter: blur(40px) saturate(200%);
+    border: 1px solid rgb(var(--border-strong) / 0.5);
+  }
 
-  .input { @apply w-full bg-canvas border border-edge rounded-md px-3 py-2 text-sm text-ink placeholder:text-ink-4 focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/20 transition-all; }
-  .badge { @apply inline-flex items-center gap-1 px-2 py-0.5 rounded text-2xs font-medium uppercase tracking-wide; }
-  .kbd { @apply inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded border border-edge bg-overlay text-2xs font-mono text-ink-3; }
+  /* Buttons */
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 px-4 py-2 rounded-md text-sm font-medium;
+    transition: transform 150ms cubic-bezier(0.34, 1.56, 0.64, 1),
+                background-color 150ms cubic-bezier(0.25, 1, 0.5, 1),
+                border-color 150ms cubic-bezier(0.25, 1, 0.5, 1),
+                box-shadow 150ms cubic-bezier(0.25, 1, 0.5, 1),
+                opacity 150ms;
+    will-change: transform;
+  }
+  .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  .btn-primary {
+    @apply btn bg-accent text-accent-fg;
+    box-shadow: 0 1px 2px rgb(0 0 0 / 0.25),
+                0 4px 12px -2px rgb(var(--accent) / 0.35),
+                inset 0 1px 0 0 rgb(255 255 255 / 0.15);
+  }
+  .btn-primary:hover:not(:disabled) {
+    background-color: rgb(var(--accent-hover));
+    box-shadow: 0 1px 2px rgb(0 0 0 / 0.25),
+                0 6px 20px -4px rgb(var(--accent) / 0.5),
+                inset 0 1px 0 0 rgb(255 255 255 / 0.18);
+  }
+  .btn-primary:active:not(:disabled) {
+    transform: scale(0.97);
+    box-shadow: 0 1px 2px rgb(0 0 0 / 0.25),
+                0 2px 8px -2px rgb(var(--accent) / 0.4),
+                inset 0 1px 0 0 rgb(255 255 255 / 0.12);
+  }
+
+  .btn-secondary {
+    @apply btn bg-overlay text-ink border border-edge;
+    box-shadow: inset 0 1px 0 0 rgb(255 255 255 / 0.04);
+  }
+  .btn-secondary:hover:not(:disabled) {
+    background-color: rgb(var(--bg-subtle));
+    border-color: rgb(var(--border-strong));
+  }
+  .btn-secondary:active:not(:disabled) { transform: scale(0.97); }
+
+  .btn-ghost {
+    @apply btn text-ink-2;
+  }
+  .btn-ghost:hover:not(:disabled) {
+    background-color: rgb(var(--bg-overlay));
+    color: rgb(var(--text-primary));
+  }
+
+  /* Inputs */
+  .input {
+    @apply w-full bg-canvas border border-edge rounded-md px-3.5 py-2.5 text-sm text-ink;
+    transition: border-color 150ms, box-shadow 150ms, background-color 150ms;
+    box-shadow: inset 0 1px 2px rgb(0 0 0 / 0.15);
+  }
+  .input::placeholder { color: rgb(var(--text-muted)); }
+  .input:focus {
+    outline: none;
+    border-color: rgb(var(--accent));
+    box-shadow: inset 0 1px 2px rgb(0 0 0 / 0.15),
+                0 0 0 3px rgb(var(--accent) / 0.18);
+  }
+
+  /* Badges */
+  .badge {
+    @apply inline-flex items-center gap-1 px-2 py-0.5 rounded text-2xs font-medium uppercase tracking-wide;
+  }
+
+  /* Kbd */
+  .kbd {
+    @apply inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded-md border border-edge bg-overlay text-2xs font-mono text-ink-3;
+    box-shadow: 0 1px 0 rgb(0 0 0 / 0.3),
+                inset 0 1px 0 0 rgb(255 255 255 / 0.05);
+  }
+
+  /* Card with elevation */
+  .card {
+    @apply bg-surface border border-edge rounded-lg;
+    box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.28),
+                0 4px 16px -4px rgb(0 0 0 / 0.24),
+                inset 0 1px 0 0 rgb(255 255 255 / 0.03);
+    transition: transform 250ms cubic-bezier(0.34, 1.56, 0.64, 1),
+                box-shadow 250ms cubic-bezier(0.25, 1, 0.5, 1),
+                border-color 250ms cubic-bezier(0.25, 1, 0.5, 1);
+  }
+  .card-hover:hover {
+    transform: translateY(-2px);
+    border-color: rgb(var(--border-strong));
+    box-shadow: 0 4px 12px 0 rgb(0 0 0 / 0.35),
+                0 16px 40px -8px rgb(0 0 0 / 0.35),
+                inset 0 1px 0 0 rgb(255 255 255 / 0.05);
+  }
+
+  /* Section divider with gradient fade */
+  .divider {
+    height: 1px;
+    background: linear-gradient(90deg,
+                transparent,
+                rgb(var(--border-default)) 20%,
+                rgb(var(--border-default)) 80%,
+                transparent);
+  }
+
+  /* Animated shimmer for skeletons */
+  .shimmer {
+    background: linear-gradient(90deg,
+                rgb(var(--bg-overlay)) 0%,
+                rgb(var(--bg-subtle)) 50%,
+                rgb(var(--bg-overlay)) 100%);
+    background-size: 1000px 100%;
+    animation: shimmer 2s linear infinite;
+  }
 }
 
-/* ============================================
-   LIGHT-MODE COMPAT SHIM
-   Temporary: remaps pre-theme hardcoded colors
-   so existing pages stay readable in light mode.
-   Will be removed as pages are migrated to
-   semantic tokens (Phases 3-6).
-   ============================================ */
+/* ============================================================
+   LIGHT-MODE COMPAT SHIM (retained from before)
+   ============================================================ */
 html.light .text-white    { color: rgb(var(--text-primary)); }
 html.light .text-gray-100 { color: rgb(var(--text-primary)); }
 html.light .text-gray-200 { color: rgb(var(--text-secondary)); }
@@ -152,11 +297,21 @@ html.light .text-gray-300 { color: rgb(var(--text-secondary)); }
 html.light .text-gray-400 { color: rgb(var(--text-secondary)); }
 html.light .text-gray-500 { color: rgb(var(--text-tertiary)); }
 html.light .text-gray-600 { color: rgb(var(--text-muted)); }
-
-/* Soften status colors in light mode (they were tuned for dark) */
 html.light .text-emerald-400 { color: #059669; }
 html.light .text-yellow-400  { color: #ca8a04; }
 html.light .text-orange-400  { color: #ea580c; }
 html.light .text-blue-400    { color: #2563eb; }
 html.light .text-purple-400  { color: #7c3aed; }
 html.light .text-red-400     { color: #dc2626; }
+
+/* Smooth scroll */
+html { scroll-behavior: smooth; }
+
+/* Reduce motion for accessibility */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
