@@ -244,3 +244,30 @@ class ProblemTechnology(Base):
     confidence = Column(Float, default=0.5)
     evidence = Column(Text)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class ProblemPaper(Base):
+    """arXiv paper linked to a ProblemProfile (SRS Module 6 / §13).
+
+    Populated by ResearchDiscoveryAgent (Phase 3.1). Each row carries
+    an LLM-derived relevance_score for the problem and a JSON list of
+    limitations that the paper itself surfaces relative to the problem.
+    KG edges (STUDIED_BY / HAS_LIMITATION / HAS_POTENTIAL_GAP per SRS
+    §31) are deferred to Phase 5.
+    """
+    __tablename__ = "problem_papers"
+
+    id = Column(Integer, primary_key=True, index=True)
+    problem_profile_id = Column(
+        Integer, ForeignKey("problem_profiles.id", ondelete="CASCADE"),
+        index=True, nullable=False,
+    )
+    arxiv_id = Column(String(200), index=True)
+    title = Column(String(500))
+    authors = Column(JSON, default=list)
+    abstract = Column(Text)
+    url = Column(String(500))
+    relevance_score = Column(Float, default=0.5)
+    limitations = Column(JSON, default=list)
+    published = Column(String(100))
+    created_at = Column(DateTime(timezone=True), server_default=func.now())

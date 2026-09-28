@@ -16,6 +16,9 @@ from app.services.challenge_portal_service import ChallengePortalService
 from app.agents.problem_extractor import ProblemExtractorAgent
 from app.agents.problem_agent import ProblemAgent
 from app.agents.technology_agent import TechnologyAgent
+from app.agents.research_discovery_agent import ResearchDiscoveryAgent
+
+from sqlalchemy import inspect as _sa_inspect
 
 import threading
 
@@ -39,6 +42,7 @@ class OrchestratorAgent:
         self.problem_extractor = ProblemExtractorAgent()
         self.problem_agent = ProblemAgent()
         self.technology_agent = TechnologyAgent()
+        self.research_discovery_agent = ResearchDiscoveryAgent()
 
     def _save_problem_profiles(self, profiles: list):
         """Persist extracted ProblemProfile rows.
@@ -129,6 +133,15 @@ class OrchestratorAgent:
         finally:
             db.close()
 
+    @staticmethod
+    def _row_id(obj):
+        """Return the PK of a possibly-detached ORM instance without
+        triggering a lazy refresh. Falls back to __dict__ lookup."""
+        ident = _sa_inspect(obj).identity
+        if ident:
+            return ident[0]
+        return obj.__dict__.get("id")
+
     def _save_technologies(self, profile_rows_with_techs: list):
         """Persist problem_technologies rows. Skips exact (profile, name) dups."""
         if not profile_rows_with_techs:
@@ -146,12 +159,15 @@ class OrchestratorAgent:
                 existing.add((pid, (name or "").lower()))
 
             for row, techs in profile_rows_with_techs:
+                pid = self._row_id(row)
+                if pid is None:
+                    continue
                 for t in techs:
-                    key = (row.id, (t["name"] or "").lower())
+                    key = (pid, (t["name"] or "").lower())
                     if key in existing:
                         continue
                     db.add(models.ProblemTechnology(
-                        problem_profile_id=row.id,
+                        problem_profile_id=pid,
                         technology_name=t["name"],
                         stage=t["stage"],
                         confidence=t["confidence"],
@@ -165,6 +181,52 @@ class OrchestratorAgent:
         except Exception as e:
             db.rollback()
             logger.error(f"ProblemTechnology save error: {e}")
+            return 0
+        finally:
+            db.close()
+
+    def _save_problem_papers(self, profile_rows_with_papers: list):
+        """Persist problem_papers rows. Skips exact (profile_id, arxiv_id) dups."""
+        if not profile_rows_with_papers:
+            return 0
+        from app.database import SessionLocal as _SL
+        db = _SL()
+        inserted = 0
+        try:
+            existing = set()
+            for pid, ax in db.query(
+                models.ProblemPaper.problem_profile_id,
+                models.ProblemPaper.arxiv_id,
+            ).all():
+                existing.add((pid, ax or ""))
+
+            for row, papers in profile_rows_with_papers:
+                pid = self._row_id(row)
+                if pid is None:
+                    continue
+                for p in papers:
+                    key = (pid, p.get("arxiv_id") or "")
+                    if not key[1] or key in existing:
+                        continue
+                    db.add(models.ProblemPaper(
+                        problem_profile_id=pid,
+                        arxiv_id=p["arxiv_id"],
+                        title=p.get("title") or "",
+                        authors=p.get("authors") or [],
+                        abstract=p.get("abstract") or "",
+                        url=p.get("url") or "",
+                        relevance_score=p.get("relevance_score") or 0.5,
+                        limitations=p.get("limitations") or [],
+                        published=p.get("published") or "",
+                    ))
+                    existing.add(key)
+                    inserted += 1
+            db.commit()
+            logger.info(f"Saved {inserted} new ProblemPaper rows")
+            return inserted
+        except Exception as e:
+            db.rollback()
+            logger.error(f"ProblemPaper save error: {e}")
             return 0
         finally:
             db.close()
@@ -528,6 +590,26 @@ class OrchestratorAgent:
                     self._save_technologies(tech_results)
         except Exception as e:
             logger.error(f"Technology extraction failed: {e}")
+
+        # ---- Phase 3.1: research discovery for the same recent profiles ----
+        try:
+            from app.database import SessionLocal as _SL3
+            db3 = _SL3()
+            try:
+                rows = (
+                    db3.query(models.ProblemProfile)
+                    .order_by(models.ProblemProfile.id.desc())
+                    .limit(10)
+                    .all()
+                )
+            finally:
+                db3.close()
+            if rows:
+                paper_results = self.research_discovery_agent.extract_batch(rows)
+                if paper_results:
+                    self._save_problem_papers(paper_results)
+        except Exception as e:
+            logger.error(f"Research discovery failed: {e}")
 
         # Strip private helper keys before returning to API
         for c in clusters:
