@@ -16,6 +16,23 @@ _TREND_SINGLE_BLOCKLIST = {
     "site", "online", "spanish", "hackathon", "university",
     "chapter", "lecture", "homework", "assignment",
     "quantum", "cyber", "computing", "advanced", "basics",
+    # ---- Phase 10.12: extend blocklist (junk trends seen in prod) ----
+    "school", "schools", "student", "students", "teacher", "teachers",
+    "class", "classes", "education", "educational", "training",
+    "seminar", "workshop", "lecture", "lectures", "talk", "talks",
+    "post", "posts", "blog", "blogs", "article", "articles",
+    "news", "events", "event", "conference", "conferences",
+    "festival", "competition", "award", "awards", "prize", "prizes",
+    "funding", "grant", "grants", "scholarship", "scholarships",
+    "career", "jobs", "job", "hiring", "intern", "internship",
+    "mining", "smart", "modern", "future", "advanced", "next",
+    "real", "fake", "true", "false", "digital", "virtual",
+    "physical", "human", "users", "user", "service", "services",
+    "network", "networks", "detection", "prediction", "analysis",
+    "testing", "review", "reviews", "overview", "introduction",
+    "summary", "essentials", "guide", "guides", "handbook",
+    "with", "without", "under", "over", "about", "into", "through",
+    "hi", "hello", "thanks", "welcome", "please", "sorry",
 }
 
 # Multi-word items are ONLY kept if they appear here. This is stricter than a

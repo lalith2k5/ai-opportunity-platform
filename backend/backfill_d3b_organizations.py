@@ -14,6 +14,28 @@ from app import models
 
 _CLEAN = re.compile(r"[^a-z0-9]+")
 
+# ---- Phase 10.12: reject obvious non-org strings ----
+_NOISE_SUBSTRINGS = (
+    "-- sciencedaily", " — sciencedaily", "science daily",
+    "computer science news", "ai news", "tech news",
+    "rss", "feed", "unknown", "n/a", "none",
+)
+
+
+def is_junk_org(name: str) -> bool:
+    """Reject strings that aren't real organizations."""
+    if not name:
+        return True
+    low = name.lower().strip()
+    if len(low) < 3:
+        return True
+    if any(s in low for s in _NOISE_SUBSTRINGS):
+        return True
+    # All punctuation / symbols
+    if not any(c.isalnum() for c in low):
+        return True
+    return False
+
 
 def canonical(name: str) -> str:
     if not name:
@@ -41,6 +63,9 @@ def main():
         for p in profiles:
             raw = (p.organization or "").strip()
             if not raw or raw.lower() == "unknown":
+                skipped += 1
+                continue
+            if is_junk_org(raw):
                 skipped += 1
                 continue
             cn = canonical(raw)

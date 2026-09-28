@@ -49,7 +49,7 @@ def main():
 
     r = requests.get(f"{BASE}/api/chat-history", headers={"Authorization": f"Bearer {token}"})
     sessions = r.json() if r.status_code == 200 else []
-    session_id = sessions[0]["id"] if sessions else 1
+    session_id = sessions[0]["id"] if sessions else None
 
     tests = [
         # method, path, expect
@@ -61,7 +61,8 @@ def main():
         ("GET",  "/api/trends", 200),
         ("GET",  "/api/search-history", 200),
         ("GET",  "/api/chat-history", 200),
-        ("GET",  f"/api/chat-sessions/{session_id}", 200),
+        # chat-sessions only if a session exists
+        *([("GET",  f"/api/chat-sessions/{session_id}", 200)] if session_id else []),
         ("GET",  "/api/processed-documents", 200),
         ("GET",  "/api/notifications", 200),
         ("GET",  "/api/notifications/unread-count", 200),
