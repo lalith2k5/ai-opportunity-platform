@@ -3,7 +3,8 @@ import { useParams, Link } from 'react-router-dom';
 import { getOpportunityDetail } from '../services/api';
 import {
   Loader2, ArrowLeft, Lightbulb, AlertCircle, TrendingUp,
-  FileText, CheckCircle2, ExternalLink, Sparkles,
+  FileText, CheckCircle2, ExternalLink, Sparkles, Cpu, Target,
+  FlaskConical, BookOpen, Zap, Shield,
 } from 'lucide-react';
 
 function ScoreRow({ label, value, color }: { label: string; value: number; color: string }) {
@@ -20,9 +21,9 @@ function ScoreRow({ label, value, color }: { label: string; value: number; color
   );
 }
 
-function Section({ icon: Icon, title, children, accent = 'text-accent' }: {
-  icon: any; title: string; children: React.ReactNode; accent?: string;
-}) {
+function Section({
+  icon: Icon, title, children, accent = 'text-accent',
+}: { icon: any; title: string; children: React.ReactNode; accent?: string }) {
   return (
     <div className="bg-surface border border-edge rounded-lg p-5">
       <div className="flex items-center gap-2 mb-4">
@@ -34,9 +35,20 @@ function Section({ icon: Icon, title, children, accent = 'text-accent' }: {
   );
 }
 
+function EmptyNote({ children }: { children: React.ReactNode }) {
+  return <p className="text-xs text-ink-4 italic">{children}</p>;
+}
+
+function AiBadge() {
+  return (
+    <span className="badge bg-accent/10 text-accent border border-accent/30">
+      <Sparkles size={10} /> AI-generated
+    </span>
+  );
+}
+
 export default function OpportunityDetail() {
   const { id } = useParams<{ id: string }>();
-
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -76,6 +88,23 @@ export default function OpportunityDetail() {
   const gap = data.research_gap;
   const isHigh = opp.opportunity_score > 0.6;
 
+  const techs: string[] = Array.isArray(opp.related_technologies) ? opp.related_technologies : [];
+  const papers: string[] = Array.isArray(opp.existing_research) ? opp.existing_research : [];
+  const evidence: { source: string; url: string; title: string }[] =
+    Array.isArray(opp.evidence_sources) ? opp.evidence_sources : [];
+  const limitations = (opp.known_limitations || '').split(' | ').map((s: string) => s.trim()).filter(Boolean);
+  const hasEnrichment = Boolean(
+    opp.domain || opp.industry || techs.length || papers.length ||
+    opp.suggested_research_direction || opp.suggested_project_direction ||
+    opp.existing_approaches || opp.known_limitations || opp.emerging_trend || evidence.length
+  );
+
+  // Group evidence by source for compact display
+  const evidenceBySource: Record<string, typeof evidence> = {};
+  for (const e of evidence) {
+    (evidenceBySource[e.source] = evidenceBySource[e.source] || []).push(e);
+  }
+
   return (
     <div className="p-6 lg:p-8 max-w-5xl mx-auto">
 
@@ -91,7 +120,7 @@ export default function OpportunityDetail() {
       <div className="bg-surface border border-edge rounded-lg p-6 mb-5">
         <div className="flex items-start justify-between gap-6 flex-wrap">
           <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 mb-3">
+            <div className="flex items-center gap-2 mb-3 flex-wrap">
               <span className={`badge ${
                 isHigh
                   ? 'bg-success/15 text-success border border-success/30'
@@ -99,6 +128,21 @@ export default function OpportunityDetail() {
               }`}>
                 {isHigh ? 'High priority' : 'Moderate'}
               </span>
+              {opp.domain && (
+                <span className="badge bg-overlay text-ink-3 border border-edge">
+                  {opp.domain}
+                </span>
+              )}
+              {opp.industry && opp.industry !== opp.domain && (
+                <span className="badge bg-overlay text-ink-3 border border-edge">
+                  {opp.industry}
+                </span>
+              )}
+              {opp.emerging_trend && (
+                <span className="badge bg-warning/15 text-warning border border-warning/30">
+                  <TrendingUp size={10} /> {opp.emerging_trend}
+                </span>
+              )}
               <span className="text-2xs text-ink-4 font-mono">#{opp.id}</span>
             </div>
             <h1 className="text-2xl font-bold text-ink tracking-tight leading-tight mb-2">
@@ -122,18 +166,47 @@ export default function OpportunityDetail() {
         </div>
       </div>
 
-      {/* Two-column: breakdown + explanation */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 mb-5">
+      {/* Suggested directions (top placement — most actionable) */}
+      {(opp.suggested_research_direction || opp.suggested_project_direction) && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-5">
+          {opp.suggested_research_direction && (
+            <div className="bg-accent/[0.06] border border-accent/25 rounded-lg p-5">
+              <div className="flex items-center gap-2 mb-3">
+                <FlaskConical size={14} className="text-accent" />
+                <h2 className="text-xs font-medium text-ink uppercase tracking-wider">Suggested research</h2>
+                <AiBadge />
+              </div>
+              <p className="text-sm text-ink leading-relaxed">
+                {opp.suggested_research_direction}
+              </p>
+            </div>
+          )}
+          {opp.suggested_project_direction && (
+            <div className="bg-success/[0.06] border border-success/25 rounded-lg p-5">
+              <div className="flex items-center gap-2 mb-3">
+                <Zap size={14} className="text-success" />
+                <h2 className="text-xs font-medium text-ink uppercase tracking-wider">Suggested project</h2>
+                <AiBadge />
+              </div>
+              <p className="text-sm text-ink leading-relaxed">
+                {opp.suggested_project_direction}
+              </p>
+            </div>
+          )}
+        </div>
+      )}
 
+      {/* Two-column: scoring + explanation */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 mb-5">
         <Section icon={TrendingUp} title="Scoring breakdown">
           <div className="space-y-3.5">
-            <ScoreRow label="Market demand"       value={opp.demand_score}            color="bg-accent" />
-            <ScoreRow label="Research gap"        value={opp.research_gap_score}      color="bg-success" />
-            <ScoreRow label="Technology trend"    value={opp.trend_score}             color="bg-warning" />
-            <ScoreRow label="Innovation"          value={opp.innovation_score ?? 0}   color="bg-pink-500" />
-            <ScoreRow label="Competition"         value={opp.competition_score}       color="bg-danger" />
-            <ScoreRow label="Technical feasibility" value={opp.feasibility_score}     color="bg-sky-500" />
-            <ScoreRow label="Market readiness"    value={opp.market_readiness_score}  color="bg-purple-500" />
+            <ScoreRow label="Market demand"          value={opp.demand_score}            color="bg-accent" />
+            <ScoreRow label="Research gap"           value={opp.research_gap_score}      color="bg-success" />
+            <ScoreRow label="Technology trend"       value={opp.trend_score}             color="bg-warning" />
+            <ScoreRow label="Innovation"             value={opp.innovation_score ?? 0}   color="bg-pink-500" />
+            <ScoreRow label="Competition"            value={opp.competition_score}       color="bg-danger" />
+            <ScoreRow label="Technical feasibility"  value={opp.feasibility_score}       color="bg-sky-500" />
+            <ScoreRow label="Market readiness"       value={opp.market_readiness_score}  color="bg-purple-500" />
           </div>
         </Section>
 
@@ -148,8 +221,133 @@ export default function OpportunityDetail() {
             </p>
           </div>
         </Section>
-
       </div>
+
+      {/* Enrichment card */}
+      {hasEnrichment ? (
+        <div className="bg-surface border border-edge rounded-lg p-5 mb-5">
+          <div className="flex items-center gap-2 mb-5">
+            <Target size={14} className="text-accent" />
+            <h2 className="text-xs font-medium text-ink uppercase tracking-wider">Opportunity card enrichment</h2>
+            <AiBadge />
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+
+            {techs.length > 0 && (
+              <div>
+                <p className="text-2xs text-ink-4 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                  <Cpu size={11} /> Related technologies
+                </p>
+                <div className="flex flex-wrap gap-1.5">
+                  {techs.map(t => (
+                    <span key={t} className="badge bg-accent/10 text-accent border border-accent/30">
+                      {t}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {papers.length > 0 && (
+              <div>
+                <p className="text-2xs text-ink-4 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                  <BookOpen size={11} /> Existing research ({papers.length})
+                </p>
+                <ul className="space-y-1.5">
+                  {papers.slice(0, 6).map((p, i) => (
+                    <li key={i} className="text-xs text-ink-2 leading-snug">
+                      <span className="text-ink-4 font-mono mr-1.5">{i + 1}.</span>
+                      {p}
+                    </li>
+                  ))}
+                  {papers.length > 6 && (
+                    <li className="text-2xs text-ink-4 italic">+{papers.length - 6} more</li>
+                  )}
+                </ul>
+              </div>
+            )}
+
+            {opp.existing_approaches && (
+              <div className="md:col-span-2">
+                <p className="text-2xs text-ink-4 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                  <FileText size={11} /> Existing approaches
+                </p>
+                <p className="text-xs text-ink-2 leading-relaxed">{opp.existing_approaches}</p>
+              </div>
+            )}
+
+            {limitations.length > 0 && (
+              <div className="md:col-span-2">
+                <p className="text-2xs text-ink-4 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                  <AlertCircle size={11} /> Known limitations
+                </p>
+                <ul className="space-y-1.5">
+                  {limitations.slice(0, 8).map((lim, i) => (
+                    <li key={i} className="flex items-start gap-2 text-xs text-ink-2 leading-relaxed">
+                      <span className="text-warning flex-shrink-0 mt-0.5">•</span>
+                      <span>{lim}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {evidence.length > 0 && (
+              <div className="md:col-span-2">
+                <p className="text-2xs text-ink-4 uppercase tracking-wider mb-3 flex items-center gap-1.5">
+                  <Shield size={11} /> Evidence sources ({evidence.length})
+                </p>
+                <div className="space-y-3">
+                  {Object.entries(evidenceBySource).map(([src, items]) => (
+                    <div key={src}>
+                      <div className="flex items-center gap-2 mb-1.5">
+                        <span className="badge bg-overlay text-ink-3 border border-edge uppercase">
+                          {src}
+                        </span>
+                        <span className="text-2xs text-ink-4 font-mono">{items.length}</span>
+                      </div>
+                      <div className="space-y-1">
+                        {items.slice(0, 4).map((e, i) => (
+                          <a
+                            key={i}
+                            href={e.url}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="flex items-start gap-2 px-2.5 py-1.5 rounded-md border border-edge-subtle hover:border-accent/40 hover:bg-overlay transition-colors group"
+                          >
+                            <span className="text-xs text-ink-2 leading-snug flex-1 group-hover:text-accent transition-colors line-clamp-1">
+                              {e.title || e.url}
+                            </span>
+                            <ExternalLink size={11} className="text-ink-4 group-hover:text-accent flex-shrink-0 mt-0.5 transition-colors" />
+                          </a>
+                        ))}
+                        {items.length > 4 && (
+                          <p className="text-2xs text-ink-4 italic pl-2.5">
+                            +{items.length - 4} more from this source
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+          </div>
+        </div>
+      ) : (
+        <div className="bg-surface border border-edge border-dashed rounded-lg p-5 mb-5">
+          <div className="flex items-center gap-2 mb-2">
+            <Target size={14} className="text-ink-4" />
+            <h2 className="text-xs font-medium text-ink-3 uppercase tracking-wider">Opportunity card enrichment</h2>
+          </div>
+          <EmptyNote>
+            No enrichment data yet. Run a fresh pipeline and this card will populate with
+            technologies, papers, limitations, and suggested directions.
+          </EmptyNote>
+        </div>
+      )}
 
       {/* Problem cluster */}
       {cluster && (
@@ -217,8 +415,6 @@ export default function OpportunityDetail() {
       {/* Source references */}
       <Section icon={FileText} title="Source references">
         <div className="space-y-3">
-
-          {/* Original linked sources from the pipeline */}
           {data.sources && data.sources.length > 0 && (
             <div>
               <p className="text-2xs text-ink-4 uppercase tracking-wider mb-2">

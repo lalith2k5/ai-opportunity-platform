@@ -62,6 +62,17 @@ export interface Opportunity {
   feasibility_score: number;
   market_readiness_score: number;
   explanation?: string;
+  // ---- Phase 6.1 enrichment (SRS §34 Opportunity Card) ----
+  domain?: string | null;
+  industry?: string | null;
+  related_technologies?: string[];
+  existing_research?: string[];
+  existing_approaches?: string | null;
+  known_limitations?: string | null;
+  suggested_research_direction?: string | null;
+  suggested_project_direction?: string | null;
+  emerging_trend?: string | null;
+  evidence_sources?: { source: string; url: string; title: string }[];
   created_at?: string;
 }
 

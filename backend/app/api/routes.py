@@ -376,6 +376,17 @@ def get_opportunity(opp_id: int, db: Session = Depends(get_db)):
             "feasibility_score": opp.feasibility_score,
             "market_readiness_score": opp.market_readiness_score,
             "explanation": opp.explanation,
+            # ---- Phase 6.1 enrichment (SRS §34) ----
+            "domain": opp.domain,
+            "industry": opp.industry,
+            "related_technologies": opp.related_technologies or [],
+            "existing_research": opp.existing_research or [],
+            "existing_approaches": opp.existing_approaches,
+            "known_limitations": opp.known_limitations,
+            "suggested_research_direction": opp.suggested_research_direction,
+            "suggested_project_direction": opp.suggested_project_direction,
+            "emerging_trend": opp.emerging_trend,
+            "evidence_sources": opp.evidence_sources or [],
             "created_at": opp.created_at,
         },
         "problem_cluster": {
