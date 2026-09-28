@@ -4,7 +4,8 @@ import {
   adminGetLogs, adminGetScheduler, adminTriggerScheduler,
   adminGetSettings, adminUpdateSetting,
   adminGetSyncStatus, adminTriggerSync, adminGetLLMStatus,
-  adminGetDataSources, adminToggleDataSource,
+  adminGetDataSources, adminToggleDataSource, adminGetPipelineStatus,
+  type PipelineStatus,
 } from '../services/api';
 import {
   Loader2, Users, Activity, Trash2, RefreshCw, Play, Shield, FileText, Clock,
@@ -440,12 +441,24 @@ function SyncTab({ status, reload }: { status: any; reload: () => void }) {
   const [running, setRunning] = useState(false);
   const [lastResult, setLastResult] = useState<any>(null);
   const [dataSources, setDataSources] = useState<any[]>([]);
+  const [pipeline, setPipeline] = useState<PipelineStatus | null>(null);
   const toast = useToast();
 
   const loadSources = async () => {
     try { setDataSources(await adminGetDataSources()); } catch {}
   };
-  useEffect(() => { loadSources(); }, []);
+
+  const loadPipeline = async () => {
+    try { setPipeline(await adminGetPipelineStatus()); } catch {}
+  };
+
+  useEffect(() => { loadSources(); loadPipeline(); }, []);
+
+  // Poll pipeline status every 4s while tab is open
+  useEffect(() => {
+    const t = setInterval(loadPipeline, 4000);
+    return () => clearInterval(t);
+  }, []);
 
   const toggleSource = async (id: number, next: boolean) => {
     try {
@@ -474,8 +487,14 @@ function SyncTab({ status, reload }: { status: any; reload: () => void }) {
       setTopic('');
       reload();
     } catch (e: any) {
-      toast.error('Sync failed', e?.response?.data?.detail || e.message);
-    } finally { setRunning(false); }
+      const status = e?.response?.status;
+      const detail = e?.response?.data?.detail || e.message;
+      if (status === 409) {
+        toast.info('Pipeline busy', 'Another pipeline is already running. Wait for it to finish.');
+      } else {
+        toast.error('Sync failed', detail);
+      }
+    } finally { setRunning(false); loadPipeline(); }
   };
 
   if (!status) {
@@ -568,23 +587,32 @@ function SyncTab({ status, reload }: { status: any; reload: () => void }) {
           </select>
           <button
             onClick={handleTrigger}
-            disabled={running || !topic.trim()}
+            disabled={running || pipeline?.running || !topic.trim()}
+            title={pipeline?.running ? 'A pipeline is already running' : undefined}
             className="btn-primary text-xs whitespace-nowrap"
           >
-            {running ? <Loader2 className="animate-spin" size={13} /> : <Zap size={13} />}
-            {running ? 'Running…' : 'Run sync'}
+            {(running || pipeline?.running) ? <Loader2 className="animate-spin" size={13} /> : <Zap size={13} />}
+            {running ? 'Running…' : pipeline?.running ? 'Pipeline busy…' : 'Run sync'}
           </button>
         </div>
         <p className="text-2xs text-ink-4 mt-3 leading-relaxed">
           Quick mode finishes in ~30s. Deep mode fetches up to 100 documents per source and can take 45–90 seconds.
         </p>
 
-        {running && (
-          <div className="mt-4 bg-accent/5 border border-accent/20 rounded-md p-3 flex items-center gap-3">
-            <Loader2 className="animate-spin text-accent flex-shrink-0" size={14} />
-            <div>
-              <p className="text-xs text-ink font-medium">Sync in progress…</p>
-              <p className="text-2xs text-ink-3 mt-0.5">Fetching from sources, running AI pipeline, updating knowledge graph.</p>
+        {(running || pipeline?.running) && (
+          <div className="mt-4 bg-accent/5 border border-accent/20 rounded-md p-3 flex items-start gap-3">
+            <Loader2 className="animate-spin text-accent flex-shrink-0 mt-0.5" size={14} />
+            <div className="flex-1 min-w-0">
+              <p className="text-xs text-ink font-medium">
+                {pipeline?.running
+                  ? `Pipeline running${pipeline.topic ? `: ${pipeline.topic}` : ''}…`
+                  : 'Sync in progress…'}
+              </p>
+              <p className="text-2xs text-ink-3 mt-0.5">
+                {pipeline?.running && pipeline.started_at
+                  ? `Started ${new Date(pipeline.started_at).toLocaleTimeString()} · running for ${Math.round((Date.now() - new Date(pipeline.started_at).getTime()) / 1000)}s`
+                  : 'Fetching from sources, running AI pipeline, updating knowledge graph.'}
+              </p>
             </div>
           </div>
         )}

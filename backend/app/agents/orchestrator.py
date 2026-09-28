@@ -27,6 +27,19 @@ import threading
 # Global lock — only one pipeline can run at a time, across all OrchestratorAgent instances.
 # Prevents scheduler + user-triggered runs from colliding (ChromaDB writes, KG persists).
 _PIPELINE_LOCK = threading.Lock()
+_PIPELINE_STARTED_AT = None
+_PIPELINE_TOPIC = None
+_PIPELINE_USER = None
+
+
+def get_pipeline_status():
+    """Read-only snapshot of the pipeline lock. Safe to call from any thread."""
+    return {
+        "running": _PIPELINE_LOCK.locked(),
+        "started_at": _PIPELINE_STARTED_AT.isoformat() if _PIPELINE_STARTED_AT else None,
+        "topic": _PIPELINE_TOPIC,
+        "user_id": _PIPELINE_USER,
+    }
 
 
 # ---- Phase 10.9: canonical organization name (used to dedup by name) ----
@@ -812,15 +825,23 @@ class OrchestratorAgent:
             db.close()
 
     def run_full_pipeline(self, query: str, user_id: int = None, mode: str = "quick") -> dict:
+        global _PIPELINE_STARTED_AT, _PIPELINE_TOPIC, _PIPELINE_USER
         # Refuse to start if another pipeline is already running
         acquired = _PIPELINE_LOCK.acquire(blocking=False)
         if not acquired:
             logger.warning(f"[Orchestrator] Pipeline already running — refusing concurrent run for '{query}'")
             raise RuntimeError("Another pipeline is already running. Please wait for it to finish.")
 
+        from datetime import datetime as _dt, timezone as _tz
+        _PIPELINE_STARTED_AT = _dt.now(_tz.utc)
+        _PIPELINE_TOPIC = query
+        _PIPELINE_USER = user_id
         try:
             return self._run_full_pipeline_inner(query, user_id=user_id, mode=mode)
         finally:
+            _PIPELINE_STARTED_AT = None
+            _PIPELINE_TOPIC = None
+            _PIPELINE_USER = None
             _PIPELINE_LOCK.release()
 
     def _run_full_pipeline_inner(self, query: str, user_id: int = None, mode: str = "quick") -> dict:

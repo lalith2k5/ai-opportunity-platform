@@ -247,9 +247,22 @@ def sync_trigger(
             "gaps": len(result["research_gaps"]),
             "kg_stats": result["knowledge_graph"],
         }
+    except RuntimeError as e:
+        # Pipeline lock held -- this is a "busy" state, not a server error
+        logger.warning(f"[Admin] Sync refused (pipeline busy): {e}")
+        raise HTTPException(409, str(e))
     except Exception as e:
-        logger.error(f"[Admin] Sync failed: {e}")
+        logger.exception(f"[Admin] Sync failed: {e}")
         raise HTTPException(500, str(e))
+
+
+@router.get("/pipeline/status")
+def pipeline_status(
+    _=Depends(require_role("admin")),
+):
+    """Read-only status of the pipeline lock (SRS 32 -- continuous update)."""
+    from app.agents.orchestrator import get_pipeline_status
+    return get_pipeline_status()
 
 
 @router.get("/data-sources")

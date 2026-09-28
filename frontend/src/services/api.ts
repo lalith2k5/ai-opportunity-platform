@@ -297,6 +297,16 @@ export const downloadFullJSON = () =>
 
 export const adminGetLLMStatus = () => api.get('/admin/llm/status').then(r => r.data);
 
+// ---- SRS 32: pipeline status ----
+export interface PipelineStatus {
+  running: boolean;
+  started_at: string | null;
+  topic: string | null;
+  user_id: number | null;
+}
+export const adminGetPipelineStatus = () =>
+  api.get<PipelineStatus>('/admin/pipeline/status').then(r => r.data);
+
 // ---- SRS FR-01: data-source registry ----
 export interface DataSourceRow {
   id: number;
