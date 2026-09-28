@@ -847,7 +847,7 @@ class OrchestratorAgent:
 
         clusters = self.problem_discovery.discover(processed)
         gaps = self.research_gap.detect_gaps(clusters, raw.get("arxiv", []))
-        trends = self.innovation_monitor.monitor(processed)
+        trends = self.innovation_monitor.monitor(processed, clusters=clusters)
 
         # Per-cluster average sentiment (VADER compound in [-1, 1])
         for cluster in clusters:

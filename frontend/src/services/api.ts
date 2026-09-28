@@ -100,7 +100,7 @@ export interface Trend {
   growth_rate?: number;
   recent_avg?: number;
   prior_avg?: number;
-  label?: 'rising' | 'declining' | 'stable' | 'new' | 'no_data';
+  label?: 'rising' | 'declining' | 'stable' | 'new' | 'emerging' | 'no_data';
   detected_at?: string;
 }
 

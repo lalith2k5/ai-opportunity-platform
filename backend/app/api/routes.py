@@ -98,10 +98,13 @@ def _compute_growth(db, trend_name: str) -> dict:
         label = "no_data"
     elif prior == 0:
         growth = 1.0
-        label = "new"
+        # Strong first-week signal -> emerging; weak -> new
+        label = "emerging" if recent >= 3 else "new"
     else:
         growth = (recent - prior) / prior
-        if growth > 0.2:
+        if growth > 0.5:
+            label = "emerging"
+        elif growth > 0.2:
             label = "rising"
         elif growth < -0.2:
             label = "declining"

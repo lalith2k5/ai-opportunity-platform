@@ -88,17 +88,44 @@ class InnovationMonitorAgent:
 
     MAX_TRENDS = 10
 
-    def monitor(self, documents: list) -> list:
+    def monitor(self, documents: list, clusters: list = None) -> list:
+        """Count cleaned keywords across docs and enrich each trend with
+        SRS §14 signals: mentions, source frequency, publication frequency
+        (arXiv hit ratio), and problem recurrence (clusters that mention it)."""
         keyword_counter = Counter()
         source_counter = Counter()
+        # Per-keyword, per-source hit counts -- computed while walking docs
+        per_kw_source = {}
 
         for doc in documents:
-            source_counter[doc.get("source", "unknown")] += 1
+            src = doc.get("source", "unknown")
+            source_counter[src] += 1
             for kw in _clean_list(doc.get("keywords") or []):
-                keyword_counter[kw.lower()] += 1
+                key = kw.lower()
+                keyword_counter[key] += 1
+                d = per_kw_source.setdefault(key, Counter())
+                d[src] += 1
+
+        # Pre-extract cluster keyword sets for problem_recurrence
+        cluster_kw_sets = []
+        if clusters:
+            for c in clusters:
+                kws = {str(k).lower() for k in (c.get("keywords") or []) if k}
+                if kws:
+                    cluster_kw_sets.append(kws)
+
+        arxiv_doc_count = source_counter.get("arxiv", 0) or 1
 
         trends = []
         for keyword, count in keyword_counter.most_common(self.MAX_TRENDS):
+            per_src = dict(per_kw_source.get(keyword, {}))
+            arxiv_hits = per_src.get("arxiv", 0)
+            publication_frequency = round(arxiv_hits / arxiv_doc_count, 3)
+
+            problem_recurrence = sum(
+                1 for kws in cluster_kw_sets if keyword in kws
+            )
+
             trends.append({
                 "name": keyword,
                 "category": "emerging_technology",
@@ -106,6 +133,9 @@ class InnovationMonitorAgent:
                 "source_data": {
                     "mentions": count,
                     "sources": dict(source_counter),
+                    "per_source": per_src,
+                    "publication_frequency": publication_frequency,
+                    "problem_recurrence": problem_recurrence,
                 },
             })
         return trends
