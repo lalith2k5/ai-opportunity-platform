@@ -209,13 +209,6 @@ class KnowledgeGraphAgent:
             for kw in (c.get("keywords") or [])[:5]:
                 self.add_entity("Technology", kw, {})
                 self.add_relationship(clean, "related_to", kw)
-            # ---- Phase 10.13 (C3): register canonical name alias ----
-            # Use the cluster's own title, NOT the outer `raw` dict parameter.
-            _raw_title = (c.get("title") or "").strip()
-            if _raw_title and clean and _raw_title != clean:
-                if not hasattr(self, "_problem_node_alias"):
-                    self._problem_node_alias = {}
-                self._problem_node_alias[_raw_title] = clean
 
         # 3. ResearchPaper nodes (arXiv)
         paper_titles = set()
