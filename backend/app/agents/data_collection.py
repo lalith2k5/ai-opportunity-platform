@@ -88,6 +88,38 @@ class DataCollectionAgent:
                     logger.error(f"[DataCollection] {name} failed: {e}")
                     results[name] = []
 
+        # ---- D5: update Source.last_fetched for sources that just ran ----
+        try:
+            from app.database import SessionLocal as _SLlf
+            from app import models as _mlf
+            from datetime import datetime as _dtlf, timezone as _tzlf
+            _dblf = _SLlf()
+            try:
+                _name_map = {
+                    "github": "github",
+                    "github_issues": "github",
+                    "arxiv": "arxiv",
+                    "news": "news",
+                    "reddit": "reddit",
+                    "rd_cells": "rd_cells",
+                    "patents": "patents",
+                }
+                _now = _dtlf.now(_tzlf.utc)
+                _touched = set()
+                for task_name in tasks.keys():
+                    ds_name = _name_map.get(task_name)
+                    if not ds_name or ds_name in _touched:
+                        continue
+                    _touched.add(ds_name)
+                    _row = _dblf.query(_mlf.Source).filter(_mlf.Source.name == ds_name).first()
+                    if _row:
+                        _row.last_fetched = _now
+                _dblf.commit()
+            finally:
+                _dblf.close()
+        except Exception as _e:
+            logger.warning(f"[DataCollection] last_fetched update failed: {_e}")
+
         logger.info(
             f"[DataCollection] Result: "
             f"{len(results['github'])} repos, "

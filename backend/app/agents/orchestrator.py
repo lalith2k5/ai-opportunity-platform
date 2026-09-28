@@ -316,7 +316,7 @@ class OrchestratorAgent:
         finally:
             db.close()
 
-    def _enrich_opportunities(self, opp_ids=None):
+    def _enrich_opportunities(self, opp_ids=None, user_id=None):
         """Populate the 10 Phase-6 enrichment columns for recent opportunities.
 
         Data-derived fields (technologies, papers, approaches, limitations,
@@ -514,7 +514,7 @@ class OrchestratorAgent:
                 try:
                     db.add(models.Recommendation(
                         opportunity_id=row.id,
-                        user_id=None,
+                        user_id=user_id,
                         suggested_research_direction=(
                             out.get("suggested_research_direction") or ""
                         )[:2000],
@@ -1046,7 +1046,7 @@ class OrchestratorAgent:
 
         # ---- Phase 6.1/6.2: enrichment of recent opportunities ----
         try:
-            enriched_stats = self._enrich_opportunities()
+            enriched_stats = self._enrich_opportunities(user_id=user_id)
             logger.info(f"Opportunity enrichment: {enriched_stats}")
         except Exception as e:
             logger.error(f"Opportunity enrichment block failed: {e}")

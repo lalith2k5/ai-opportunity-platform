@@ -44,6 +44,8 @@ def get_opportunities(
     domain: Optional[str] = None,
     industry: Optional[str] = None,
     technology: Optional[str] = None,
+    offset: int = 0,
+    limit: int = 200,
     db: Session = Depends(get_db),
     _=Depends(get_current_user),
 ):
@@ -80,7 +82,118 @@ def get_opportunities(
                 )
             )
         )
-    return q.order_by(models.Opportunity.opportunity_score.desc()).limit(200).all()
+    limit = max(1, min(limit, 500))
+    offset = max(0, offset)
+    return (
+        q.order_by(models.Opportunity.opportunity_score.desc())
+        .offset(offset)
+        .limit(limit)
+        .all()
+    )
+
+
+@router.get("/opportunities/count")
+def count_opportunities(
+    domain: Optional[str] = None,
+    industry: Optional[str] = None,
+    technology: Optional[str] = None,
+    db: Session = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    """Total + filtered count for a given filter set (D8)."""
+    from sqlalchemy import func as _f
+    subq = (
+        db.query(
+            models.Opportunity.title,
+            _f.max(models.Opportunity.opportunity_score).label("max_score"),
+        )
+        .group_by(models.Opportunity.title)
+        .subquery()
+    )
+    q = db.query(models.Opportunity).join(
+        subq,
+        (models.Opportunity.title == subq.c.title)
+        & (models.Opportunity.opportunity_score == subq.c.max_score),
+    )
+    if domain:
+        q = q.filter(models.Opportunity.domain == domain)
+    if industry:
+        q = q.filter(models.Opportunity.industry == industry)
+    if technology:
+        from sqlalchemy.dialects.postgresql import JSONB as _J
+        q = q.filter(models.Opportunity.related_technologies.op("@>")(
+            _f.cast(_f.jsonb_build_array(technology), _J)
+        ))
+    return {"total": db.query(models.Opportunity).count(), "filtered": q.count()}
+
+
+@router.get("/organizations")
+def list_organizations(
+    db: Session = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    """List registered organizations with profile counts (D2, SRS 30)."""
+    from sqlalchemy import func as _f
+    rows = (
+        db.query(
+            models.Organization,
+            _f.count(models.ProblemProfile.id).label("profile_count"),
+        )
+        .outerjoin(
+            models.ProblemProfile,
+            models.ProblemProfile.organization_id == models.Organization.id,
+        )
+        .group_by(models.Organization.id)
+        .order_by(models.Organization.name)
+        .all()
+    )
+    return [
+        {
+            "id": org.id,
+            "name": org.name,
+            "canonical_name": org.canonical_name,
+            "industry_domain": org.industry_domain,
+            "source": org.source,
+            "profile_count": cnt,
+        }
+        for org, cnt in rows
+    ]
+
+
+@router.get("/opportunities/{opp_id}/recommendations")
+def get_opportunity_recommendations(
+    opp_id: int,
+    limit: int = 20,
+    db: Session = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    """Recommendation history for an opportunity (D3, SRS 30)."""
+    opp = db.query(models.Opportunity).filter(models.Opportunity.id == opp_id).first()
+    if not opp:
+        raise HTTPException(status_code=404, detail="Opportunity not found")
+    rows = (
+        db.query(models.Recommendation)
+        .filter(models.Recommendation.opportunity_id == opp_id)
+        .order_by(models.Recommendation.created_at.desc())
+        .limit(max(1, min(limit, 100)))
+        .all()
+    )
+    return {
+        "opportunity_id": opp_id,
+        "count": len(rows),
+        "recommendations": [
+            {
+                "id": r.id,
+                "suggested_research_direction": r.suggested_research_direction,
+                "suggested_project_direction": r.suggested_project_direction,
+                "rationale": r.rationale,
+                "score_at_time": r.score_at_time,
+                "rank_at_time": r.rank_at_time,
+                "created_at": r.created_at.isoformat() if r.created_at else None,
+            }
+            for r in rows
+        ],
+    }
 
 
 @router.get("/opportunities/filters")
