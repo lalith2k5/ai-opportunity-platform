@@ -2,6 +2,7 @@ import networkx as nx
 from app.database import SessionLocal
 from app import models
 from app.logger import logger
+from app.kg_schema import normalize_relation, CANONICAL_RELATIONS
 
 
 # Type specificity ranking — higher number = more specific.
@@ -53,6 +54,8 @@ class KnowledgeGraphAgent:
         target = str(target).strip()[:500]
         if not source or not target or source == target:
             return
+        # Normalize legacy lowercase names to canonical uppercase (SRS §31).
+        relation = normalize_relation(relation)
         if self.graph.has_edge(source, target):
             self.graph[source][target]["weight"] = self.graph[source][target].get("weight", 1) + 1
         else:
@@ -295,6 +298,177 @@ class KnowledgeGraphAgent:
             "nodes": self.graph.number_of_nodes(),
             "edges": self.graph.number_of_edges(),
         }
+
+    def build_enriched_graph(self):
+        """Add canonical SRS §31 edges derived from Phase 2/3/4 tables.
+
+        Reads problem_profiles, problem_technologies, problem_papers, and
+        opportunity_evidence and emits edges that the in-memory pipeline
+        couldn't build (those tables are only populated after the earlier
+        KG layers have already been persisted). Merges into the existing
+        self.graph — call persist() after this to flush to DB.
+        """
+        db = SessionLocal()
+        try:
+            # ---------------- ProblemProfile backbone ----------------
+            profiles = db.query(models.ProblemProfile).all()
+            if not profiles:
+                return {"new_nodes": 0, "new_edges": 0}
+
+            profile_by_id = {p.id: p for p in profiles}
+
+            # Problem nodes (from ProblemProfile titles)
+            for p in profiles:
+                title = (p.problem_title or "").strip()
+                if not title:
+                    continue
+                self.add_entity("Problem", title, {
+                    "canonical_hash": p.canonical_hash,
+                    "industry_domain": p.industry_domain,
+                    "source": p.source,
+                })
+
+                # Problem —REPORTED_BY-> Organization
+                org = (p.organization or "").strip()
+                if org and org.lower() != "unknown":
+                    self.add_entity("Organization", org, {})
+                    self.add_relationship(title, "REPORTED_BY", org)
+
+                # Problem —FOUND_IN-> Source
+                src = (p.source or "").strip()
+                if src and src.lower() != "unknown":
+                    self.add_entity("Source", src, {"type": "source"})
+                    self.add_relationship(title, "FOUND_IN", src)
+
+            # ---------------- Problem —RELATED_TO-> Technology ----------------
+            tech_rows = db.query(models.ProblemTechnology).all()
+            for t in tech_rows:
+                parent = profile_by_id.get(t.problem_profile_id)
+                if not parent or not parent.problem_title:
+                    continue
+                tname = (t.technology_name or "").strip()
+                if not tname:
+                    continue
+                self.add_entity("Technology", tname, {
+                    "stage": t.stage,
+                    "confidence": t.confidence,
+                })
+                self.add_relationship(parent.problem_title, "RELATED_TO", tname)
+
+            # ---------------- Problem —STUDIED_BY-> ResearchPaper ----------------
+            paper_rows = db.query(models.ProblemPaper).all()
+            paper_nodes = []      # (title, limitations, arxiv_id)
+            for p in paper_rows:
+                parent = profile_by_id.get(p.problem_profile_id)
+                if not parent or not parent.problem_title:
+                    continue
+                ptitle = (p.title or "").strip()
+                if not ptitle:
+                    continue
+                self.add_entity("ResearchPaper", ptitle, {
+                    "arxiv_id": p.arxiv_id,
+                    "url": p.url,
+                    "relevance_score": p.relevance_score,
+                })
+                self.add_relationship(parent.problem_title, "STUDIED_BY", ptitle)
+                paper_nodes.append((ptitle, p.limitations or []))
+
+            # ---------------- ResearchPaper —HAS_LIMITATION-> Limitation ----------------
+            for ptitle, lims in paper_nodes:
+                for lim in lims:
+                    s = str(lim or "").strip()[:300]
+                    if not s:
+                        continue
+                    self.add_entity("Limitation", s, {})
+                    self.add_relationship(ptitle, "HAS_LIMITATION", s)
+
+            # ---------------- Opportunity —SUPPORTED_BY-> Evidence ----------------
+            ev_rows = db.query(models.OpportunityEvidence).all()
+            opp_by_id = {o.id: o for o in db.query(models.Opportunity).all()}
+            for e in ev_rows:
+                opp = opp_by_id.get(e.opportunity_id)
+                if not opp or not opp.title:
+                    continue
+                ev_label = (e.title or e.url or "").strip()[:300]
+                if not ev_label:
+                    continue
+                self.add_entity("Evidence", ev_label, {
+                    "source": e.source,
+                    "url": e.url,
+                    "relevance_score": e.relevance_score,
+                })
+                self.add_relationship(opp.title, "SUPPORTED_BY", ev_label)
+
+            # ---------------- Opportunity —USES-> Technology ----------------
+            # Approximation: match opportunity's problem_cluster keywords to
+            # each profile's keywords, then attach that profile's technologies.
+            clusters = {c.id: c for c in db.query(models.ProblemCluster).all()}
+            for opp in opp_by_id.values():
+                cluster = clusters.get(opp.problem_cluster_id)
+                if not cluster or not cluster.keywords:
+                    continue
+                opp_kws = {str(k).lower() for k in cluster.keywords[:10] if k}
+                if not opp_kws:
+                    continue
+                # Find profiles whose keywords overlap strongly
+                for p in profiles:
+                    p_kws = {str(k).lower() for k in (p.keywords or [])[:10] if k}
+                    if not p_kws:
+                        continue
+                    overlap = len(opp_kws & p_kws)
+                    if overlap < 2:
+                        continue
+                    for t in tech_rows:
+                        if t.problem_profile_id != p.id:
+                            continue
+                        tname = (t.technology_name or "").strip()
+                        if tname:
+                            self.add_relationship(opp.title, "USES", tname)
+
+            # ---------------- Technology —HAS_TREND-> Trend ----------------
+            trends = db.query(models.Trend).all()
+            for tech in db.query(models.ProblemTechnology).all():
+                tname = (tech.technology_name or "").strip()
+                if not tname:
+                    continue
+                tlow = tname.lower()
+                for tr in trends:
+                    trn = (tr.name or "").strip()
+                    if not trn:
+                        continue
+                    # exact (case-insensitive) OR tech name is substring of trend name
+                    if tlow == trn.lower() or tlow in trn.lower() or trn.lower() in tlow:
+                        self.add_entity("Trend", trn, {"trend_score": tr.trend_score})
+                        self.add_relationship(tname, "HAS_TREND", trn)
+
+            # ---------------- Problem —HAS_POTENTIAL_GAP-> ResearchGap ----------------
+            gaps = db.query(models.ResearchGap).all()
+            for gap in gaps:
+                g_title = (gap.title or "").strip()
+                if not g_title:
+                    continue
+                ev = gap.evidence or {}
+                g_kws = {str(k).lower() for k in (ev.get("keywords") or [])[:8] if k}
+                if not g_kws:
+                    continue
+                for p in profiles:
+                    p_kws = {str(k).lower() for k in (p.keywords or [])[:8] if k}
+                    if not p_kws:
+                        continue
+                    overlap = len(g_kws & p_kws)
+                    if overlap < 2:
+                        continue
+                    self.add_relationship(p.problem_title, "HAS_POTENTIAL_GAP", g_title)
+
+            return {
+                "nodes": self.graph.number_of_nodes(),
+                "edges": self.graph.number_of_edges(),
+            }
+        except Exception as e:
+            logger.error(f"build_enriched_graph error: {e}")
+            return {"new_nodes": 0, "new_edges": 0}
+        finally:
+            db.close()
 
     def persist(self):
         db = SessionLocal()

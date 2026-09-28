@@ -677,6 +677,14 @@ class OrchestratorAgent:
         except Exception as e:
             logger.error(f"Evidence aggregation failed: {e}")
 
+        # ---- Phase 5.1/5.2: build canonical KG edges from Phase 2/3/4 tables ----
+        try:
+            kg_enriched = self.kg.build_enriched_graph()
+            self.kg.persist()
+            logger.info(f"KG enriched: {kg_enriched}")
+        except Exception as e:
+            logger.error(f"Enriched KG build failed: {e}")
+
         # Strip private helper keys before returning to API
         for c in clusters:
             c.pop("_doc_indices", None)
