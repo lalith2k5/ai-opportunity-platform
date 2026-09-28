@@ -17,7 +17,7 @@ export default function Opportunities() {
   const [industry, setIndustry] = useState('');
   const [technology, setTechnology] = useState('');
   const [filterOptions, setFilterOptions] = useState<{ domains: string[]; industries: string[]; technologies: string[] }>({ domains: [], industries: [], technologies: [] });
-  const pageSize = 12;
+  const pageSize = 24;
 
   useEffect(() => {
     getOpportunities().then(setOpps).finally(() => setLoading(false));
@@ -74,8 +74,11 @@ export default function Opportunities() {
           <h1 className="text-2xl font-bold text-ink tracking-tight">Opportunities</h1>
         </div>
         <p className="text-sm text-ink-3">
-          Showing <span className="text-ink font-medium">{paginated.length}</span> of{' '}
-          <span className="text-ink font-medium">{filtered.length}</span> ranked opportunities
+          Showing{' '}
+          <span className="text-ink font-medium">
+            {filtered.length === 0 ? 0 : (page - 1) * pageSize + 1}–{Math.min(page * pageSize, filtered.length)}
+          </span>{' '}
+          of <span className="text-ink font-medium">{filtered.length}</span> ranked opportunities
         </p>
       </div>
 

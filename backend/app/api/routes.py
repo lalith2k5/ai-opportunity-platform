@@ -45,7 +45,7 @@ def get_opportunities(
     industry: Optional[str] = None,
     technology: Optional[str] = None,
     offset: int = 0,
-    limit: int = 200,
+    limit: int = 1000,
     db: Session = Depends(get_db),
     _=Depends(get_current_user),
 ):
@@ -82,7 +82,7 @@ def get_opportunities(
                 )
             )
         )
-    limit = max(1, min(limit, 500))
+    limit = max(1, min(limit, 1000))
     offset = max(0, offset)
     return (
         q.order_by(models.Opportunity.opportunity_score.desc())

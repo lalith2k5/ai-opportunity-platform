@@ -131,7 +131,9 @@ export interface Trend {
 }
 
 export const getHealth = () => api.get('/health').then(r => r.data);
-export const getOpportunities = (filters?: { domain?: string; industry?: string; technology?: string }) =>
+export const getOpportunities = (
+  filters?: { domain?: string; industry?: string; technology?: string; offset?: number; limit?: number },
+) =>
   api.get<Opportunity[]>('/opportunities', { params: filters }).then(r => r.data);
 
 export const getOpportunityFilters = () =>
