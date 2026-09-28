@@ -86,11 +86,11 @@ export default function ProblemProfiles() {
       {/* Header */}
       <div className="mb-6 flex items-start justify-between gap-4 flex-wrap">
         <div>
-          <div className="flex items-center gap-3 mb-1">
-            <div className="w-8 h-8 rounded-md bg-accent/10 flex items-center justify-center">
-              <Target className="text-accent" size={16} />
+          <div className="flex items-center gap-3.5 mb-2">
+            <div className="w-10 h-10 rounded-xl bg-accent/10 flex items-center justify-center shadow-[inset_0_1px_0_0_rgb(255_255_255/0.05)]">
+              <Target className="text-accent" size={18} />
             </div>
-            <h1 className="text-2xl font-bold text-ink tracking-tight">Problem Profiles</h1>
+            <h1 className="text-3xl font-bold text-ink tracking-tight">Problem Profiles</h1>
           </div>
           <p className="text-sm text-ink-3">
             Structured industry & government R&D problems — extracted from SBIR, challenge.gov and other public portals.
@@ -104,7 +104,7 @@ export default function ProblemProfiles() {
       </div>
 
       {/* Filters */}
-      <form onSubmit={submitSearch} className="bg-surface border border-edge rounded-lg p-3 mb-5 flex flex-col md:flex-row gap-3">
+      <form onSubmit={submitSearch} className="card p-3 mb-5 flex flex-col md:flex-row gap-3">
         <div className="relative flex-1">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-ink-4" size={14} />
           <input
@@ -146,7 +146,7 @@ export default function ProblemProfiles() {
       ) : (
         <div className="space-y-3">
           {items.map(p => (
-            <div key={p.id} className="bg-surface border border-edge rounded-lg p-5 hover:border-accent/40 transition-colors">
+            <div key={p.id} className="card card-hover p-5">
               <div className="flex items-start justify-between gap-4 mb-3">
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2 mb-1.5 flex-wrap">

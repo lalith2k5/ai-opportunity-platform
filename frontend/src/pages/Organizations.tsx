@@ -25,17 +25,17 @@ export default function Organizations() {
 
   return (
     <div className="p-6 lg:p-8 max-w-[1200px] mx-auto">
-      <div className="mb-6 flex items-center gap-3">
-        <div className="w-8 h-8 rounded-md bg-accent/10 flex items-center justify-center">
-          <Building2 className="text-accent" size={16} />
+      <div className="mb-6 flex items-center gap-3.5">
+        <div className="w-10 h-10 rounded-xl bg-accent/10 flex items-center justify-center shadow-[inset_0_1px_0_0_rgb(255_255_255/0.05)]">
+          <Building2 className="text-accent" size={18} />
         </div>
         <div>
-          <h1 className="text-2xl font-bold text-ink tracking-tight">Organizations</h1>
-          <p className="text-sm text-ink-3">Source organizations behind problem profiles (SRS 30)</p>
+          <h1 className="text-3xl font-bold text-ink tracking-tight">Organizations</h1>
+          <p className="text-sm text-ink-3 mt-1">Source organizations behind problem profiles</p>
         </div>
       </div>
 
-      <div className="bg-surface border border-edge rounded-lg p-3 mb-6">
+      <div className="card p-3 mb-6">
         <input
           type="text"
           value={search}
@@ -53,7 +53,7 @@ export default function Organizations() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
           {filtered.map(o => (
-            <div key={o.id} className="bg-surface border border-edge rounded-lg p-4 hover:border-accent/40 transition-colors">
+            <div key={o.id} className="card card-hover p-5">
               <div className="flex items-start justify-between gap-3 mb-3">
                 <div className="min-w-0 flex-1">
                   <h3 className="text-ink font-medium text-sm leading-snug">{o.name}</h3>

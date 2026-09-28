@@ -89,7 +89,7 @@ export default function Dashboard() {
       <div className="flex items-start justify-between gap-6 mb-8 flex-wrap">
         <div>
           <h1 className="text-4xl font-bold text-ink tracking-tight leading-tight">
-            {greeting()}, <span className="bg-gradient-to-r from-accent to-pink-400 bg-clip-text text-transparent">{firstName}</span>.
+            {greeting()}, <span className="bg-gradient-to-r from-accent to-sky-300 bg-clip-text text-transparent">{firstName}</span>.
           </h1>
           <p className="text-base text-ink-3 mt-2.5 leading-relaxed">
             Here's what's happening in your innovation workspace.

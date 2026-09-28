@@ -114,14 +114,14 @@ export default function Chat() {
       <div className="flex flex-col flex-1 min-w-0">
 
         {/* Header */}
-        <div className="border-b border-edge px-6 py-4 bg-surface flex items-center justify-between">
+        <div className="border-b border-edge/60 px-6 py-4 glass flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-md bg-accent/10 flex items-center justify-center">
-              <MessageSquare className="text-accent" size={15} />
+            <div className="w-10 h-10 rounded-xl bg-accent/10 flex items-center justify-center shadow-[inset_0_1px_0_0_rgb(255_255_255/0.05)]">
+              <MessageSquare className="text-accent" size={18} />
             </div>
             <div>
-              <h1 className="text-base font-semibold text-ink tracking-tight">AI Chat</h1>
-              <p className="text-2xs text-ink-4">Ask about opportunities, gaps, or trends</p>
+              <h1 className="text-lg font-bold text-ink tracking-tight">AI Chat</h1>
+              <p className="text-2xs text-ink-4 mt-0.5">Ask about opportunities, gaps, or trends</p>
             </div>
           </div>
           <button
@@ -137,8 +137,8 @@ export default function Chat() {
           {messages.length === 0 ? (
             <div className="max-w-2xl mx-auto mt-8 lg:mt-16">
               <div className="text-center mb-8">
-                <div className="w-12 h-12 rounded-lg bg-accent/10 flex items-center justify-center mx-auto mb-4">
-                  <Bot className="text-accent" size={22} />
+                <div className="w-14 h-14 rounded-2xl bg-accent/10 flex items-center justify-center mx-auto mb-5 shadow-[inset_0_1px_0_0_rgb(255_255_255/0.05),0_8px_24px_-8px_rgb(var(--accent)/0.4)]">
+                  <Bot className="text-accent" size={26} />
                 </div>
                 <h2 className="text-lg font-semibold text-ink tracking-tight">How can I help?</h2>
                 <p className="text-sm text-ink-3 mt-1">Try one of these prompts to get started:</p>
@@ -148,7 +148,7 @@ export default function Chat() {
                   <button
                     key={s}
                     onClick={() => send(s)}
-                    className="text-left bg-surface border border-edge hover:border-accent/40 hover:bg-overlay rounded-lg p-3.5 text-sm text-ink-2 transition-colors"
+                    className="text-left card card-hover p-4 text-sm text-ink-2"
                   >
                     {s}
                   </button>
@@ -160,16 +160,16 @@ export default function Chat() {
               {messages.map((m, i) => (
                 <div key={i} className={`flex gap-3 ${m.role === 'user' ? 'justify-end' : ''}`}>
                   {m.role === 'assistant' && (
-                    <div className="w-7 h-7 rounded-md bg-accent flex items-center justify-center flex-shrink-0 text-accent-fg">
-                      <Bot size={14} />
+                    <div className="w-8 h-8 rounded-lg bg-accent flex items-center justify-center flex-shrink-0 text-accent-fg shadow-[0_4px_12px_-2px_rgb(var(--accent)/0.55)]">
+                      <Bot size={15} />
                     </div>
                   )}
-                  <div className={`max-w-[80%] rounded-lg px-3.5 py-2.5 ${
+                  <div className={`max-w-[80%] px-4 py-3 text-sm leading-relaxed ${
                     m.role === 'user'
-                      ? 'bg-accent text-accent-fg'
-                      : 'bg-surface border border-edge text-ink-2'
+                      ? 'bg-accent text-accent-fg rounded-2xl rounded-tr-md shadow-[0_4px_16px_-4px_rgb(var(--accent)/0.4)]'
+                      : 'glass rounded-2xl rounded-tl-md text-ink-2'
                   }`}>
-                    <p className="whitespace-pre-wrap text-sm leading-relaxed">{m.content}</p>
+                    <p className="whitespace-pre-wrap">{m.content}</p>
                   </div>
                   {m.role === 'user' && (
                     <div className="w-7 h-7 rounded-md bg-overlay border border-edge flex items-center justify-center flex-shrink-0 text-ink-3">
@@ -194,7 +194,7 @@ export default function Chat() {
         </div>
 
         {/* Composer */}
-        <div className="border-t border-edge p-4 bg-surface">
+        <div className="border-t border-edge/60 p-4 glass">
           <div className="max-w-3xl mx-auto flex gap-2">
             <input
               type="text"

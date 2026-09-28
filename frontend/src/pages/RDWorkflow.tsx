@@ -26,16 +26,16 @@ export default function RDWorkflow() {
   return (
     <div className="p-6 lg:p-8 max-w-[1400px] mx-auto">
       <div className="mb-6 flex items-center gap-3">
-        <div className="w-8 h-8 rounded-md bg-warning/10 flex items-center justify-center">
-          <Factory className="text-warning" size={16} />
+        <div className="w-10 h-10 rounded-xl bg-warning/10 flex items-center justify-center shadow-[inset_0_1px_0_0_rgb(255_255_255/0.05)]">
+          <Factory className="text-warning" size={18} />
         </div>
         <div>
-          <h1 className="text-2xl font-bold text-ink tracking-tight">R&D workflow</h1>
+          <h1 className="text-3xl font-bold text-ink tracking-tight">R&D workflow</h1>
           <p className="text-sm text-ink-3">Industry problem → technology & research landscape → innovation opportunities.</p>
         </div>
       </div>
 
-      <div className="bg-surface border border-edge rounded-lg p-4 mb-6 flex flex-col md:flex-row gap-3">
+      <div className="card p-4 mb-6 flex flex-col md:flex-row gap-3">
         <div className="relative flex-1">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-ink-4" size={14} />
           <input
@@ -79,7 +79,7 @@ export default function RDWorkflow() {
               { l: 'Research papers',  v: data.research?.length || 0,     c: 'text-success' },
               { l: 'Opportunities',    v: data.opportunities?.length || 0, c: 'text-warning' },
             ].map(s => (
-              <div key={s.l} className="bg-surface border border-edge rounded-lg p-4">
+              <div key={s.l} className="card p-4">
                 <p className="text-2xs text-ink-4 uppercase tracking-wider mb-2">{s.l}</p>
                 <p className={`text-2xl font-semibold font-mono tabular-nums ${s.c}`}>{s.v}</p>
               </div>
@@ -87,7 +87,7 @@ export default function RDWorkflow() {
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-            <div className="bg-surface border border-edge rounded-lg p-5">
+            <div className="card p-5">
               <div className="flex items-center gap-2 mb-4">
                 <Cpu size={14} className="text-accent" />
                 <h2 className="text-xs font-medium text-ink uppercase tracking-wider">Technology landscape</h2>
@@ -107,7 +107,7 @@ export default function RDWorkflow() {
               ) : <p className="text-xs text-ink-4 italic">No technologies linked.</p>}
             </div>
 
-            <div className="bg-surface border border-edge rounded-lg p-5">
+            <div className="card p-5">
               <div className="flex items-center gap-2 mb-4">
                 <BookOpen size={14} className="text-success" />
                 <h2 className="text-xs font-medium text-ink uppercase tracking-wider">Research landscape</h2>
@@ -145,7 +145,7 @@ export default function RDWorkflow() {
               ) : <p className="text-xs text-ink-4 italic">No research papers linked.</p>}
             </div>
 
-            <div className="bg-surface border border-edge rounded-lg p-5">
+            <div className="card p-5">
               <div className="flex items-center gap-2 mb-4">
                 <TrendingUp size={14} className="text-warning" />
                 <h2 className="text-xs font-medium text-ink uppercase tracking-wider">Emerging trends</h2>
@@ -167,7 +167,7 @@ export default function RDWorkflow() {
               ) : <p className="text-xs text-ink-4 italic">No matching trends.</p>}
             </div>
 
-            <div className="bg-surface border border-edge rounded-lg p-5">
+            <div className="card p-5">
               <div className="flex items-center gap-2 mb-4">
                 <Zap size={14} className="text-warning" />
                 <h2 className="text-xs font-medium text-ink uppercase tracking-wider">Innovation opportunities</h2>

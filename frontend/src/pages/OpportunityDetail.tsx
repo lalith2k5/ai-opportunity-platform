@@ -26,10 +26,10 @@ function Section({
   icon: Icon, title, children, accent = 'text-accent',
 }: { icon: any; title: string; children: React.ReactNode; accent?: string }) {
   return (
-    <div className="bg-surface border border-edge rounded-lg p-5">
+    <div className="card p-5">
       <div className="flex items-center gap-2 mb-4">
         <Icon size={14} className={accent} />
-        <h2 className="text-xs font-medium text-ink uppercase tracking-wider">{title}</h2>
+        <h2 className="text-2xs font-semibold text-ink uppercase tracking-[0.08em]">{title}</h2>
       </div>
       {children}
     </div>
@@ -130,13 +130,18 @@ export default function OpportunityDetail() {
       {/* Back link */}
       <Link
         to={backTo}
-        className="inline-flex items-center gap-1 text-xs text-ink-3 hover:text-ink transition-colors mb-6"
+        className="inline-flex items-center gap-1.5 text-xs text-ink-3 hover:text-accent transition-colors mb-6 group"
       >
-        <ArrowLeft size={13} /> {backLabel}
+        <ArrowLeft size={13} className="transition-transform group-hover:-translate-x-0.5" /> {backLabel}
       </Link>
 
       {/* Hero */}
-      <div className="bg-surface border border-edge rounded-lg p-6 mb-5">
+      <div className="card p-6 mb-5 relative overflow-hidden">
+        {/* Ambient glow */}
+        <div
+          className="absolute -top-32 -right-32 w-96 h-96 rounded-full pointer-events-none"
+          style={{ background: 'radial-gradient(circle, rgb(var(--accent) / 0.12), transparent 60%)' }}
+        />
         <div className="flex items-start justify-between gap-6 flex-wrap">
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 mb-3 flex-wrap">
@@ -169,7 +174,7 @@ export default function OpportunityDetail() {
               )}
               <span className="text-2xs text-ink-4 font-mono">#{opp.id}</span>
             </div>
-            <h1 className="text-2xl font-bold text-ink tracking-tight leading-tight mb-2">
+            <h1 className="text-3xl font-bold text-ink tracking-tight leading-tight mb-3">
               {opp.title}
             </h1>
             <p className="text-sm text-ink-2 leading-relaxed">{opp.description}</p>
@@ -177,7 +182,7 @@ export default function OpportunityDetail() {
 
           <div className="text-right flex-shrink-0">
             <div className="flex items-baseline gap-1 justify-end">
-              <span className="text-4xl font-bold text-accent font-mono tabular-nums leading-none tracking-tight">
+              <span className={`text-5xl font-bold font-mono tabular-nums leading-none tracking-tight ${isHigh ? 'text-success' : 'text-accent'}`}>
                 {opp.opportunity_score.toFixed(2)}
               </span>
               <span className="text-sm text-ink-4 font-mono">/1.00</span>
@@ -194,7 +199,8 @@ export default function OpportunityDetail() {
       {(opp.suggested_research_direction || opp.suggested_project_direction) && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-5">
           {opp.suggested_research_direction && (
-            <div className="bg-accent/[0.06] border border-accent/25 rounded-lg p-5">
+            <div className="card p-5 border-accent/30"
+              style={{ background: 'linear-gradient(135deg, rgb(var(--accent) / 0.08), rgb(var(--accent) / 0.02))' }}>
               <div className="flex items-center gap-2 mb-3">
                 <FlaskConical size={14} className="text-accent" />
                 <h2 className="text-xs font-medium text-ink uppercase tracking-wider">Suggested research</h2>
@@ -206,7 +212,8 @@ export default function OpportunityDetail() {
             </div>
           )}
           {opp.suggested_project_direction && (
-            <div className="bg-success/[0.06] border border-success/25 rounded-lg p-5">
+            <div className="card p-5 border-success/30"
+              style={{ background: 'linear-gradient(135deg, rgb(var(--success) / 0.08), rgb(var(--success) / 0.02))' }}>
               <div className="flex items-center gap-2 mb-3">
                 <Zap size={14} className="text-success" />
                 <h2 className="text-xs font-medium text-ink uppercase tracking-wider">Suggested project</h2>
@@ -252,10 +259,10 @@ export default function OpportunityDetail() {
 
       {/* Enrichment card */}
       {hasEnrichment ? (
-        <div className="bg-surface border border-edge rounded-lg p-5 mb-5">
+        <div className="card p-5 mb-5">
           <div className="flex items-center gap-2 mb-5">
             <Target size={14} className="text-accent" />
-            <h2 className="text-xs font-medium text-ink uppercase tracking-wider">Opportunity card enrichment</h2>
+            <h2 className="text-2xs font-semibold text-ink uppercase tracking-[0.08em]">Opportunity card enrichment</h2>
             <AiBadge />
           </div>
 

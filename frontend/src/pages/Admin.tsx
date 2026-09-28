@@ -97,11 +97,11 @@ export default function Admin() {
 
       <div className="mb-6 flex items-center justify-between gap-4 flex-wrap">
         <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-md bg-warning/10 flex items-center justify-center">
-            <Shield className="text-warning" size={16} />
+          <div className="w-10 h-10 rounded-xl bg-warning/10 flex items-center justify-center shadow-[inset_0_1px_0_0_rgb(255_255_255/0.05)]">
+            <Shield className="text-warning" size={18} />
           </div>
           <div>
-            <h1 className="text-2xl font-bold text-ink tracking-tight">Admin panel</h1>
+            <h1 className="text-3xl font-bold text-ink tracking-tight">Admin panel</h1>
             <p className="text-sm text-ink-3">System overview and management</p>
           </div>
         </div>

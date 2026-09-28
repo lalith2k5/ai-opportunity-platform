@@ -60,16 +60,16 @@ export default function StudentWorkflow() {
   return (
     <div className="p-6 lg:p-8 max-w-[1500px] mx-auto">
       <div className="mb-8 flex items-center gap-3">
-        <div className="w-8 h-8 rounded-md bg-accent/10 flex items-center justify-center">
-          <GraduationCap className="text-accent" size={16} />
+        <div className="w-10 h-10 rounded-xl bg-accent/10 flex items-center justify-center shadow-[inset_0_1px_0_0_rgb(255_255_255/0.05)]">
+          <GraduationCap className="text-accent" size={18} />
         </div>
         <div>
-          <h1 className="text-2xl font-bold text-ink tracking-tight">Student workflow</h1>
+          <h1 className="text-3xl font-bold text-ink tracking-tight">Student workflow</h1>
           <p className="text-sm text-ink-3">Pick a domain, see buildable opportunities and project directions.</p>
         </div>
       </div>
 
-      <div className="bg-surface border border-edge rounded-lg p-5 mb-6">
+      <div className="card p-5 mb-6">
         <p className="text-2xs text-ink-4 uppercase tracking-wider mb-3">Step 1 — choose a domain</p>
         <div className="flex flex-wrap gap-2">
           <button
@@ -150,7 +150,7 @@ export default function StudentWorkflow() {
               <Link
                 key={o.id}
                 to={`/workflows/student/${o.id}`}
-                className="group block bg-surface border border-edge hover:border-accent/40 rounded-lg p-4 transition-colors"
+                className="group block card card-hover p-4"
               >
                 <div className="flex items-start justify-between gap-3 mb-2">
                   <p className="text-xs text-ink-2 font-medium leading-snug line-clamp-2 flex-1 group-hover:text-accent transition-colors">

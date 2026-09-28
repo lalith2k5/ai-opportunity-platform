@@ -24,16 +24,16 @@ export default function ResearcherWorkflow() {
   return (
     <div className="p-6 lg:p-8 max-w-[1200px] mx-auto">
       <div className="mb-6 flex items-center gap-3">
-        <div className="w-8 h-8 rounded-md bg-accent/10 flex items-center justify-center">
-          <FlaskConical className="text-accent" size={16} />
+        <div className="w-10 h-10 rounded-xl bg-accent/10 flex items-center justify-center shadow-[inset_0_1px_0_0_rgb(255_255_255/0.05)]">
+          <FlaskConical className="text-accent" size={18} />
         </div>
         <div>
-          <h1 className="text-2xl font-bold text-ink tracking-tight">Researcher workflow</h1>
+          <h1 className="text-3xl font-bold text-ink tracking-tight">Researcher workflow</h1>
           <p className="text-sm text-ink-3">Topic → problems → research → limitations → gaps → opportunities.</p>
         </div>
       </div>
 
-      <div className="bg-surface border border-edge rounded-lg p-4 mb-6 flex flex-col md:flex-row gap-3">
+      <div className="card p-4 mb-6 flex flex-col md:flex-row gap-3">
         <div className="relative flex-1">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-ink-4" size={14} />
           <input
@@ -68,7 +68,7 @@ export default function ResearcherWorkflow() {
       {!loading && chains.length > 0 && (
         <div className="space-y-5">
           {chains.map((c, i) => (
-            <div key={i} className="bg-surface border border-edge rounded-lg p-5">
+            <div key={i} className="card p-5">
               <div className="flex items-start justify-between gap-4 mb-4 pb-4 border-b border-edge-subtle">
                 <div>
                   <div className="flex items-center gap-2 mb-1">

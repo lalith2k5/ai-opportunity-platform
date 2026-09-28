@@ -200,11 +200,11 @@ export default function Recommendations() {
       {/* Header */}
       <div className="mb-8">
         <div className="flex items-center gap-3 mb-2">
-          <div className="w-8 h-8 rounded-md bg-accent/10 flex items-center justify-center">
-            <Sparkles className="text-accent" size={16} />
+          <div className="w-10 h-10 rounded-xl bg-accent/10 flex items-center justify-center shadow-[inset_0_1px_0_0_rgb(255_255_255/0.05)]">
+            <Sparkles className="text-accent" size={18} />
           </div>
           <div>
-            <h1 className="text-2xl font-bold text-ink tracking-tight">
+            <h1 className="text-3xl font-bold text-ink tracking-tight">
               Recommendations for you
             </h1>
             <p className="text-sm text-ink-3 mt-0.5">
@@ -341,7 +341,7 @@ export default function Recommendations() {
           />
 
           {/* Footer CTA */}
-          <div className="mt-10 bg-surface border border-edge rounded-lg p-5 flex items-center justify-between gap-4 flex-wrap">
+          <div className="mt-10 card p-5 flex items-center justify-between gap-4 flex-wrap">
             <div className="flex items-start gap-3">
               <Sparkles size={16} className="text-accent flex-shrink-0 mt-0.5" />
               <div>

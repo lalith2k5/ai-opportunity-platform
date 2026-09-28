@@ -193,13 +193,13 @@ export default function KnowledgeGraph() {
     <div className="flex flex-col h-screen">
 
       {/* Header */}
-      <div className="border-b border-edge bg-surface px-6 py-4 flex items-center justify-between gap-4 flex-wrap">
+      <div className="border-b border-edge/60 glass px-6 py-4 flex items-center justify-between gap-4 flex-wrap">
         <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-md bg-accent/10 flex items-center justify-center">
-            <Network className="text-accent" size={16} />
+          <div className="w-10 h-10 rounded-xl bg-accent/10 flex items-center justify-center shadow-[inset_0_1px_0_0_rgb(255_255_255/0.05)]">
+            <Network className="text-accent" size={18} />
           </div>
           <div>
-            <h1 className="text-base font-semibold text-ink tracking-tight">Knowledge Graph</h1>
+            <h1 className="text-lg font-bold text-ink tracking-tight">Knowledge Graph</h1>
             <p className="text-2xs text-ink-4">
               {graphData.nodes.length} nodes · {graphData.links.length} edges shown
               {' · '}
@@ -238,7 +238,7 @@ export default function KnowledgeGraph() {
 
         {/* Left: filter panel */}
         {showFilters && (
-          <aside className="w-64 border-r border-edge bg-surface flex-shrink-0 overflow-y-auto">
+          <aside className="w-64 border-r border-edge/60 glass flex-shrink-0 overflow-y-auto">
             <div className="px-4 py-3 border-b border-edge-subtle">
               <p className="text-2xs font-medium text-ink-4 uppercase tracking-wider">
                 Entity types
@@ -346,7 +346,7 @@ export default function KnowledgeGraph() {
 
         {/* Right: node detail panel */}
         {selected && (
-          <aside className="w-80 border-l border-edge bg-surface flex-shrink-0 flex flex-col overflow-hidden">
+          <aside className="w-80 border-l border-edge/60 glass flex-shrink-0 flex flex-col overflow-hidden">
             <div className="px-4 py-3 border-b border-edge flex items-start justify-between gap-2">
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2 mb-1">

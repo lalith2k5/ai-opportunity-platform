@@ -76,7 +76,7 @@ export default function Profile() {
       </div>
 
       {/* Basic info */}
-      <form onSubmit={saveProfile} className="bg-surface border border-edge rounded-lg p-6 mb-5">
+      <form onSubmit={saveProfile} className="card p-6 mb-5">
         <div className="flex items-center gap-2 mb-5">
           <UserIcon size={14} className="text-accent" />
           <h2 className="text-xs font-medium text-ink uppercase tracking-wider">Basic information</h2>
@@ -106,7 +106,7 @@ export default function Profile() {
       </form>
 
       {/* Password */}
-      <form onSubmit={savePassword} className="bg-surface border border-edge rounded-lg p-6">
+      <form onSubmit={savePassword} className="card p-6">
         <div className="flex items-center gap-2 mb-5">
           <Lock size={14} className="text-warning" />
           <h2 className="text-xs font-medium text-ink uppercase tracking-wider">Change password</h2>

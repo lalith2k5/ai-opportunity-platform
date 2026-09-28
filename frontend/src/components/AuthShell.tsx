@@ -29,9 +29,9 @@ export default function AuthShell({
           className="absolute inset-0"
           style={{
             backgroundImage:
-              'radial-gradient(at 20% 25%, rgba(110,118,255,0.22) 0px, transparent 55%), ' +
-              'radial-gradient(at 85% 75%, rgba(180,120,255,0.16) 0px, transparent 55%), ' +
-              'radial-gradient(at 60% 15%, rgba(90,160,255,0.12) 0px, transparent 50%)',
+              'radial-gradient(at 20% 25%, rgba(24,119,242,0.28) 0px, transparent 55%), ' +
+              'radial-gradient(at 85% 75%, rgba(56,182,255,0.20) 0px, transparent 55%), ' +
+              'radial-gradient(at 60% 15%, rgba(100,180,255,0.16) 0px, transparent 50%)',
           }}
         />
         {/* Subtle noise overlay */}
@@ -61,7 +61,7 @@ export default function AuthShell({
             <h3 className="text-4xl xl:text-5xl font-bold text-ink leading-[1.05] tracking-tight mb-5">
               Discover your next
               <br />
-              <span className="bg-gradient-to-r from-accent via-accent to-pink-400 bg-clip-text text-transparent">
+              <span className="bg-gradient-to-r from-accent to-sky-300 bg-clip-text text-transparent">
                 breakthrough.
               </span>
             </h3>

@@ -26,9 +26,9 @@
   --text-muted:     92 92 102;
 
   /* Accent — cooler, more saturated violet-blue */
-  --accent:        110 118 255;
-  --accent-hover:  128 136 255;
-  --accent-subtle: 110 118 255;
+  --accent:        24 119 242;
+  --accent-hover:  69 150 255;
+  --accent-subtle: 24 119 242;
   --accent-fg:     255 255 255;
 
   /* Status — Apple system colors */
@@ -57,9 +57,9 @@ html.light {
   --text-tertiary:  118 118 128;
   --text-muted:     160 160 170;
 
-  --accent:        94 106 210;
-  --accent-hover:  79 91 195;
-  --accent-subtle: 94 106 210;
+  --accent:        24 119 242;
+  --accent-hover:  12 100 220;
+  --accent-subtle: 24 119 242;
   --accent-fg:     255 255 255;
 
   --success:        5 150 105;
@@ -98,8 +98,8 @@ body::before {
   pointer-events: none;
   z-index: 0;
   background:
-    radial-gradient(ellipse 800px 600px at 15% 0%, rgb(var(--accent) / 0.06), transparent 60%),
-    radial-gradient(ellipse 700px 500px at 85% 100%, rgb(var(--accent) / 0.04), transparent 60%);
+    radial-gradient(ellipse 900px 650px at 12% 0%, rgb(24 119 242 / 0.09), transparent 60%),
+    radial-gradient(ellipse 800px 600px at 88% 100%, rgb(56 182 255 / 0.05), transparent 60%);
   opacity: 0.9;
 }
 html.light body::before { opacity: 0.4; }
