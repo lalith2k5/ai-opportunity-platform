@@ -17,6 +17,7 @@ from app.agents.problem_extractor import ProblemExtractorAgent
 from app.agents.problem_agent import ProblemAgent
 from app.agents.technology_agent import TechnologyAgent
 from app.agents.research_discovery_agent import ResearchDiscoveryAgent
+from app.agents.evidence_agent import EvidenceAgent
 
 from sqlalchemy import inspect as _sa_inspect
 
@@ -43,6 +44,7 @@ class OrchestratorAgent:
         self.problem_agent = ProblemAgent()
         self.technology_agent = TechnologyAgent()
         self.research_discovery_agent = ResearchDiscoveryAgent()
+        self.evidence_agent = EvidenceAgent()
 
     def _save_problem_profiles(self, profiles: list):
         """Persist extracted ProblemProfile rows.
@@ -227,6 +229,49 @@ class OrchestratorAgent:
         except Exception as e:
             db.rollback()
             logger.error(f"ProblemPaper save error: {e}")
+            return 0
+        finally:
+            db.close()
+
+    def _save_evidence(self, opportunity_rows_with_evidence: list):
+        """Persist opportunity_evidence rows. Skips exact (opp_id, url) dups."""
+        if not opportunity_rows_with_evidence:
+            return 0
+        from app.database import SessionLocal as _SL
+        db = _SL()
+        inserted = 0
+        try:
+            existing = set()
+            for oid, url in db.query(
+                models.OpportunityEvidence.opportunity_id,
+                models.OpportunityEvidence.url,
+            ).all():
+                existing.add((oid, url or ""))
+
+            for opp, items in opportunity_rows_with_evidence:
+                opp_id = self._row_id(opp)
+                if opp_id is None:
+                    continue
+                for e in items:
+                    key = (opp_id, e.get("url") or "")
+                    if not key[1] or key in existing:
+                        continue
+                    db.add(models.OpportunityEvidence(
+                        opportunity_id=opp_id,
+                        source=e["source"],
+                        title=e.get("title") or "",
+                        url=key[1],
+                        relevance_score=e.get("relevance_score") or 0.0,
+                        snippet=e.get("snippet") or "",
+                    ))
+                    existing.add(key)
+                    inserted += 1
+            db.commit()
+            logger.info(f"Saved {inserted} new OpportunityEvidence rows")
+            return inserted
+        except Exception as e:
+            db.rollback()
+            logger.error(f"OpportunityEvidence save error: {e}")
             return 0
         finally:
             db.close()
@@ -610,6 +655,27 @@ class OrchestratorAgent:
                     self._save_problem_papers(paper_results)
         except Exception as e:
             logger.error(f"Research discovery failed: {e}")
+
+        # ---- Phase 4.1: evidence aggregation for recent opportunities ----
+        # CPU-only (keyword match against raw_documents). No LLM calls.
+        try:
+            from app.database import SessionLocal as _SL4
+            db4 = _SL4()
+            try:
+                opp_rows = (
+                    db4.query(models.Opportunity)
+                    .order_by(models.Opportunity.id.desc())
+                    .limit(15)
+                    .all()
+                )
+            finally:
+                db4.close()
+            if opp_rows:
+                evidence_results = self.evidence_agent.aggregate_batch(opp_rows)
+                if evidence_results:
+                    self._save_evidence(evidence_results)
+        except Exception as e:
+            logger.error(f"Evidence aggregation failed: {e}")
 
         # Strip private helper keys before returning to API
         for c in clusters:

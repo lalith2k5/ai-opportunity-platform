@@ -271,3 +271,26 @@ class ProblemPaper(Base):
     limitations = Column(JSON, default=list)
     published = Column(String(100))
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class OpportunityEvidence(Base):
+    """Supporting evidence for an opportunity (SRS Module 11 / §18).
+
+    Populated by EvidenceAgent (Phase 4.1) via keyword matching against
+    the raw_documents table. Each row is one source doc supporting one
+    opportunity. KG edges (Opportunity -SUPPORTED_BY-> Evidence per
+    SRS §31) are deferred to Phase 5 (KG schema alignment).
+    """
+    __tablename__ = "opportunity_evidence"
+
+    id = Column(Integer, primary_key=True, index=True)
+    opportunity_id = Column(
+        Integer, ForeignKey("opportunities.id", ondelete="CASCADE"),
+        index=True, nullable=False,
+    )
+    source = Column(String(64), index=True, nullable=False)
+    title = Column(String(500))
+    url = Column(String(500))
+    relevance_score = Column(Float, default=0.0)
+    snippet = Column(Text)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
