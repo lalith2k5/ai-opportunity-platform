@@ -120,6 +120,9 @@ class OrchestratorAgent:
                     keywords=pr.get("keywords", []),
                     problem_status=pr.get("problem_status", "unknown"),
                     student_suitability=pr.get("student_suitability", "medium"),
+                    affected_stakeholders=pr.get("affected_stakeholders") or [],
+                    evidence=pr.get("evidence") or [],
+                    confidence=float(pr.get("confidence") or 0.5),
                     extracted_by=pr.get("extracted_by", "unknown"),
                 ))
                 inserted += 1
@@ -221,6 +224,9 @@ class OrchestratorAgent:
                         url=p.get("url") or "",
                         relevance_score=p.get("relevance_score") or 0.5,
                         limitations=p.get("limitations") or [],
+                        research_methods=p.get("research_methods") or [],
+                        results_summary=p.get("results_summary") or "",
+                        research_areas=p.get("research_areas") or [],
                         published=p.get("published") or "",
                     ))
                     existing.add(key)
