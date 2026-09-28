@@ -89,12 +89,12 @@ export default function Reports() {
       {/* Header */}
       <div className="mb-6 flex items-center justify-between gap-4 flex-wrap">
         <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-md bg-accent/10 flex items-center justify-center">
-            <FileText className="text-accent" size={16} />
+          <div className="w-10 h-10 rounded-xl bg-accent/10 flex items-center justify-center shadow-[inset_0_1px_0_0_rgb(255_255_255/0.05)]">
+            <FileText className="text-accent" size={18} />
           </div>
           <div>
-            <h1 className="text-2xl font-bold text-ink tracking-tight">Reports & analytics</h1>
-            <p className="text-sm text-ink-3">Visual insights and downloadable reports</p>
+            <h1 className="text-3xl font-bold text-ink tracking-tight">Reports & analytics</h1>
+            <p className="text-sm text-ink-3 mt-1">Visual insights and downloadable reports</p>
           </div>
         </div>
         <div className="flex gap-2">

@@ -67,11 +67,11 @@ export default function Opportunities() {
 
       {/* Header */}
       <div className="mb-6">
-        <div className="flex items-center gap-3 mb-1">
-          <div className="w-8 h-8 rounded-md bg-accent/10 flex items-center justify-center">
-            <Zap className="text-accent" size={16} />
+        <div className="flex items-center gap-3.5 mb-2">
+          <div className="w-10 h-10 rounded-xl bg-accent/10 flex items-center justify-center shadow-[inset_0_1px_0_0_rgb(255_255_255/0.05)]">
+            <Zap className="text-accent" size={18} />
           </div>
-          <h1 className="text-2xl font-bold text-ink tracking-tight">Opportunities</h1>
+          <h1 className="text-3xl font-bold text-ink tracking-tight">Opportunities</h1>
         </div>
         <p className="text-sm text-ink-3">
           Showing{' '}
@@ -83,7 +83,7 @@ export default function Opportunities() {
       </div>
 
       {/* Filter bar — row 1 (search + sort) */}
-      <div className="bg-surface border border-edge rounded-lg p-3 mb-3 flex flex-col md:flex-row gap-3 items-stretch md:items-center">
+      <div className="card p-3 mb-3 flex flex-col md:flex-row gap-3 items-stretch md:items-center">
 
         <div className="relative flex-1 md:max-w-md">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-ink-4" size={14} />
@@ -139,7 +139,7 @@ export default function Opportunities() {
       </div>
 
       {/* Filter bar — row 2 (SRS 22 domain / industry / technology) */}
-      <div className="bg-surface border border-edge rounded-lg p-3 mb-6 flex flex-col md:flex-row gap-3 items-stretch md:items-center">
+      <div className="card p-3 mb-6 flex flex-col md:flex-row gap-3 items-stretch md:items-center">
         <select
           value={domain}
           onChange={e => { setDomain(e.target.value); setPage(1); }}

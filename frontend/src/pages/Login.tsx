@@ -64,7 +64,7 @@ export default function Login() {
           />
         </Field>
 
-        <button type="submit" disabled={loading} className="btn-primary w-full py-2.5">
+        <button type="submit" disabled={loading} className="btn-primary w-full py-3 text-base">
           {loading ? <Loader2 className="animate-spin" size={15} /> : null}
           {loading ? 'Signing in…' : 'Sign in'}
         </button>

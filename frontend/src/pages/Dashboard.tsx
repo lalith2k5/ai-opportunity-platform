@@ -37,11 +37,11 @@ function Panel({
   children: React.ReactNode;
 }) {
   return (
-    <div className="bg-surface border border-edge rounded-lg p-4 flex flex-col">
+    <div className="card p-4 flex flex-col">
       <div className="flex items-center justify-between mb-3 flex-shrink-0">
         <div className="flex items-center gap-2">
           <Icon size={13} className={accent} />
-          <h3 className="text-ink font-medium text-xs uppercase tracking-wider">{title}</h3>
+          <h3 className="text-ink font-semibold text-2xs uppercase tracking-[0.08em]">{title}</h3>
         </div>
         {action}
       </div>
@@ -88,10 +88,10 @@ export default function Dashboard() {
       {/* Header */}
       <div className="flex items-start justify-between gap-6 mb-8 flex-wrap">
         <div>
-          <h1 className="text-2xl font-bold text-ink tracking-tight">
-            {greeting()}, {firstName}.
+          <h1 className="text-4xl font-bold text-ink tracking-tight leading-tight">
+            {greeting()}, <span className="bg-gradient-to-r from-accent to-pink-400 bg-clip-text text-transparent">{firstName}</span>.
           </h1>
-          <p className="text-sm text-ink-3 mt-1">
+          <p className="text-base text-ink-3 mt-2.5 leading-relaxed">
             Here's what's happening in your innovation workspace.
           </p>
         </div>
@@ -121,7 +121,7 @@ export default function Dashboard() {
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-2">
               <Zap className="text-accent" size={15} />
-              <h2 className="text-ink font-semibold text-base tracking-tight">Top opportunities</h2>
+              <h2 className="text-ink font-bold text-lg tracking-tight">Top opportunities</h2>
               <span className="badge bg-overlay text-ink-3 border border-edge">{opportunities.length}</span>
             </div>
             <Link

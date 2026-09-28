@@ -50,27 +50,27 @@ export default function Problems() {
 
       {/* Header */}
       <div className="mb-6">
-        <div className="flex items-center gap-3 mb-1">
-          <div className="w-8 h-8 rounded-md bg-warning/10 flex items-center justify-center">
-            <TrendingUp className="text-warning" size={16} />
+        <div className="flex items-center gap-3.5 mb-2">
+          <div className="w-10 h-10 rounded-xl bg-warning/10 flex items-center justify-center shadow-[inset_0_1px_0_0_rgb(255_255_255/0.05)]">
+            <TrendingUp className="text-warning" size={18} />
           </div>
-          <h1 className="text-2xl font-bold text-ink tracking-tight">Problem rankings</h1>
+          <h1 className="text-3xl font-bold text-ink tracking-tight">Problem rankings</h1>
         </div>
         <p className="text-sm text-ink-3">Recurring real-world problems clustered from multi-source signals</p>
       </div>
 
       {/* Stat row */}
       <div className="grid grid-cols-3 gap-3 mb-6">
-        <div className="bg-surface border border-edge rounded-lg p-4">
-          <p className="text-2xs font-medium text-ink-4 uppercase tracking-wider mb-2">Total clusters</p>
+        <div className="card p-4">
+          <p className="text-2xs font-medium text-ink-4 uppercase tracking-[0.08em] mb-2">Total clusters</p>
           <p className="text-2xl font-semibold text-ink font-mono tabular-nums">{problems.length}</p>
         </div>
-        <div className="bg-surface border border-edge rounded-lg p-4">
-          <p className="text-2xs font-medium text-ink-4 uppercase tracking-wider mb-2">Avg demand</p>
+        <div className="card p-4">
+          <p className="text-2xs font-medium text-ink-4 uppercase tracking-[0.08em] mb-2">Avg demand</p>
           <p className="text-2xl font-semibold text-success font-mono tabular-nums">{avgDemand.toFixed(2)}</p>
         </div>
-        <div className="bg-surface border border-edge rounded-lg p-4">
-          <p className="text-2xs font-medium text-ink-4 uppercase tracking-wider mb-2">Total sources</p>
+        <div className="card p-4">
+          <p className="text-2xs font-medium text-ink-4 uppercase tracking-[0.08em] mb-2">Total sources</p>
           <p className="text-2xl font-semibold text-accent font-mono tabular-nums">{totalSources}</p>
         </div>
       </div>
