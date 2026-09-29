@@ -331,8 +331,8 @@ function ConfigTab({ settings, llmStatus, reload }: { settings: any[]; llmStatus
             <Cpu size={14} className="text-accent" />
             <h3 className="text-xs font-medium text-ink uppercase tracking-wider">LLM provider status</h3>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-            {(['gemini', 'openai', 'anthropic'] as const).map(name => {
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+            {(['gemini', 'openrouter', 'openai', 'anthropic'] as const).map(name => {
               const available = llmStatus.available?.includes(name);
               const isPrimary = llmStatus.primary === name;
               return (
@@ -367,7 +367,7 @@ function ConfigTab({ settings, llmStatus, reload }: { settings: any[]; llmStatus
             })}
           </div>
           <p className="text-2xs text-ink-4 mt-3 pt-3 border-t border-edge-subtle leading-relaxed">
-            Fallback chain: primary provider is tried first, then the others in order gemini → openai → anthropic. Any provider that fails is skipped automatically.
+            Fallback chain: primary is tried first, then others in order gemini → openrouter → openai → anthropic. Failed providers are skipped automatically.
           </p>
         </div>
       )}

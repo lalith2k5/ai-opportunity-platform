@@ -115,6 +115,60 @@ class OpenAIProvider(BaseProvider):
         return response.choices[0].message.content
 
 
+class OpenRouterProvider(BaseProvider):
+    """OpenRouter -- OpenAI-compatible proxy for many models.
+
+    Uses the same openai SDK with a different base_url. Model is user-configurable
+    (e.g. 'google/gemini-2.0-flash-exp:free', 'anthropic/claude-3.5-haiku',
+    'meta-llama/llama-3.3-70b-instruct:free').
+    """
+    name = "openrouter"
+
+    def __init__(self):
+        self.client = None
+        if settings.OPENROUTER_API_KEY:
+            try:
+                from openai import OpenAI
+                self.client = OpenAI(
+                    api_key=settings.OPENROUTER_API_KEY,
+                    base_url="https://openrouter.ai/api/v1",
+                    default_headers={
+                        "HTTP-Referer": "http://localhost",
+                        "X-Title": "AI Opportunity Platform",
+                    },
+                )
+            except ImportError:
+                logger.warning("openai package not installed -- skipping OpenRouter provider")
+                self.client = None
+            except Exception as e:
+                logger.warning(f"OpenRouter init failed: {e}")
+                self.client = None
+
+    def is_configured(self) -> bool:
+        return self.client is not None
+
+    def generate(self, prompt: str, context: str = "") -> str:
+        messages = []
+        if context:
+            messages.append({
+                "role": "system",
+                "content": (
+                    "You are an innovation intelligence analyst with access to live platform data. "
+                    "If the context has a STRUCTURED DATA section, use those exact numbers/titles. "
+                    "If it has DOCUMENT EXCERPTS, cite them. If neither answers the question, say so."
+                ),
+            })
+            messages.append({"role": "user", "content": f"Context:\n{context}\n\nQuestion: {prompt}"})
+        else:
+            messages.append({"role": "user", "content": prompt})
+
+        response = self.client.chat.completions.create(
+            model=settings.OPENROUTER_MODEL,
+            messages=messages,
+        )
+        return response.choices[0].message.content
+
+
 class AnthropicProvider(BaseProvider):
     name = "anthropic"
 
@@ -160,7 +214,7 @@ class LLMService:
     across requests. Every caller gets the same object.
     """
 
-    PROVIDER_ORDER = ["gemini", "openai", "anthropic"]
+    PROVIDER_ORDER = ["gemini", "openrouter", "openai", "anthropic"]
     _instance = None
 
     def __new__(cls):
@@ -173,9 +227,10 @@ class LLMService:
         if getattr(self, "_initialized", False):
             return
         self.providers = {
-            "gemini":    GeminiProvider(),
-            "openai":    OpenAIProvider(),
-            "anthropic": AnthropicProvider(),
+            "gemini":     GeminiProvider(),
+            "openrouter": OpenRouterProvider(),
+            "openai":     OpenAIProvider(),
+            "anthropic":  AnthropicProvider(),
         }
         self._last_used: str | None = None
         self._initialized = True
@@ -322,6 +377,7 @@ Provide a concise 3-4 sentence explanation."""
             "last_used": self._last_used,
             "models": {
                 "gemini": settings.GEMINI_MODEL,
+                "openrouter": settings.OPENROUTER_MODEL,
                 "openai": settings.OPENAI_MODEL,
                 "anthropic": settings.ANTHROPIC_MODEL,
             },
