@@ -95,72 +95,6 @@ def get_opportunities(
     )
 
 
-@router.get("/opportunities/count")
-def count_opportunities(
-    domain: Optional[str] = None,
-    industry: Optional[str] = None,
-    technology: Optional[str] = None,
-    db: Session = Depends(get_db),
-    _=Depends(get_current_user),
-):
-    """Total + filtered count for a given filter set (D8)."""
-    from sqlalchemy import func as _f
-    subq = (
-        db.query(
-            models.Opportunity.title,
-            _f.max(models.Opportunity.opportunity_score).label("max_score"),
-        )
-        .group_by(models.Opportunity.title)
-        .subquery()
-    )
-    q = db.query(models.Opportunity).join(
-        subq,
-        (models.Opportunity.title == subq.c.title)
-        & (models.Opportunity.opportunity_score == subq.c.max_score),
-    )
-    if domain:
-        q = q.filter(models.Opportunity.domain == domain)
-    if industry:
-        q = q.filter(models.Opportunity.industry == industry)
-    if technology:
-        from sqlalchemy.dialects.postgresql import JSONB as _J
-        q = q.filter(models.Opportunity.related_technologies.op("@>")(
-            _f.cast(_f.jsonb_build_array(technology), _J)
-        ))
-    return {"total": db.query(models.Opportunity).count(), "filtered": q.count()}
-
-
-@router.get("/organizations")
-def list_organizations(
-    db: Session = Depends(get_db),
-    _=Depends(get_current_user),
-):
-    """List registered organizations with profile counts (D2, SRS 30)."""
-    from sqlalchemy import func as _f
-    rows = (
-        db.query(
-            models.Organization,
-            _f.count(models.ProblemProfile.id).label("profile_count"),
-        )
-        .outerjoin(
-            models.ProblemProfile,
-            models.ProblemProfile.organization_id == models.Organization.id,
-        )
-        .group_by(models.Organization.id)
-        .order_by(models.Organization.name)
-        .all()
-    )
-    return [
-        {
-            "id": org.id,
-            "name": org.name,
-            "canonical_name": org.canonical_name,
-            "industry_domain": org.industry_domain,
-            "source": org.source,
-            "profile_count": cnt,
-        }
-        for org, cnt in rows
-    ]
 
 
 @router.get("/opportunities/{opp_id}/recommendations")
@@ -489,43 +423,6 @@ def generate_narrative_endpoint(
 def scheduler_status():
     return get_scheduler_status()
 
-
-@router.get("/recommendations/recent")
-def recent_recommendations(
-    limit: int = 20,
-    db: Session = Depends(get_db),
-    _=Depends(get_current_user),
-):
-    """Latest Recommendation rows across all opportunities (D3 aggregate)."""
-    rows = (
-        db.query(models.Recommendation)
-        .order_by(models.Recommendation.created_at.desc())
-        .limit(max(1, min(limit, 100)))
-        .all()
-    )
-    opp_ids = [r.opportunity_id for r in rows]
-    opp_map = {}
-    if opp_ids:
-        for o in db.query(models.Opportunity).filter(
-            models.Opportunity.id.in_(opp_ids)
-        ).all():
-            opp_map[o.id] = {"id": o.id, "title": o.title}
-    return {
-        "count": len(rows),
-        "recommendations": [
-            {
-                "id": r.id,
-                "opportunity_id": r.opportunity_id,
-                "opportunity": opp_map.get(r.opportunity_id),
-                "suggested_research_direction": r.suggested_research_direction,
-                "suggested_project_direction": r.suggested_project_direction,
-                "score_at_time": r.score_at_time,
-                "rank_at_time": r.rank_at_time,
-                "created_at": r.created_at.isoformat() if r.created_at else None,
-            }
-            for r in rows
-        ],
-    }
 
 
 @router.get("/opportunities/{opp_id}/history")
