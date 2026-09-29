@@ -2,8 +2,8 @@ import { useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard, Search, MessageSquare, FileText,
-  TrendingUp, BarChart3, Zap, Shield, Menu, X, Sparkles, Network, Target,
-  GraduationCap, FlaskConical, Factory, Building2,
+  TrendingUp, Zap, Shield, Menu, X, Sparkles, Network, Target,
+  GraduationCap, FlaskConical, Factory,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import NotificationBell from './NotificationBell';
@@ -21,7 +21,6 @@ const sections = [
       { path: '/opportunities', label: 'Opportunities', icon: Zap },
       { path: '/problems', label: 'Problems', icon: TrendingUp },
       { path: '/problem-profiles', label: 'Problem Profiles', icon: Target },
-      { path: '/organizations',    label: 'Organizations',    icon: Building2 },
       { path: '/workflows/student',    label: 'Student flow',    icon: GraduationCap },
       { path: '/workflows/researcher', label: 'Researcher flow', icon: FlaskConical },
       { path: '/workflows/rd',         label: 'R&D flow',        icon: Factory },
@@ -31,7 +30,6 @@ const sections = [
     label: 'Insights',
     items: [
       { path: '/reports', label: 'Reports', icon: FileText },
-      { path: '/analytics', label: 'Analytics', icon: BarChart3 },
       { path: '/knowledge-graph', label: 'Knowledge Graph', icon: Network },
     ],
   },

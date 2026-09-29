@@ -15,10 +15,8 @@ import Profile from './pages/Profile';
 import Problems from './pages/Problems';
 import Opportunities from './pages/Opportunities';
 import Recommendations from './pages/Recommendations';
-import Analytics from './pages/Analytics';
 import KnowledgeGraph from './pages/KnowledgeGraph';
 import ProblemProfiles from './pages/ProblemProfiles';
-import Organizations from './pages/Organizations';
 import StudentWorkflow from './pages/StudentWorkflow';
 import ResearcherWorkflow from './pages/ResearcherWorkflow';
 import RDWorkflow from './pages/RDWorkflow';
@@ -43,10 +41,8 @@ export default function App() {
       <Route path="/problems" element={wrap(<Problems />)} />
       <Route path="/opportunities" element={wrap(<Opportunities />)} />
       <Route path="/recommendations" element={wrap(<Recommendations />)} />
-      <Route path="/analytics" element={wrap(<Analytics />)} />
       <Route path="/knowledge-graph" element={wrap(<KnowledgeGraph />)} />
       <Route path="/problem-profiles" element={wrap(<ProblemProfiles />)} />
-      <Route path="/organizations"    element={wrap(<Organizations />)} />
       <Route path="/workflows/student"    element={wrap(<StudentWorkflow />)} />
       <Route path="/workflows/student/:id" element={wrap(<OpportunityDetail />)} />
       <Route path="/workflows/researcher" element={wrap(<ResearcherWorkflow />)} />

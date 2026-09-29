@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useParams, useLocation, Link } from 'react-router-dom';
 import { getOpportunityDetail, getOpportunityRecommendations } from '../services/api';
-import ScoreHistoryChart from '../components/ScoreHistoryChart';
 import {
   Loader2, ArrowLeft, Lightbulb, AlertCircle, TrendingUp,
   FileText, CheckCircle2, ExternalLink, Sparkles, Cpu, Target,
@@ -631,12 +630,6 @@ export default function OpportunityDetail() {
           </div>
         </div>
       )}
-
-      {/* Score history */}
-      <div className="mt-5">
-        <ScoreHistoryChart oppId={opp.id} />
-      </div>
-
       {/* Recommendation CTA */}
       <div className="mt-5 bg-surface border border-edge rounded-lg p-5 flex items-center justify-between gap-4 flex-wrap">
         <div className="flex items-start gap-3">
