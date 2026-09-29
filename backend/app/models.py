@@ -105,6 +105,7 @@ class Opportunity(Base):
 
     # ---- Phase 6.1: Opportunity Card enrichment (SRS §34) ----
     domain = Column(String(120))
+    problem_type = Column(String(80))  # SRS §11 / §22 filter
     industry = Column(String(120))
     related_technologies = Column(JSON, default=list)
     existing_research = Column(JSON, default=list)

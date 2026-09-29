@@ -450,6 +450,9 @@ class OrchestratorAgent:
                 # Data-derived
                 opp.domain = (profile.industry_domain if profile else None) or opp.domain
                 opp.industry = opp.domain
+                # SRS 22 filter: mirror profile.problem_type onto the opportunity
+                if profile and getattr(profile, "problem_type", None):
+                    opp.problem_type = profile.problem_type
                 opp.related_technologies = [t.technology_name for t in techs][:12]
                 opp.existing_research = [p.title for p in papers][:10]
                 approaches = " | ".join(

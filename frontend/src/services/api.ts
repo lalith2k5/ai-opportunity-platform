@@ -74,6 +74,7 @@ export interface Opportunity {
   emerging_trend?: string | null;
   evidence_sources?: { source: string; url: string; title: string }[];
   organization?: { name: string; industry_domain: string | null; source: string | null } | null;
+  problem_type?: string | null;
   created_at?: string;
 }
 
@@ -126,18 +127,20 @@ export interface Trend {
   growth_rate?: number;
   recent_avg?: number;
   prior_avg?: number;
-  label?: 'rising' | 'declining' | 'stable' | 'new' | 'emerging' | 'no_data';
+  label?: 'growing' | 'declining' | 'stable' | 'new' | 'emerging' | 'no_data';
   detected_at?: string;
 }
 
 export const getHealth = () => api.get('/health').then(r => r.data);
 export const getOpportunities = (
-  filters?: { domain?: string; industry?: string; technology?: string; offset?: number; limit?: number },
+  filters?: { domain?: string; industry?: string; technology?: string; problem_type?: string; offset?: number; limit?: number },
 ) =>
   api.get<Opportunity[]>('/opportunities', { params: filters }).then(r => r.data);
 
 export const getOpportunityFilters = () =>
-  api.get<{ domains: string[]; industries: string[]; technologies: string[] }>('/opportunities/filters').then(r => r.data);
+  api.get<{ domains: string[]; industries: string[]; technologies: string[]; problem_types: string[] }>(
+    '/opportunities/filters',
+  ).then(r => r.data);
 export const getProblems = () => api.get<ProblemCluster[]>('/problems').then(r => r.data);
 export const getResearchGaps = () => api.get<ResearchGap[]>('/research-gaps').then(r => r.data);
 export const getTrends = () => api.get<Trend[]>('/trends').then(r => r.data);

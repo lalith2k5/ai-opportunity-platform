@@ -148,7 +148,8 @@ class InnovationMonitorAgent:
                 "category": "emerging_technology",
                 "trend_score": min(1.0, count / 10.0),
                 "source_data": {
-                    "mentions": count,
+                    # SRS 14 signal name: "Technology mentions" -> technology_mentions
+                    "technology_mentions": count,
                     "sources": dict(source_counter),
                     "per_source": per_src,
                     "publication_frequency": publication_frequency,

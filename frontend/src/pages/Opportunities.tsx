@@ -16,7 +16,8 @@ export default function Opportunities() {
   const [domain, setDomain] = useState('');
   const [industry, setIndustry] = useState('');
   const [technology, setTechnology] = useState('');
-  const [filterOptions, setFilterOptions] = useState<{ domains: string[]; industries: string[]; technologies: string[] }>({ domains: [], industries: [], technologies: [] });
+  const [problemType, setProblemType] = useState('');
+  const [filterOptions, setFilterOptions] = useState<{ domains: string[]; industries: string[]; technologies: string[]; problem_types: string[] }>({ domains: [], industries: [], technologies: [], problem_types: [] });
   const pageSize = 24;
 
   useEffect(() => {
@@ -27,9 +28,10 @@ export default function Opportunities() {
   const filtered = useMemo(() => {
     let result = [...opps];
     // ---- Phase 10.6: SRS 22 domain/industry/technology filters ----
-    if (domain)     result = result.filter(o => o.domain === domain);
-    if (industry)   result = result.filter(o => o.industry === industry);
-    if (technology) result = result.filter(o => (o.related_technologies || []).includes(technology));
+    if (domain)      result = result.filter(o => o.domain === domain);
+    if (industry)    result = result.filter(o => o.industry === industry);
+    if (technology)  result = result.filter(o => (o.related_technologies || []).includes(technology));
+    if (problemType) result = result.filter(o => o.problem_type === problemType);
     if (search.trim()) {
       const q = search.toLowerCase();
       result = result.filter(o =>
@@ -49,7 +51,7 @@ export default function Opportunities() {
       return sortDir === 'asc' ? an - bn : bn - an;
     });
     return result;
-  }, [opps, search, sortBy, sortDir, minScore, domain, industry, technology]);
+  }, [opps, search, sortBy, sortDir, minScore, domain, industry, technology, problemType]);
 
   const totalPages = Math.ceil(filtered.length / pageSize);
   const paginated = filtered.slice((page - 1) * pageSize, page * pageSize);
@@ -164,9 +166,17 @@ export default function Opportunities() {
           <option value="">All technologies</option>
           {filterOptions.technologies.map(t => <option key={t} value={t}>{t}</option>)}
         </select>
-        {(domain || industry || technology) && (
+        <select
+          value={problemType}
+          onChange={e => { setProblemType(e.target.value); setPage(1); }}
+          className="input text-sm md:flex-1"
+        >
+          <option value="">All problem types</option>
+          {filterOptions.problem_types.map(pt => <option key={pt} value={pt}>{pt}</option>)}
+        </select>
+        {(domain || industry || technology || problemType) && (
           <button
-            onClick={() => { setDomain(''); setIndustry(''); setTechnology(''); setPage(1); }}
+            onClick={() => { setDomain(''); setIndustry(''); setTechnology(''); setProblemType(''); setPage(1); }}
             className="btn-ghost text-xs whitespace-nowrap"
           >
             Clear filters

@@ -44,6 +44,7 @@ def get_opportunities(
     domain: Optional[str] = None,
     industry: Optional[str] = None,
     technology: Optional[str] = None,
+    problem_type: Optional[str] = None,
     offset: int = 0,
     limit: int = 1000,
     db: Session = Depends(get_db),
@@ -82,6 +83,8 @@ def get_opportunities(
                 )
             )
         )
+    if problem_type:
+        q = q.filter(models.Opportunity.problem_type == problem_type)
     limit = max(1, min(limit, 1000))
     offset = max(0, offset)
     return (
@@ -219,10 +222,15 @@ def get_opportunity_filters(
         )
     ).all()
     technologies = sorted({r[0] for r in tech_rows if r[0]})
+    problem_types = sorted({
+        r[0] for r in db.query(models.Opportunity.problem_type).distinct().all()
+        if r[0]
+    })
     return {
         "domains": sorted(domains),
         "industries": sorted(industries),
         "technologies": technologies,
+        "problem_types": problem_types,
     }
 
 @router.get("/problems")
@@ -267,7 +275,7 @@ def _compute_growth(db, trend_name: str) -> dict:
         if growth > 0.5:
             label = "emerging"
         elif growth > 0.2:
-            label = "rising"
+            label = "growing"
         elif growth < -0.2:
             label = "declining"
         else:

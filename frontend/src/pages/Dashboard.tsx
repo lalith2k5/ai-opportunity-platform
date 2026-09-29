@@ -190,12 +190,12 @@ export default function Dashboard() {
               trends.slice(0, 6).map(trend => {
                 const growth = trend.growth_rate ?? 0;
                 const arrow = trend.label === 'emerging' ? '⚡'
-                            : trend.label === 'rising' ? '↑'
+                            : trend.label === 'growing' ? '↑'
                             : trend.label === 'declining' ? '↓'
                             : trend.label === 'new' ? '★'
                             : '·';
                 const arrowColor = trend.label === 'emerging' ? 'text-warning'
-                                 : trend.label === 'rising' ? 'text-success'
+                                 : trend.label === 'growing' ? 'text-success'
                                  : trend.label === 'declining' ? 'text-danger'
                                  : trend.label === 'new' ? 'text-accent'
                                  : 'text-ink-4';
@@ -205,7 +205,7 @@ export default function Dashboard() {
                     <span className={`text-xs font-mono ${arrowColor} w-3 text-center flex-shrink-0`} title={
                       trend.label === 'emerging' ? 'Emerging (fast growth)'
                       : trend.label === 'new' ? 'New this week'
-                      : trend.label === 'rising' ? `Rising (${(growth*100).toFixed(0)}%)`
+                      : trend.label === 'growing' ? `Growing (${(growth*100).toFixed(0)}%)`
                       : trend.label === 'declining' ? `Declining (${(growth*100).toFixed(0)}%)`
                       : 'Stable'
                     }>
