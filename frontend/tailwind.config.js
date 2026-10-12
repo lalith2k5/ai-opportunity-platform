@@ -84,15 +84,23 @@ export default {
         '2xl': '0 40px 80px rgba(0,0,0,0.60), 0 16px 40px rgba(0,0,0,0.40)',
         glow:  '0 0 0 1px rgb(var(--accent) / 0.30), 0 0 40px -8px rgb(var(--accent) / 0.55)',
         'inner-soft': 'inset 0 1px 0 0 rgba(255,255,255,0.04)',
+        flat:     '0 1px 2px rgba(0,0,0,0.28), inset 0 1px 0 0 rgb(255 255 255 / 0.03)',
+        raised:   '0 4px 16px -4px rgba(0,0,0,0.30), 0 1px 3px rgba(0,0,0,0.20), inset 0 1px 0 0 rgb(255 255 255 / 0.03)',
+        floating: '0 24px 60px rgba(0,0,0,0.55), 0 10px 24px rgba(0,0,0,0.35), inset 0 1px 0 0 rgb(255 255 255 / 0.05)',
       },
       transitionTimingFunction: {
-        // Apple spring-like easings
-        'apple':        'cubic-bezier(0.34, 1.56, 0.64, 1)',   // bounce-out
-        'smooth':       'cubic-bezier(0.25, 1, 0.5, 1)',       // ease-out-quart
-        'standard':     'cubic-bezier(0.4, 0, 0.2, 1)',        // material
+        'apple':        'cubic-bezier(0.34, 1.56, 0.64, 1)',
+        'smooth':       'cubic-bezier(0.25, 1, 0.5, 1)',
+        'standard':     'cubic-bezier(0.4, 0, 0.2, 1)',
+        'decelerate':   'cubic-bezier(0.0, 0.0, 0.2, 1)',
+        'accelerate':   'cubic-bezier(0.4, 0.0, 1, 1)',
       },
       transitionDuration: {
         DEFAULT: '150ms',
+        micro: '100ms',
+        short: '175ms',
+        medium: '250ms',
+        long: '400ms',
         '250': '250ms',
         '400': '400ms',
       },
