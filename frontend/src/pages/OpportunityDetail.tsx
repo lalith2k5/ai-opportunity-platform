@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useParams, useLocation, Link } from 'react-router-dom';
+import { useParams, Link } from 'react-router-dom';
 import { getOpportunityDetail, getOpportunityRecommendations } from '../services/api';
 import { formatApiError } from '../utils/errors';
 import {
@@ -50,13 +50,8 @@ function AiBadge() {
 
 export default function OpportunityDetail() {
   const { id } = useParams<{ id: string }>();
-  const location = useLocation();
-  const backTo = location.pathname.startsWith('/workflows/student')
-    ? '/workflows/student'
-    : '/opportunities';
-  const backLabel = backTo === '/workflows/student'
-    ? 'Back to student workflow'
-    : 'Back to opportunities';
+  const backTo = '/opportunities';
+  const backLabel = 'Back to opportunities';
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
