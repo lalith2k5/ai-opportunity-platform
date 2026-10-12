@@ -20,6 +20,11 @@ import ProblemProfiles from './pages/ProblemProfiles';
 import StudentWorkflow from './pages/StudentWorkflow';
 import ResearcherWorkflow from './pages/ResearcherWorkflow';
 import RDWorkflow from './pages/RDWorkflow';
+import EntranceDashboard from './pages/EntranceDashboard';
+import Ideas from './pages/Ideas';
+import Technologies from './pages/Technologies';
+import Research from './pages/Research';
+import RD from './pages/RD';
 
 const wrap = (el: React.ReactNode) => (
   <ProtectedRoute><Layout>{el}</Layout></ProtectedRoute>
@@ -48,6 +53,11 @@ export default function App() {
       <Route path="/workflows/researcher" element={wrap(<ResearcherWorkflow />)} />
       <Route path="/workflows/rd"         element={wrap(<RDWorkflow />)} />
       <Route path="/opportunities/:id" element={wrap(<OpportunityDetail />)} />
+      <Route path="/entrance" element={wrap(<EntranceDashboard />)} />
+      <Route path="/ideas" element={wrap(<Ideas />)} />
+      <Route path="/technologies" element={wrap(<Technologies />)} />
+      <Route path="/research" element={wrap(<Research />)} />
+      <Route path="/rd" element={wrap(<RD />)} />
     </Routes>
   );
 }

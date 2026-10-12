@@ -8,7 +8,6 @@ import { ToastProvider } from './context/ToastContext';
 import { ConfirmProvider } from './context/ConfirmContext';
 import ErrorBoundary from './components/ErrorBoundary';
 import './index.css';
-import './styles/neon.css';
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
