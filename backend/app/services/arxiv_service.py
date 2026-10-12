@@ -44,11 +44,13 @@ class ArxivService:
             title_el = entry.find("atom:title", ns)
             summary_el = entry.find("atom:summary", ns)
             id_el = entry.find("atom:id", ns)
+            published_el = entry.find("atom:published", ns)
             papers.append({
                 "id": id_el.text if id_el is not None else "",
                 "title": title_el.text.strip() if title_el is not None else "",
                 "summary": summary_el.text.strip() if summary_el is not None else "",
                 "authors": [a.find("atom:name", ns).text for a in entry.findall("atom:author", ns) if a.find("atom:name", ns) is not None],
                 "url": id_el.text if id_el is not None else "",
+                "published": published_el.text.strip() if published_el is not None else "",
             })
         return papers

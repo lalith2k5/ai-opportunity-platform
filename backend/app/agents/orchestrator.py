@@ -329,7 +329,7 @@ class OrchestratorAgent:
         finally:
             db.close()
 
-    def _enrich_opportunities(self, opp_ids=None, user_id=None):
+    def _enrich_opportunities(self, opp_ids=None, user_id=None, skip_llm=False):
         """Populate the 10 Phase-6 enrichment columns for recent opportunities.
 
         Data-derived fields (technologies, papers, approaches, limitations,
@@ -518,8 +518,11 @@ class OrchestratorAgent:
                     "trend": opp.emerging_trend,
                 })
 
-            # LLM-derived directions
-            direction_results = self.research_direction_agent.generate_batch(snapshots)
+            # LLM-derived directions (skippable for data-only recompute)
+            if skip_llm:
+                direction_results = []
+            else:
+                direction_results = self.research_direction_agent.generate_batch(snapshots)
             for row, out in direction_results:
                 if out.get("suggested_research_direction"):
                     row.suggested_research_direction = out["suggested_research_direction"][:1500]
