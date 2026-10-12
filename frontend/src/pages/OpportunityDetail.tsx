@@ -1,6 +1,17 @@
 import { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { getOpportunityDetail, getOpportunityRecommendations } from '../services/api';
+import SectionCard from '../components/ui/SectionCard';
+
+const ACCENT_MAP: Record<string, 'accent' | 'purple' | 'sky' | 'success' | 'warning' | 'orange' | 'muted'> = {
+  'text-accent':     'accent',
+  'text-purple-500': 'purple',
+  'text-sky-500':    'sky',
+  'text-success':    'success',
+  'text-warning':    'warning',
+  'text-orange-500': 'orange',
+  'text-ink-3':      'muted',
+};
 import { formatApiError } from '../utils/errors';
 import {
   Loader2, ArrowLeft, Lightbulb, AlertCircle, TrendingUp,
@@ -26,13 +37,9 @@ function Section({
   icon: Icon, title, children, accent = 'text-accent',
 }: { icon: any; title: string; children: React.ReactNode; accent?: string }) {
   return (
-    <div className="card p-5">
-      <div className="flex items-center gap-2 mb-4">
-        <Icon size={14} className={accent} />
-        <h2 className="text-2xs font-semibold text-ink uppercase tracking-[0.08em]">{title}</h2>
-      </div>
+    <SectionCard icon={Icon} title={title} accent={ACCENT_MAP[accent] || 'accent'}>
       {children}
-    </div>
+    </SectionCard>
   );
 }
 
