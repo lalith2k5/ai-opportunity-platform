@@ -474,3 +474,73 @@ export const getResearchPapers = (
 
 export const getResearchPaperDetail = (arxivId: string) =>
   api.get<ResearchPaperDetail>(`/research-papers/${encodeURIComponent(arxivId)}`).then(r => r.data);
+
+// ---- Screen 2: ideas ----
+export interface IdeaListItem {
+  id: number;
+  title: string;
+  description: string;
+  keywords: string[];
+  domain: string | null;
+  source_count: number;
+  demand_score: number;
+  trend_score: number;
+  trend_name: string | null;
+  opportunity_count: number;
+  top_opportunity_score: number;
+  recent_activity: string | null;
+  composite_score: number;
+}
+
+export interface IdeaSourceRef {
+  id: number;
+  title: string;
+  url: string;
+  source?: string;
+  collected_at?: string | null;
+}
+
+export interface IdeaDetailData {
+  idea: {
+    id: number;
+    title: string;
+    description: string;
+    keywords: string[];
+    source_count: number;
+    demand_score: number;
+    created_at: string | null;
+    domain: string | null;
+    problem_type: string | null;
+  };
+  related_technologies: Array<{ name: string; stage: string | null; confidence: number }>;
+  related_news: IdeaSourceRef[];
+  reddit_discussions: IdeaSourceRef[];
+  github_repositories: IdeaSourceRef[];
+  research_papers: Array<{
+    id: number;
+    title: string;
+    url?: string;
+    source?: string;
+    arxiv_id?: string | null;
+    relevance_score?: number;
+    authors?: string[];
+    results_summary?: string | null;
+    limitations?: string[];
+    research_methods?: string[];
+  }>;
+  evidence: Array<{ source: string; title: string; url: string; relevance_score: number }>;
+  potential_gaps: Array<{ id: number; title: string; description: string; gap_score: number }>;
+  opportunities: Array<{
+    id: number;
+    title: string;
+    opportunity_score: number;
+    feasibility_score: number;
+  }>;
+  suggested_directions: Array<{ kind: string; text: string }>;
+}
+
+export const getIdeas = (params?: { q?: string; domain?: string; limit?: number }) =>
+  api.get<IdeaListItem[]>('/ideas', { params }).then(r => r.data);
+
+export const getIdeaDetail = (id: number) =>
+  api.get<IdeaDetailData>(`/ideas/${id}`).then(r => r.data);

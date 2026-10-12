@@ -1,35 +1,187 @@
-import { Lightbulb, ArrowRight } from 'lucide-react';
+
+import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
+import {
+  Lightbulb, Search, Loader2, TrendingUp, TrendingDown, Minus, ArrowUpRight,
+} from 'lucide-react';
+import { getIdeas, type IdeaListItem } from '../services/api';
+
+function TrendGlyph({ label }: { label: string | null }) {
+  if (!label) return null;
+  if (label === 'emerging' || label === 'growing') return <TrendingUp size={12} className="text-success" />;
+  if (label === 'declining') return <TrendingDown size={12} className="text-danger" />;
+  return <Minus size={12} className="text-ink-4" />;
+}
+
+function IdeaCard({ idea, delay }: { idea: IdeaListItem; delay: number }) {
+  const isHigh = idea.composite_score > 0.6;
+  return (
+    <Link
+      to={`/ideas/${idea.id}`}
+      className="block card card-hover p-5 group animate-fade-up"
+      style={{ animationDelay: `${delay}ms` }}
+    >
+      <div className="flex items-start justify-between gap-4 mb-3">
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2 mb-1.5 flex-wrap">
+            {idea.domain && (
+              <span className="badge bg-overlay text-ink-3 border border-edge">
+                {idea.domain}
+              </span>
+            )}
+            {idea.trend_name && (
+              <span className="inline-flex items-center gap-1 text-2xs text-ink-4 capitalize">
+                <TrendGlyph label={idea.trend_name} />
+                {idea.trend_name}
+              </span>
+            )}
+          </div>
+          <h3 className="text-base font-semibold text-ink tracking-tight leading-snug group-hover:text-accent transition-colors line-clamp-2">
+            {idea.title}
+          </h3>
+          <p className="text-xs text-ink-3 mt-1.5 leading-relaxed line-clamp-2">
+            {idea.description}
+          </p>
+        </div>
+        <div className="text-right flex-shrink-0">
+          <p className={`text-2xl font-bold font-mono tabular-nums leading-none tracking-tight ${
+            isHigh ? 'text-success' : 'text-accent'
+          }`}>
+            {idea.composite_score.toFixed(2)}
+          </p>
+          <p className="text-2xs text-ink-4 mt-1.5 uppercase tracking-[0.08em]">Score</p>
+        </div>
+      </div>
+
+      {idea.keywords.length > 0 && (
+        <div className="flex flex-wrap gap-1.5 mb-3">
+          {idea.keywords.slice(0, 5).map(k => (
+            <span key={k} className="badge bg-overlay text-ink-3 border border-edge">
+              {k}
+            </span>
+          ))}
+        </div>
+      )}
+
+      <div className="grid grid-cols-3 gap-3 pt-3 mt-3 border-t border-edge-subtle">
+        <div>
+          <p className="text-2xs text-ink-4 uppercase tracking-wider">Sources</p>
+          <p className="text-sm font-semibold text-ink font-mono tabular-nums">
+            {idea.source_count}
+          </p>
+        </div>
+        <div>
+          <p className="text-2xs text-ink-4 uppercase tracking-wider">Demand</p>
+          <p className="text-sm font-semibold text-success font-mono tabular-nums">
+            {idea.demand_score.toFixed(2)}
+          </p>
+        </div>
+        <div>
+          <p className="text-2xs text-ink-4 uppercase tracking-wider">Opps</p>
+          <p className="text-sm font-semibold text-accent font-mono tabular-nums">
+            {idea.opportunity_count}
+          </p>
+        </div>
+      </div>
+
+      <div className="flex items-center justify-between mt-3 pt-3 border-t border-edge-subtle">
+        <span className="text-2xs text-ink-4 uppercase tracking-[0.08em]">
+          Trend {idea.trend_score.toFixed(2)}
+        </span>
+        <span className="text-2xs text-accent font-medium flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all duration-200 -translate-x-1 group-hover:translate-x-0">
+          View <ArrowUpRight size={11} />
+        </span>
+      </div>
+    </Link>
+  );
+}
 
 export default function Ideas() {
+  const [items, setItems] = useState<IdeaListItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
+  const [domain, setDomain] = useState('');
+
+  useEffect(() => {
+    setLoading(true);
+    const params: { q?: string; domain?: string; limit?: number } = { limit: 100 };
+    if (search.trim()) params.q = search.trim();
+    if (domain) params.domain = domain;
+    getIdeas(params)
+      .then(setItems)
+      .catch(() => setItems([]))
+      .finally(() => setLoading(false));
+  }, [search, domain]);
+
+  const domains = useMemo(() => {
+    const s = new Set<string>();
+    items.forEach(i => { if (i.domain) s.add(i.domain); });
+    return Array.from(s).sort();
+  }, [items]);
+
+  const hasFilters = Boolean(search || domain);
+
   return (
-    <div className="p-6 lg:p-10 max-w-4xl mx-auto">
-      <div className="mb-8 animate-fade-up">
-        <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-accent/10 border border-accent/20 mb-5">
-          <span className="text-2xs font-medium text-accent uppercase tracking-[0.08em]">
-            Module
-          </span>
+    <div className="p-6 lg:p-8 max-w-[1500px] mx-auto">
+      <div className="mb-6">
+        <div className="flex items-center gap-3.5 mb-2">
+          <div className="w-10 h-10 rounded-xl bg-accent/10 flex items-center justify-center shadow-[inset_0_1px_0_0_rgb(255_255_255/0.05)]">
+            <Lightbulb className="text-accent" size={18} />
+          </div>
+          <h1 className="text-3xl font-bold text-ink tracking-tight">Find the Real-Time Ideas</h1>
         </div>
-        <h1 className="text-3xl lg:text-4xl font-bold text-ink tracking-tight leading-tight">
-          Find the Real-Time Ideas
-        </h1>
-        <p className="text-base text-ink-3 mt-3 max-w-2xl leading-relaxed">
-          Trending real-world problems ranked by evidence and momentum, with a full drill-down across technologies, news, Reddit, GitHub, papers, and gaps.
+        <p className="text-sm text-ink-3">
+          Trending real-world problems ranked by evidence and momentum, with a full drill-down across sources.
         </p>
       </div>
 
-      <div className="card p-8 text-center animate-fade-up" style={{ animationDelay: '200ms' }}>
-        <div className="w-12 h-12 rounded-lg bg-accent/10 flex items-center justify-center mx-auto mb-4">
-          <Lightbulb size={20} className="text-accent" />
+      <div className="card p-3 mb-5 flex flex-col md:flex-row gap-3">
+        <div className="relative flex-1">
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-ink-4" size={14} />
+          <input
+            type="text"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="Search problem, idea, or topic…"
+            className="input pl-8 text-sm w-full"
+          />
         </div>
-        <p className="text-sm text-ink-2 font-medium">Coming in Phase N.7</p>
-        <p className="text-xs text-ink-4 mt-2">
-          Backend endpoints are already live — the UI arrives shortly.
-        </p>
-        <Link to="/entrance" className="btn-secondary text-xs mt-6 inline-flex">
-          Back to entrance <ArrowRight size={12} />
-        </Link>
+        <select value={domain} onChange={e => setDomain(e.target.value)} className="input text-sm md:w-48">
+          <option value="">All domains</option>
+          {domains.map(d => <option key={d} value={d}>{d}</option>)}
+        </select>
+        {hasFilters && (
+          <button
+            onClick={() => { setSearch(''); setDomain(''); }}
+            className="btn-ghost text-xs whitespace-nowrap"
+          >
+            Clear
+          </button>
+        )}
       </div>
+
+      {loading ? (
+        <div className="flex items-center justify-center py-20">
+          <Loader2 className="animate-spin text-accent" size={28} />
+        </div>
+      ) : items.length === 0 ? (
+        <div className="bg-surface border border-edge border-dashed rounded-lg p-12 text-center">
+          <Lightbulb className="text-ink-4 mx-auto mb-3" size={24} />
+          <p className="text-sm text-ink-2 font-medium">No ideas match your filters</p>
+          <p className="text-xs text-ink-4 mt-1">Try a broader search, or run a fresh pipeline.</p>
+        </div>
+      ) : (
+        <>
+          <p className="text-xs text-ink-4 mb-4">
+            {items.length} idea{items.length === 1 ? '' : 's'} · sorted by composite score
+          </p>
+          <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-3">
+            {items.map((idea, i) => (
+              <IdeaCard key={idea.id} idea={idea} delay={Math.min(i * 30, 600)} />
+            ))}
+          </div>
+        </>
+      )}
     </div>
   );
 }
