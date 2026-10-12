@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard, Search, MessageSquare, FileText,
-  Zap, Shield, Menu, X, Sparkles, Network, Compass,
+  Zap, Shield, Menu, X, Sparkles, Network,
   Lightbulb, Cpu, BookOpen, Factory,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
@@ -14,7 +14,7 @@ const sections = [
   {
     label: 'Workspace',
     items: [
-      { path: '/',                label: 'Dashboard',       icon: LayoutDashboard },
+      { path: '/dashboard',       label: 'Dashboard',       icon: LayoutDashboard },
       { path: '/opportunities',   label: 'Opportunities',   icon: Zap },
       { path: '/recommendations', label: 'Recommendations', icon: Sparkles },
       { path: '/chat',            label: 'AI Chat',         icon: MessageSquare },
@@ -23,7 +23,6 @@ const sections = [
   {
     label: 'Discover',
     items: [
-      { path: '/entrance',     label: 'Entrance',        icon: Compass },
       { path: '/ideas',        label: 'Real-Time Ideas', icon: Lightbulb },
       { path: '/technologies', label: 'Technologies',    icon: Cpu },
       { path: '/research',     label: 'Research',        icon: BookOpen },

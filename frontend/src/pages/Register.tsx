@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import AuthShell from '../components/AuthShell';
 import { Field, Alert } from '../components/Field';
@@ -15,6 +15,7 @@ const ROLES = [
 export default function Register() {
   const { register } = useAuth();
   const navigate = useNavigate();
+  const [params] = useSearchParams();
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -31,7 +32,8 @@ export default function Register() {
     setLoading(true);
     try {
       await register(name, email, password, role);
-      navigate('/');
+      const next = params.get('next') || '/dashboard';
+      navigate(next, { replace: true });
     } catch (err: any) {
       setError(err.message || 'Registration failed');
     } finally { setLoading(false); }
