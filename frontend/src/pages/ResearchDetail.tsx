@@ -1,5 +1,6 @@
 
 import { useEffect, useState, type ReactNode } from 'react';
+import PotentialGapNote from '../components/PotentialGapNote';
 import { useParams, Link } from 'react-router-dom';
 import {
   ArrowLeft, Loader2, AlertCircle, BookOpen, Target, Wrench,
@@ -265,9 +266,7 @@ export default function ResearchDetail() {
           <Unavailable label="Research gaps" />
         ) : (
           <>
-            <p className="text-2xs text-ink-4 italic mb-3">
-              These are potential gaps identified from comparing multiple studies. Expert validation required.
-            </p>
+            <PotentialGapNote />
             <div className="space-y-3">
               {data.potential_gaps.map(g => (
                 <div key={g.id} className="pb-3 border-b border-edge-subtle last:border-0 last:pb-0">

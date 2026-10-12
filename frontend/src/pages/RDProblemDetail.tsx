@@ -1,10 +1,11 @@
 
 import { useEffect, useState, type ReactNode } from 'react';
+import PotentialGapNote from '../components/PotentialGapNote';
 import { useParams, Link } from 'react-router-dom';
 import {
   ArrowLeft, Loader2, AlertCircle, Building2, Factory, Cpu, BarChart3,
   BookOpen, TrendingUp, Database, Network, FileText, Lightbulb,
-  Compass, ExternalLink, ShieldAlert, Sparkles, Info,
+  Compass, ExternalLink, ShieldAlert, Sparkles,
 } from 'lucide-react';
 import { getRDProblemDetail, type RDProblemDetail } from '../services/api';
 import { formatApiError } from '../utils/errors';
@@ -470,13 +471,7 @@ export default function RDProblemDetail() {
           <EmptyNote>No potential gaps identified from current evidence.</EmptyNote>
         ) : (
           <>
-            <div className="flex items-start gap-2 mb-4 px-3 py-2 bg-warning/5 border border-warning/20 rounded-md">
-              <Info size={12} className="text-warning flex-shrink-0 mt-0.5" />
-              <p className="text-2xs text-ink-2 leading-relaxed">
-                These are <span className="font-semibold">potential</span> research gaps identified by comparing evidence across sources.
-                Expert validation is required before acting on any gap.
-              </p>
-            </div>
+            <PotentialGapNote />
             <div className="space-y-3">
               {data.potential_gaps.map(g => (
                 <div key={g.id} className="pb-3 border-b border-edge-subtle last:border-0 last:pb-0">
