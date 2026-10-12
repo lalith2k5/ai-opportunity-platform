@@ -200,7 +200,10 @@ export default function RD() {
           <p className="text-xs text-ink-4 mb-4">
             {items.length} problem{items.length === 1 ? '' : 's'} · newest first
           </p>
-          <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-3">
+          <div
+            key={search + '|' + domain + '|' + source + '|' + suitability}
+            className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-3 animate-fade-in"
+          >
             {items.map((p, i) => (
               <ProblemCard key={p.id} p={p} delay={Math.min(i * 25, 500)} />
             ))}

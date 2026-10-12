@@ -1,4 +1,5 @@
 import type { LucideIcon } from 'lucide-react';
+import CountUp from './ui/CountUp';
 
 export default function StatCard({
   label,
@@ -33,7 +34,9 @@ export default function StatCard({
         )}
       </div>
       <p className="relative text-3xl font-semibold text-ink font-mono tabular-nums tracking-tight leading-none">
-        {value}
+        {typeof value === 'number'
+          ? <CountUp value={value} />
+          : value}
       </p>
       {sublabel && <p className="relative text-2xs text-ink-4 mt-2">{sublabel}</p>}
     </div>

@@ -172,7 +172,10 @@ export default function Ideas() {
           <p className="text-xs text-ink-4 mb-4">
             {items.length} idea{items.length === 1 ? '' : 's'} · sorted by composite score
           </p>
-          <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-3">
+          <div
+            key={search + '|' + domain}
+            className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-3 animate-fade-in"
+          >
             {items.map((idea, i) => (
               <IdeaCard key={idea.id} idea={idea} delay={Math.min(i * 30, 600)} />
             ))}

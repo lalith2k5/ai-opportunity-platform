@@ -183,7 +183,10 @@ export default function Technologies() {
           <p className="text-xs text-ink-4 mb-4">
             {items.length} technologies · sorted by composite score
           </p>
-          <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-3">
+          <div
+            key={search + '|' + domain + '|' + stage}
+            className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-3 animate-fade-in"
+          >
             {items.map((t, i) => (
               <TechCard key={t.name} tech={t} delay={Math.min(i * 30, 600)} />
             ))}

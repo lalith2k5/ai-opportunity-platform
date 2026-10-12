@@ -7,6 +7,7 @@ import {
 import PageHeader from '../components/ui/PageHeader';
 import Toolbar from '../components/ui/Toolbar';
 import { getResearchPapers, type ResearchPaperListItem } from '../services/api';
+import SegmentedControl from '../components/ui/SegmentedControl';
 
 type SortKey = 'relevance' | 'year' | 'title';
 
@@ -170,11 +171,15 @@ export default function Research() {
           <option value="">Any year</option>
           {years.map(y => <option key={y} value={y}>{y}</option>)}
         </select>
-        <select value={sortBy} onChange={e => setSortBy(e.target.value as SortKey)} className="input text-sm md:w-44">
-          <option value="relevance">Sort: relevance</option>
-          <option value="year">Sort: year (newest)</option>
-          <option value="title">Sort: title (A-Z)</option>
-        </select>
+        <SegmentedControl
+          value={sortBy}
+          onChange={v => setSortBy(v as SortKey)}
+          options={[
+            { value: 'relevance', label: 'Relevance' },
+            { value: 'year', label: 'Year' },
+            { value: 'title', label: 'Title' },
+          ]}
+        />
       </Toolbar>
 
       <div className="card p-3 mb-5 flex flex-col md:flex-row gap-4 items-center">
@@ -220,7 +225,10 @@ export default function Research() {
           <p className="text-xs text-ink-4 mb-4">
             {sorted.length} paper{sorted.length === 1 ? '' : 's'} · sorted by {sortBy}
           </p>
-          <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-3">
+          <div
+            key={search + '|' + domain + '|' + year + '|' + sortBy + '|' + String(minRelevance)}
+            className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-3 animate-fade-in"
+          >
             {sorted.slice(0, 120).map((p, i) => (
               <PaperCard key={p.arxiv_id || i} p={p} delay={Math.min(i * 25, 500)} />
             ))}
