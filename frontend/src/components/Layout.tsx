@@ -3,7 +3,7 @@ import { Link, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard, Search, MessageSquare, FileText,
   TrendingUp, Zap, Shield, Menu, X, Sparkles, Network, Target,
-  GraduationCap, FlaskConical, Factory,
+  GraduationCap, FlaskConical, Factory, Lightbulb, Cpu, BookOpen,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import NotificationBell from './NotificationBell';
@@ -24,6 +24,16 @@ const sections = [
       { path: '/workflows/student',    label: 'Student flow',    icon: GraduationCap },
       { path: '/workflows/researcher', label: 'Researcher flow', icon: FlaskConical },
       { path: '/workflows/rd',         label: 'R&D flow',        icon: Factory },
+    ],
+  },
+  {
+    label: 'Discover',
+    items: [
+      { path: '/entrance',     label: 'Entrance',     icon: Sparkles },
+      { path: '/ideas',        label: 'Real-Time Ideas', icon: Lightbulb },
+      { path: '/technologies', label: 'Technologies', icon: Cpu },
+      { path: '/research',     label: 'Research',     icon: BookOpen },
+      { path: '/rd',           label: 'R&D',          icon: Factory },
     ],
   },
   {
