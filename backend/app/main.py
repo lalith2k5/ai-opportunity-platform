@@ -11,6 +11,7 @@ from app.api.kg_routes import router as kg_router
 from app.api.problem_profile_routes import router as problem_profile_router
 from app.api.flow_routes import router as flow_router
 from app.api.technology_routes import router as technology_router
+from app.api.research_routes import router as research_router
 from app.database import engine, Base
 from app.logger import logger  # models imported for side effects via routers
 from app.scheduler import start_scheduler, stop_scheduler
@@ -56,6 +57,7 @@ app.include_router(kg_router, prefix="/api")
 app.include_router(problem_profile_router, prefix="/api")
 app.include_router(flow_router, prefix="/api")
 app.include_router(technology_router, prefix="/api")
+app.include_router(research_router, prefix="/api")
 
 
 @app.get("/")
