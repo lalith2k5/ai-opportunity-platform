@@ -156,7 +156,7 @@ export default function Dashboard() {
             <AIRecommendationsPanel />
           </Panel>
 
-          <Panel icon={FileText} title="Research gaps" accent="text-success">
+          <Panel icon={FileText} title="Potential research gaps" accent="text-success">
             <ResearchGapSummary />
           </Panel>
         </div>

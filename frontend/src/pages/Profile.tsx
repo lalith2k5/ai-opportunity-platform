@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { updateProfile, changePassword } from '../services/api';
+import { formatApiError } from '../utils/errors';
 import { Loader2, CheckCircle2, User as UserIcon, Lock, Shield } from 'lucide-react';
 
 function Alert({ type, children }: { type: 'success' | 'error'; children: React.ReactNode }) {
@@ -38,7 +39,7 @@ export default function Profile() {
       setProfileMsg('Profile updated successfully');
       localStorage.setItem('aod_user', JSON.stringify({ ...user, name, email }));
     } catch (e: any) {
-      setProfileErr(e?.response?.data?.detail || e.message);
+      setProfileErr(formatApiError(e));
     } finally { setSavingProfile(false); }
   };
 
@@ -52,7 +53,7 @@ export default function Profile() {
       setPwMsg('Password changed successfully');
       setOldPw(''); setNewPw(''); setConfirmPw('');
     } catch (e: any) {
-      setPwErr(e?.response?.data?.detail || e.message);
+      setPwErr(formatApiError(e));
     } finally { setSavingPw(false); }
   };
 

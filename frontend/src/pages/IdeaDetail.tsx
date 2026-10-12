@@ -7,6 +7,7 @@ import {
   ExternalLink, ArrowUpRight,
 } from 'lucide-react';
 import { getIdeaDetail, type IdeaDetailData } from '../services/api';
+import { formatApiError } from '../utils/errors';
 
 function Section({
   icon: Icon,
@@ -66,7 +67,7 @@ export default function IdeaDetail() {
     setLoading(true);
     getIdeaDetail(Number(id))
       .then(setData)
-      .catch((e: any) => setError(e?.response?.data?.detail || e.message))
+      .catch((e: any) => setError(formatApiError(e)))
       .finally(() => setLoading(false));
   }, [id]);
 

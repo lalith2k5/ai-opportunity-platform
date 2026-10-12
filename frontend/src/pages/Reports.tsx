@@ -219,7 +219,7 @@ export default function Reports() {
         <div className="bg-surface border border-edge rounded-lg p-5">
           <div className="flex items-center gap-2 mb-4">
             <FileText size={14} className="text-success" />
-            <h2 className="text-xs font-medium text-ink uppercase tracking-wider">Research gaps</h2>
+            <h2 className="text-xs font-medium text-ink uppercase tracking-wider">Potential research gaps</h2>
           </div>
           <div className="max-h-96 overflow-y-auto -mr-2 pr-2 space-y-3">
             {gaps.length === 0 ? (

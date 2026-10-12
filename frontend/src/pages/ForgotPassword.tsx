@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { forgotPassword } from '../services/api';
+import { formatApiError } from '../utils/errors';
 import AuthShell from '../components/AuthShell';
 import { Field, Alert } from '../components/Field';
 import { Loader2, ArrowRight } from 'lucide-react';
@@ -20,7 +21,7 @@ export default function ForgotPassword() {
       if (res.reset_url) setResetLink(res.reset_url);
       else setSent(true);
     } catch (e: any) {
-      setError(e?.response?.data?.detail || e.message);
+      setError(formatApiError(e));
     } finally { setLoading(false); }
   };
 

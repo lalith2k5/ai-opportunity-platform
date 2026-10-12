@@ -6,6 +6,7 @@ import {
   Award, AlertTriangle, Network, Cpu, FileText, ExternalLink,
 } from 'lucide-react';
 import { getResearchPaperDetail, type ResearchPaperDetail } from '../services/api';
+import { formatApiError } from '../utils/errors';
 
 function Section({
   icon: Icon,
@@ -48,7 +49,7 @@ export default function ResearchDetail() {
     setLoading(true);
     getResearchPaperDetail(arxiv_id)
       .then(setData)
-      .catch((e: any) => setError(e?.response?.data?.detail || e.message))
+      .catch((e: any) => setError(formatApiError(e)))
       .finally(() => setLoading(false));
   }, [arxiv_id]);
 

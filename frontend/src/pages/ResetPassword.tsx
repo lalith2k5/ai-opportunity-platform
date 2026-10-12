@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { resetPassword } from '../services/api';
+import { formatApiError } from '../utils/errors';
 import AuthShell from '../components/AuthShell';
 import { Field, Alert } from '../components/Field';
 import { Loader2 } from 'lucide-react';
@@ -26,7 +27,7 @@ export default function ResetPassword() {
       setDone(true);
       setTimeout(() => navigate('/login'), 2000);
     } catch (e: any) {
-      setError(e?.response?.data?.detail || e.message);
+      setError(formatApiError(e));
     } finally { setLoading(false); }
   };
 

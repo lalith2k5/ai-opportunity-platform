@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useParams, useLocation, Link } from 'react-router-dom';
 import { getOpportunityDetail, getOpportunityRecommendations } from '../services/api';
+import { formatApiError } from '../utils/errors';
 import {
   Loader2, ArrowLeft, Lightbulb, AlertCircle, TrendingUp,
   FileText, CheckCircle2, ExternalLink, Sparkles, Cpu, Target,
@@ -65,7 +66,7 @@ export default function OpportunityDetail() {
     if (!id) return;
     getOpportunityDetail(Number(id))
       .then(setData)
-      .catch(e => setError(e?.response?.data?.detail || e.message))
+      .catch(e => setError(formatApiError(e)))
       .finally(() => setLoading(false));
   }, [id]);
 
@@ -493,7 +494,7 @@ export default function OpportunityDetail() {
         <div className="bg-surface border border-edge rounded-lg p-5 mb-5">
           <div className="flex items-center gap-2 mb-4">
             <FileText size={14} className="text-success" />
-            <h2 className="text-xs font-medium text-ink uppercase tracking-wider">Research gap analysis</h2>
+            <h2 className="text-xs font-medium text-ink uppercase tracking-wider">Potential research gap</h2>
           </div>
           <p className="text-sm text-ink-2 leading-relaxed mb-4">{gap.description}</p>
 

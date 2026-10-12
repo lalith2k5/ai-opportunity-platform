@@ -7,6 +7,7 @@ import {
   Compass, ExternalLink, ShieldAlert, Sparkles, Info,
 } from 'lucide-react';
 import { getRDProblemDetail, type RDProblemDetail } from '../services/api';
+import { formatApiError } from '../utils/errors';
 
 function Section({
   icon: Icon,
@@ -98,7 +99,7 @@ export default function RDProblemDetail() {
     setLoading(true);
     getRDProblemDetail(Number(id))
       .then(setData)
-      .catch((e: any) => setError(e?.response?.data?.detail || e.message))
+      .catch((e: any) => setError(formatApiError(e)))
       .finally(() => setLoading(false));
   }, [id]);
 

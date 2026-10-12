@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { runPipeline } from '../services/api';
+import { formatApiError } from '../utils/errors';
 import { Search as SearchIcon, Loader2, CheckCircle2, AlertCircle } from 'lucide-react';
 
 export default function Search() {
@@ -15,7 +16,7 @@ export default function Search() {
       const data = await runPipeline(query);
       setResult(data);
     } catch (e: any) {
-      setError(e?.response?.data?.detail || e.message || 'Pipeline failed');
+      setError(formatApiError(e) || 'Pipeline failed');
     } finally { setLoading(false); }
   };
 

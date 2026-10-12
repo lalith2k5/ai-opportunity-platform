@@ -7,6 +7,7 @@ import {
   Target, FileText,
 } from 'lucide-react';
 import { getTechnologyDetail, type TechnologyDetailData } from '../services/api';
+import { formatApiError } from '../utils/errors';
 
 function Section({
   icon: Icon,
@@ -82,7 +83,7 @@ export default function TechnologyDetail() {
     setLoading(true);
     getTechnologyDetail(name)
       .then(setData)
-      .catch((e: any) => setError(e?.response?.data?.detail || e.message))
+      .catch((e: any) => setError(formatApiError(e)))
       .finally(() => setLoading(false));
   }, [name]);
 
