@@ -134,7 +134,7 @@ export default function RDProblemDetail() {
   const evidenceGroups = Object.entries(data.evidence_aggregation || {});
 
   return (
-    <div className="p-6 lg:p-8 max-w-5xl mx-auto">
+    <div className="p-6 lg:p-8 max-w-5xl mx-auto animate-fade-up">
       <Link
         to="/rd"
         className="inline-flex items-center gap-1.5 text-xs text-ink-3 hover:text-accent transition-colors mb-6 group"

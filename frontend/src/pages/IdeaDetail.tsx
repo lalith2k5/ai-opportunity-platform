@@ -97,7 +97,7 @@ export default function IdeaDetail() {
   const idea = data.idea;
 
   return (
-    <div className="p-6 lg:p-8 max-w-5xl mx-auto">
+    <div className="p-6 lg:p-8 max-w-5xl mx-auto animate-fade-up">
       <Link
         to="/ideas"
         className="inline-flex items-center gap-1.5 text-xs text-ink-3 hover:text-accent transition-colors mb-6 group"
