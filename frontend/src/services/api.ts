@@ -323,3 +323,99 @@ export const adminGetDataSources = () =>
   api.get<DataSourceRow[]>('/admin/data-sources').then(r => r.data);
 export const adminToggleDataSource = (id: number, is_active: boolean) =>
   api.patch(`/admin/data-sources/${id}`, { is_active }).then(r => r.data);
+
+// ---- Screen 3: technologies ----
+export interface RawDocRef {
+  id: number;
+  title: string;
+  url: string;
+  source: string;
+  collected_at: string | null;
+}
+
+export interface TechnologyListItem {
+  name: string;
+  domain: string | null;
+  stage: string | null;
+  confidence: number;
+  source_count: number;
+  related_problem_count: number;
+  related_paper_count: number;
+  trend_score: number;
+  trend_label: string | null;
+  recent_activity: string | null;
+  description: string;
+  composite_score: number;
+}
+
+export interface TechnologyTrendBlock {
+  name: string;
+  trend_score: number;
+  category: string | null;
+  detected_at: string | null;
+  growth_rate: number;
+  recent_avg: number;
+  prior_avg: number;
+  label: string;
+}
+
+export interface TechnologyDetailData {
+  technology: {
+    name: string;
+    stage: string | null;
+    confidence: number;
+    domain: string | null;
+    domains: string[];
+    source_count: number;
+    related_problem_count: number;
+    related_paper_count: number;
+    description: string;
+  };
+  related_problems: Array<{
+    id: number;
+    problem_title: string;
+    problem_description: string;
+    industry_domain: string | null;
+    problem_type: string | null;
+    organization: string | null;
+    source: string;
+    source_url: string;
+    stage: string;
+    created_at: string | null;
+  }>;
+  related_papers: Array<{
+    id: number;
+    title: string;
+    arxiv_id: string | null;
+    url: string;
+    relevance_score: number;
+    authors: string[];
+    abstract: string;
+    research_methods: string[];
+    results_summary: string | null;
+    limitations: string[];
+    research_areas: string[];
+  }>;
+  github_repositories: RawDocRef[];
+  news_articles: RawDocRef[];
+  reddit_discussions: RawDocRef[];
+  trend: TechnologyTrendBlock | null;
+  potential_gaps: Array<{ id: number; title: string; description: string; gap_score: number }>;
+  opportunities: Array<{
+    id: number;
+    title: string;
+    opportunity_score: number;
+    feasibility_score: number;
+    research_gap_score: number;
+    domain: string | null;
+    industry: string | null;
+  }>;
+  sources: Array<{ source: string; title: string; url: string }>;
+}
+
+export const getTechnologies = (
+  params?: { q?: string; domain?: string; stage?: string; limit?: number },
+) => api.get<TechnologyListItem[]>('/technologies', { params }).then(r => r.data);
+
+export const getTechnologyDetail = (name: string) =>
+  api.get<TechnologyDetailData>(`/technologies/${encodeURIComponent(name)}`).then(r => r.data);

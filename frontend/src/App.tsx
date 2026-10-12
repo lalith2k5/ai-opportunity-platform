@@ -23,6 +23,7 @@ import RDWorkflow from './pages/RDWorkflow';
 import EntranceDashboard from './pages/EntranceDashboard';
 import Ideas from './pages/Ideas';
 import Technologies from './pages/Technologies';
+import TechnologyDetail from './pages/TechnologyDetail';
 import Research from './pages/Research';
 import RD from './pages/RD';
 
@@ -56,6 +57,7 @@ export default function App() {
       <Route path="/entrance" element={wrap(<EntranceDashboard />)} />
       <Route path="/ideas" element={wrap(<Ideas />)} />
       <Route path="/technologies" element={wrap(<Technologies />)} />
+      <Route path="/technologies/:name" element={wrap(<TechnologyDetail />)} />
       <Route path="/research" element={wrap(<Research />)} />
       <Route path="/rd" element={wrap(<RD />)} />
     </Routes>
