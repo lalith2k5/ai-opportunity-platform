@@ -4,6 +4,8 @@ import { Link } from 'react-router-dom';
 import {
   Factory, Search, Loader2, Building2, ArrowUpRight,
 } from 'lucide-react';
+import PageHeader from '../components/ui/PageHeader';
+import Toolbar from '../components/ui/Toolbar';
 import { getProblemProfiles, type ProblemProfileListItem } from '../services/api';
 
 function SourceBadge({ source }: { source: string }) {
@@ -139,20 +141,14 @@ export default function RD() {
 
   return (
     <div className="p-6 lg:p-8 max-w-[1500px] mx-auto">
-      <div className="mb-6">
-        <div className="flex items-center gap-3.5 mb-2">
-          <div className="w-10 h-10 rounded-xl bg-warning/10 flex items-center justify-center shadow-[inset_0_1px_0_0_rgb(255_255_255/0.05)]">
-            <Factory className="text-warning" size={18} />
-          </div>
-          <h1 className="text-3xl font-bold text-ink tracking-tight">R&D Intelligence</h1>
-        </div>
-        <p className="text-sm text-ink-3 max-w-3xl">
-          Industry problems, publicly documented technical challenges, and evidence-backed innovation opportunities.
-          Every result is traceable to its source — expert validation required for research gaps and commercial relevance.
-        </p>
-      </div>
+      <PageHeader
+        icon={Factory}
+        accent="warning"
+        title="R&D Intelligence"
+        subtitle="Industry problems, publicly documented technical challenges, and evidence-backed innovation opportunities. Every result is traceable to its source — expert validation required."
+      />
 
-      <div className="card p-3 mb-5 flex flex-col md:flex-row gap-3">
+      <Toolbar>
         <div className="relative flex-1">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-ink-4" size={14} />
           <input
@@ -185,7 +181,7 @@ export default function RD() {
             Clear
           </button>
         )}
-      </div>
+      </Toolbar>
 
       {loading ? (
         <div className="flex items-center justify-center py-20">

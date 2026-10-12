@@ -4,6 +4,8 @@ import { Link } from 'react-router-dom';
 import {
   BookOpen, Search, Loader2, ArrowUpRight,
 } from 'lucide-react';
+import PageHeader from '../components/ui/PageHeader';
+import Toolbar from '../components/ui/Toolbar';
 import { getResearchPapers, type ResearchPaperListItem } from '../services/api';
 
 type SortKey = 'relevance' | 'year' | 'title';
@@ -141,20 +143,15 @@ export default function Research() {
 
   return (
     <div className="p-6 lg:p-8 max-w-[1500px] mx-auto">
-      <div className="mb-6">
-        <div className="flex items-center gap-3.5 mb-2">
-          <div className="w-10 h-10 rounded-xl bg-sky-500/10 flex items-center justify-center shadow-[inset_0_1px_0_0_rgb(255_255_255/0.05)]">
-            <BookOpen className="text-sky-500" size={18} />
-          </div>
-          <h1 className="text-3xl font-bold text-ink tracking-tight">Research Analysis</h1>
-        </div>
-        <p className="text-sm text-ink-3">
-          Search, compare, and drill into papers — objective, methodology, findings, limitations, related work, and potential gaps.
-        </p>
-      </div>
+      <PageHeader
+        icon={BookOpen}
+        accent="sky"
+        title="Research Analysis"
+        subtitle="Search, compare, and drill into papers — objective, methodology, findings, limitations, related work, and potential gaps."
+      />
 
       {/* Filter bar */}
-      <div className="card p-3 mb-3 flex flex-col md:flex-row gap-3">
+      <Toolbar className="mb-3">
         <div className="relative flex-1">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-ink-4" size={14} />
           <input
@@ -178,7 +175,7 @@ export default function Research() {
           <option value="year">Sort: year (newest)</option>
           <option value="title">Sort: title (A-Z)</option>
         </select>
-      </div>
+      </Toolbar>
 
       <div className="card p-3 mb-5 flex flex-col md:flex-row gap-4 items-center">
         <div className="flex items-center gap-3 flex-1">

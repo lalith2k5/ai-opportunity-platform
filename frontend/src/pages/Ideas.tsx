@@ -4,6 +4,8 @@ import { Link } from 'react-router-dom';
 import {
   Lightbulb, Search, Loader2, TrendingUp, TrendingDown, Minus, ArrowUpRight,
 } from 'lucide-react';
+import PageHeader from '../components/ui/PageHeader';
+import Toolbar from '../components/ui/Toolbar';
 import { getIdeas, type IdeaListItem } from '../services/api';
 
 function TrendGlyph({ label }: { label: string | null }) {
@@ -123,19 +125,14 @@ export default function Ideas() {
 
   return (
     <div className="p-6 lg:p-8 max-w-[1500px] mx-auto">
-      <div className="mb-6">
-        <div className="flex items-center gap-3.5 mb-2">
-          <div className="w-10 h-10 rounded-xl bg-accent/10 flex items-center justify-center shadow-[inset_0_1px_0_0_rgb(255_255_255/0.05)]">
-            <Lightbulb className="text-accent" size={18} />
-          </div>
-          <h1 className="text-3xl font-bold text-ink tracking-tight">Find the Real-Time Ideas</h1>
-        </div>
-        <p className="text-sm text-ink-3">
-          Trending real-world problems ranked by evidence and momentum, with a full drill-down across sources.
-        </p>
-      </div>
+      <PageHeader
+        icon={Lightbulb}
+        accent="accent"
+        title="Find the Real-Time Ideas"
+        subtitle="Trending real-world problems ranked by evidence and momentum, with a full drill-down across sources."
+      />
 
-      <div className="card p-3 mb-5 flex flex-col md:flex-row gap-3">
+      <Toolbar>
         <div className="relative flex-1">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-ink-4" size={14} />
           <input
@@ -158,7 +155,7 @@ export default function Ideas() {
             Clear
           </button>
         )}
-      </div>
+      </Toolbar>
 
       {loading ? (
         <div className="flex items-center justify-center py-20">

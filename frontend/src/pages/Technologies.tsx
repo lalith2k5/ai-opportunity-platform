@@ -4,6 +4,8 @@ import { Link } from 'react-router-dom';
 import {
   Cpu, Search, TrendingUp, TrendingDown, Minus, Loader2, ArrowUpRight,
 } from 'lucide-react';
+import PageHeader from '../components/ui/PageHeader';
+import Toolbar from '../components/ui/Toolbar';
 import { getTechnologies, type TechnologyListItem } from '../services/api';
 
 function StageBadge({ stage }: { stage: string | null }) {
@@ -130,19 +132,14 @@ export default function Technologies() {
 
   return (
     <div className="p-6 lg:p-8 max-w-[1500px] mx-auto">
-      <div className="mb-6">
-        <div className="flex items-center gap-3.5 mb-2">
-          <div className="w-10 h-10 rounded-xl bg-purple-500/10 flex items-center justify-center shadow-[inset_0_1px_0_0_rgb(255_255_255/0.05)]">
-            <Cpu className="text-purple-500" size={18} />
-          </div>
-          <h1 className="text-3xl font-bold text-ink tracking-tight">Choose the Technology</h1>
-        </div>
-        <p className="text-sm text-ink-3">
-          Trending technologies and the problems, research, and opportunities each one connects to.
-        </p>
-      </div>
+      <PageHeader
+        icon={Cpu}
+        accent="purple"
+        title="Choose the Technology"
+        subtitle="Trending technologies and the problems, research, and opportunities each one connects to."
+      />
 
-      <div className="card p-3 mb-5 flex flex-col md:flex-row gap-3">
+      <Toolbar>
         <div className="relative flex-1">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-ink-4" size={14} />
           <input
@@ -169,7 +166,7 @@ export default function Technologies() {
             Clear
           </button>
         )}
-      </div>
+      </Toolbar>
 
       {loading ? (
         <div className="flex items-center justify-center py-20">
