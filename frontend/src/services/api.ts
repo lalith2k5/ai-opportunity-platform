@@ -419,3 +419,58 @@ export const getTechnologies = (
 
 export const getTechnologyDetail = (name: string) =>
   api.get<TechnologyDetailData>(`/technologies/${encodeURIComponent(name)}`).then(r => r.data);
+
+// ---- Screen 4: research papers ----
+export interface ResearchPaperListItem {
+  arxiv_id: string;
+  arxiv_id_raw: string | null;
+  title: string;
+  authors: string[];
+  year: number | null;
+  published: string | null;
+  domain: string | null;
+  keywords: string[];
+  abstract_snippet: string;
+  relevance_score: number;
+  url: string;
+  limitations_count: number;
+  methods: string[];
+}
+
+export interface ResearchRelatedPaper {
+  arxiv_id: string;
+  title: string;
+  year: number | null;
+  relevance_score: number;
+  url: string;
+}
+
+export interface ResearchPaperDetail {
+  paper: {
+    arxiv_id: string;
+    arxiv_id_raw: string | null;
+    title: string;
+    authors: string[];
+    published: string | null;
+    year: number | null;
+    url: string;
+    abstract: string;
+    relevance_score: number;
+    domain: string | null;
+  };
+  research_objective: string;
+  methodology: string[];
+  key_findings: string;
+  limitations: string[];
+  related_papers: ResearchRelatedPaper[];
+  related_technologies: string[];
+  potential_gaps: Array<{ id: number; title: string; description: string; gap_score: number }>;
+  source: { url: string; arxiv_id: string };
+}
+
+export const getResearchPapers = (
+  params?: { q?: string; domain?: string; year?: number; min_relevance?: number; limit?: number },
+) => api.get<ResearchPaperListItem[]>('/research-papers', { params }).then(r => r.data);
+
+export const getResearchPaperDetail = (arxivId: string) =>
+  api.get<ResearchPaperDetail>(`/research-papers/${encodeURIComponent(arxivId)}`).then(r => r.data);
