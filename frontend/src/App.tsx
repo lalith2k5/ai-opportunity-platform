@@ -28,6 +28,7 @@ import TechnologyDetail from './pages/TechnologyDetail';
 import Research from './pages/Research';
 import ResearchDetail from './pages/ResearchDetail';
 import RD from './pages/RD';
+import RDProblemDetail from './pages/RDProblemDetail';
 
 const wrap = (el: React.ReactNode) => (
   <ProtectedRoute><Layout>{el}</Layout></ProtectedRoute>
@@ -64,6 +65,7 @@ export default function App() {
       <Route path="/research" element={wrap(<Research />)} />
       <Route path="/research/:arxiv_id" element={wrap(<ResearchDetail />)} />
       <Route path="/rd" element={wrap(<RD />)} />
+      <Route path="/rd/:id" element={wrap(<RDProblemDetail />)} />
     </Routes>
   );
 }

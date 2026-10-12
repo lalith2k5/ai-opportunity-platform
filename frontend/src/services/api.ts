@@ -544,3 +544,120 @@ export const getIdeas = (params?: { q?: string; domain?: string; limit?: number 
 
 export const getIdeaDetail = (id: number) =>
   api.get<IdeaDetailData>(`/ideas/${id}`).then(r => r.data);
+
+// ---- Screen 5: R&D problem profiles ----
+export interface ProblemProfileListItem {
+  id: number;
+  organization: string | null;
+  problem_title: string;
+  problem_description: string | null;
+  industry_domain: string | null;
+  problem_type: string | null;
+  technology_stage: string;
+  required_technology: string[];
+  current_approach: string | null;
+  known_limitations: string | null;
+  expected_outcome: string | null;
+  source: string;
+  source_url: string;
+  keywords: string[];
+  problem_status: string;
+  student_suitability: string | null;
+  extracted_by: string;
+  affected_stakeholders: string[];
+  evidence: string[];
+  confidence: number | null;
+  created_at: string | null;
+}
+
+export interface ProblemProfilesPage {
+  total: number;
+  offset: number;
+  limit: number;
+  items: ProblemProfileListItem[];
+}
+
+export interface RDProblemDetail {
+  problem: ProblemProfileListItem & {
+    technology_stage: string;
+  };
+  organization: {
+    id: number | null;
+    name: string;
+    industry_domain: string | null;
+    source: string | null;
+  } | null;
+  related_technologies: Array<{ name: string; stage: string | null; confidence: number }>;
+  technology_landscape: {
+    count: number;
+    stages: string[];
+    average_confidence: number;
+  };
+  research_landscape: Array<{
+    id: number;
+    arxiv_id: string | null;
+    title: string;
+    year: number | null;
+    relevance_score: number;
+    url: string;
+    research_methods: string[];
+    results_summary: string | null;
+  }>;
+  emerging_trends: Array<{
+    name: string;
+    trend_score: number;
+    category: string | null;
+    detected_at: string | null;
+  }>;
+  evidence_aggregation: Record<string, Array<{
+    id: number;
+    title: string;
+    url: string;
+    source: string;
+    collected_at: string | null;
+  }>>;
+  evidence_sources: Array<{ source: string; title: string; url: string }>;
+  knowledge_graph: {
+    node: string;
+    nodes: Array<{ name: string; type: string; metadata: any }>;
+    edges: Array<{ source: string; target: string; relation: string }>;
+  };
+  potential_gaps: Array<{ id: number; title: string; description: string; gap_score: number }>;
+  innovation_opportunities: Array<{
+    id: number;
+    title: string;
+    opportunity_score: number;
+    feasibility_score: number;
+    research_gap_score: number;
+    domain: string | null;
+    industry: string | null;
+  }>;
+  opportunity_scoring: {
+    opportunity_id: number;
+    title: string;
+    opportunity_score: number;
+    demand: number;
+    research_gap: number;
+    trend: number;
+    feasibility: number;
+    market_readiness: number;
+    technology_suitability: number;
+    evidence_strength: number;
+    recency: number;
+    confidence: number;
+    explanation: string | null;
+  } | null;
+  recommended_next_steps: Array<{ kind: string; text: string }>;
+}
+
+export const getProblemProfiles = (params?: {
+  search?: string;
+  domain?: string;
+  source?: string;
+  student_suitability?: string;
+  limit?: number;
+  offset?: number;
+}) => api.get<ProblemProfilesPage>('/problem-profiles', { params }).then(r => r.data);
+
+export const getRDProblemDetail = (profileId: number) =>
+  api.get<RDProblemDetail>(`/rd/problems/${profileId}`).then(r => r.data);
