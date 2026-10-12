@@ -1,4 +1,4 @@
-import { Routes, Route } from 'react-router-dom';
+import { Routes, Route, Navigate } from 'react-router-dom';
 import Layout from './components/Layout';
 import ProtectedRoute from './components/ProtectedRoute';
 import Dashboard from './pages/Dashboard';
@@ -12,14 +12,9 @@ import Admin from './pages/Admin';
 import ForgotPassword from './pages/ForgotPassword';
 import ResetPassword from './pages/ResetPassword';
 import Profile from './pages/Profile';
-import Problems from './pages/Problems';
 import Opportunities from './pages/Opportunities';
 import Recommendations from './pages/Recommendations';
 import KnowledgeGraph from './pages/KnowledgeGraph';
-import ProblemProfiles from './pages/ProblemProfiles';
-import StudentWorkflow from './pages/StudentWorkflow';
-import ResearcherWorkflow from './pages/ResearcherWorkflow';
-import RDWorkflow from './pages/RDWorkflow';
 import EntranceDashboard from './pages/EntranceDashboard';
 import Ideas from './pages/Ideas';
 import IdeaDetail from './pages/IdeaDetail';
@@ -47,15 +42,15 @@ export default function App() {
       <Route path="/reports" element={wrap(<Reports />)} />
       <Route path="/profile" element={wrap(<Profile />)} />
       <Route path="/admin" element={wrap(<Admin />)} />
-      <Route path="/problems" element={wrap(<Problems />)} />
+      <Route path="/problems" element={<Navigate to="/ideas" replace />} />
       <Route path="/opportunities" element={wrap(<Opportunities />)} />
       <Route path="/recommendations" element={wrap(<Recommendations />)} />
       <Route path="/knowledge-graph" element={wrap(<KnowledgeGraph />)} />
-      <Route path="/problem-profiles" element={wrap(<ProblemProfiles />)} />
-      <Route path="/workflows/student"    element={wrap(<StudentWorkflow />)} />
+      <Route path="/problem-profiles" element={<Navigate to="/rd" replace />} />
+      <Route path="/workflows/student" element={<Navigate to="/opportunities" replace />} />
       <Route path="/workflows/student/:id" element={wrap(<OpportunityDetail />)} />
-      <Route path="/workflows/researcher" element={wrap(<ResearcherWorkflow />)} />
-      <Route path="/workflows/rd"         element={wrap(<RDWorkflow />)} />
+      <Route path="/workflows/researcher" element={<Navigate to="/research" replace />} />
+      <Route path="/workflows/rd" element={<Navigate to="/rd" replace />} />
       <Route path="/opportunities/:id" element={wrap(<OpportunityDetail />)} />
       <Route path="/entrance" element={wrap(<EntranceDashboard />)} />
       <Route path="/ideas" element={wrap(<Ideas />)} />

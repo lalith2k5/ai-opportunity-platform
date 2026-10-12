@@ -2,8 +2,8 @@ import { useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard, Search, MessageSquare, FileText,
-  TrendingUp, Zap, Shield, Menu, X, Sparkles, Network, Target,
-  GraduationCap, FlaskConical, Factory, Lightbulb, Cpu, BookOpen,
+  Zap, Shield, Menu, X, Sparkles, Network, Compass,
+  Lightbulb, Cpu, BookOpen, Factory,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import NotificationBell from './NotificationBell';
@@ -14,32 +14,27 @@ const sections = [
   {
     label: 'Workspace',
     items: [
-      { path: '/', label: 'Dashboard', icon: LayoutDashboard },
-      { path: '/search', label: 'Search', icon: Search },
-      { path: '/chat', label: 'AI Chat', icon: MessageSquare },
+      { path: '/',                label: 'Dashboard',       icon: LayoutDashboard },
+      { path: '/opportunities',   label: 'Opportunities',   icon: Zap },
       { path: '/recommendations', label: 'Recommendations', icon: Sparkles },
-      { path: '/opportunities', label: 'Opportunities', icon: Zap },
-      { path: '/problems', label: 'Problems', icon: TrendingUp },
-      { path: '/problem-profiles', label: 'Problem Profiles', icon: Target },
-      { path: '/workflows/student',    label: 'Student flow',    icon: GraduationCap },
-      { path: '/workflows/researcher', label: 'Researcher flow', icon: FlaskConical },
-      { path: '/workflows/rd',         label: 'R&D flow',        icon: Factory },
+      { path: '/chat',            label: 'AI Chat',         icon: MessageSquare },
     ],
   },
   {
     label: 'Discover',
     items: [
-      { path: '/entrance',     label: 'Entrance',     icon: Sparkles },
+      { path: '/entrance',     label: 'Entrance',        icon: Compass },
       { path: '/ideas',        label: 'Real-Time Ideas', icon: Lightbulb },
-      { path: '/technologies', label: 'Technologies', icon: Cpu },
-      { path: '/research',     label: 'Research',     icon: BookOpen },
-      { path: '/rd',           label: 'R&D',          icon: Factory },
+      { path: '/technologies', label: 'Technologies',    icon: Cpu },
+      { path: '/research',     label: 'Research',        icon: BookOpen },
+      { path: '/rd',           label: 'R&D',             icon: Factory },
     ],
   },
   {
     label: 'Insights',
     items: [
-      { path: '/reports', label: 'Reports', icon: FileText },
+      { path: '/search',          label: 'Search',          icon: Search },
+      { path: '/reports',         label: 'Reports',         icon: FileText },
       { path: '/knowledge-graph', label: 'Knowledge Graph', icon: Network },
     ],
   },
