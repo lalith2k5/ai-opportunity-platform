@@ -4,9 +4,9 @@ import { Link } from 'react-router-dom';
 import {
   Lightbulb, Search, Loader2, TrendingUp, TrendingDown, Minus, ArrowUpRight,
 } from 'lucide-react';
+import { getIdeas, type IdeaListItem } from '../services/api';
 import PageHeader from '../components/ui/PageHeader';
 import Toolbar from '../components/ui/Toolbar';
-import { getIdeas, type IdeaListItem } from '../services/api';
 
 function TrendGlyph({ label }: { label: string | null }) {
   if (!label) return null;
@@ -20,44 +20,50 @@ function IdeaCard({ idea, delay }: { idea: IdeaListItem; delay: number }) {
   return (
     <Link
       to={`/ideas/${idea.id}`}
-      className="block card card-hover p-5 group animate-fade-up"
+      className="block card card-hover p-5 lg:p-6 group animate-fade-up"
       style={{ animationDelay: `${delay}ms` }}
     >
-      <div className="flex items-start justify-between gap-4 mb-3">
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2 mb-1.5 flex-wrap">
-            {idea.domain && (
-              <span className="badge bg-overlay text-ink-3 border border-edge">
-                {idea.domain}
-              </span>
-            )}
-            {idea.trend_name && (
-              <span className="inline-flex items-center gap-1 text-2xs text-ink-4 capitalize">
-                <TrendGlyph label={idea.trend_name} />
-                {idea.trend_name}
-              </span>
-            )}
-          </div>
-          <h3 className="text-base font-semibold text-ink tracking-tight leading-snug group-hover:text-accent transition-colors line-clamp-2">
-            {idea.title}
-          </h3>
-          <p className="text-xs text-ink-3 mt-1.5 leading-relaxed line-clamp-2">
-            {idea.description}
-          </p>
+      <div className="flex items-start justify-between gap-6 mb-4 flex-wrap">
+        <div className="flex items-center gap-2 flex-wrap min-w-0 flex-1">
+          <span className="text-2xs font-mono text-ink-4">#{idea.id}</span>
+          {idea.domain && (
+            <span className="badge bg-overlay text-ink-3 border border-edge">
+              {idea.domain}
+            </span>
+          )}
+          {idea.trend_name && (
+            <span className="inline-flex items-center gap-1 text-2xs text-ink-4 capitalize">
+              <TrendGlyph label={idea.trend_name} />
+              {idea.trend_name}
+            </span>
+          )}
         </div>
         <div className="text-right flex-shrink-0">
-          <p className={`text-2xl font-bold font-mono tabular-nums leading-none tracking-tight ${
-            isHigh ? 'text-success' : 'text-accent'
-          }`}>
-            {idea.composite_score.toFixed(2)}
-          </p>
-          <p className="text-2xs text-ink-4 mt-1.5 uppercase tracking-[0.08em]">Score</p>
+          <div className="flex items-baseline gap-1.5 justify-end">
+            <span className={`text-3xl lg:text-4xl font-bold font-mono tabular-nums leading-none tracking-tight ${
+              isHigh ? 'text-success' : 'text-accent'
+            }`}>
+              {idea.composite_score.toFixed(2)}
+            </span>
+            <span className="text-xs text-ink-4 font-mono">/1.00</span>
+          </div>
+          <p className="text-2xs text-ink-4 mt-1.5 uppercase tracking-[0.08em]">Composite score</p>
         </div>
       </div>
 
+      <h3 className="text-xl lg:text-2xl font-semibold text-ink tracking-tight leading-tight mb-3 group-hover:text-accent transition-colors">
+        {idea.title}
+      </h3>
+
+      {idea.description && (
+        <p className="text-sm text-ink-2 leading-relaxed mb-4">
+          {idea.description}
+        </p>
+      )}
+
       {idea.keywords.length > 0 && (
-        <div className="flex flex-wrap gap-1.5 mb-3">
-          {idea.keywords.slice(0, 5).map(k => (
+        <div className="flex flex-wrap gap-1.5 mb-4">
+          {idea.keywords.slice(0, 10).map(k => (
             <span key={k} className="badge bg-overlay text-ink-3 border border-edge">
               {k}
             </span>
@@ -65,33 +71,33 @@ function IdeaCard({ idea, delay }: { idea: IdeaListItem; delay: number }) {
         </div>
       )}
 
-      <div className="grid grid-cols-3 gap-3 pt-3 mt-3 border-t border-edge-subtle">
+      <div className="grid grid-cols-3 gap-6 pt-4 border-t border-edge-subtle">
         <div>
-          <p className="text-2xs text-ink-4 uppercase tracking-wider">Sources</p>
-          <p className="text-sm font-semibold text-ink font-mono tabular-nums">
+          <p className="text-2xs text-ink-4 uppercase tracking-wider mb-1.5">Sources</p>
+          <p className="text-lg font-semibold text-ink font-mono tabular-nums">
             {idea.source_count}
           </p>
         </div>
         <div>
-          <p className="text-2xs text-ink-4 uppercase tracking-wider">Demand</p>
-          <p className="text-sm font-semibold text-success font-mono tabular-nums">
+          <p className="text-2xs text-ink-4 uppercase tracking-wider mb-1.5">Demand</p>
+          <p className="text-lg font-semibold text-success font-mono tabular-nums">
             {idea.demand_score.toFixed(2)}
           </p>
         </div>
         <div>
-          <p className="text-2xs text-ink-4 uppercase tracking-wider">Opps</p>
-          <p className="text-sm font-semibold text-accent font-mono tabular-nums">
+          <p className="text-2xs text-ink-4 uppercase tracking-wider mb-1.5">Opportunities</p>
+          <p className="text-lg font-semibold text-accent font-mono tabular-nums">
             {idea.opportunity_count}
           </p>
         </div>
       </div>
 
-      <div className="flex items-center justify-between mt-3 pt-3 border-t border-edge-subtle">
+      <div className="flex items-center justify-between mt-4 pt-4 border-t border-edge-subtle">
         <span className="text-2xs text-ink-4 uppercase tracking-[0.08em]">
           Trend {idea.trend_score.toFixed(2)}
         </span>
         <span className="text-2xs text-accent font-medium flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all duration-200 -translate-x-1 group-hover:translate-x-0">
-          View <ArrowUpRight size={11} />
+          Open details <ArrowUpRight size={11} />
         </span>
       </div>
     </Link>
@@ -124,7 +130,7 @@ export default function Ideas() {
   const hasFilters = Boolean(search || domain);
 
   return (
-    <div className="p-6 lg:p-8 max-w-[1500px] mx-auto">
+    <div className="p-6 lg:p-8 max-w-5xl mx-auto">
       <PageHeader
         icon={Lightbulb}
         accent="accent"
@@ -174,10 +180,10 @@ export default function Ideas() {
           </p>
           <div
             key={search + '|' + domain}
-            className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-3 animate-fade-in"
+            className="space-y-4 animate-fade-in"
           >
             {items.map((idea, i) => (
-              <IdeaCard key={idea.id} idea={idea} delay={Math.min(i * 30, 600)} />
+              <IdeaCard key={idea.id} idea={idea} delay={Math.min(i * 40, 400)} />
             ))}
           </div>
         </>

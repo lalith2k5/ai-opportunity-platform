@@ -165,10 +165,14 @@ def list_ideas(
             + 0.10 * recency
         )
 
+        cluster_desc = (c.description or "").strip()
+        profile_desc = (profile.problem_description or "").strip() if profile else ""
+        description = profile_desc if len(profile_desc) > len(cluster_desc) else cluster_desc
+
         results.append({
             "id": c.id,
             "title": c.title,
-            "description": c.description,
+            "description": description,
             "keywords": keywords,
             "domain": domain_val,
             "source_count": c.source_count or 0,
@@ -281,11 +285,15 @@ def idea_detail(
             "text": "Run a fresh pipeline to generate suggested directions for this cluster.",
         })
 
+    cluster_desc = (cluster.description or "").strip()
+    profile_desc = (profile.problem_description or "").strip() if profile else ""
+    detail_description = profile_desc if len(profile_desc) > len(cluster_desc) else cluster_desc
+
     return {
         "idea": {
             "id": cluster.id,
             "title": cluster.title,
-            "description": cluster.description,
+            "description": detail_description,
             "keywords": keywords,
             "source_count": cluster.source_count or 0,
             "demand_score": cluster.demand_score or 0.0,
