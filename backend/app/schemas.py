@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import ConfigDict, BaseModel
 from typing import Optional, List, Dict, Any
 
 class UserCreate(BaseModel):
@@ -25,6 +25,7 @@ class SearchQuery(BaseModel):
     mode: Optional[str] = "quick"  # "quick" or "deep"
 
 class OpportunityResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
     id: int
     title: str
     description: str
