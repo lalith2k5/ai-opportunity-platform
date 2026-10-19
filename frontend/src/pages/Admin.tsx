@@ -9,7 +9,7 @@ import {
 } from '../services/api';
 import {
   Loader2, Users, Activity, Trash2, RefreshCw, Play, Shield, FileText, Clock,
-  Settings as SettingsIcon, Database, CheckCircle2, XCircle, Eye, EyeOff,
+  Database, CheckCircle2, XCircle, Eye, EyeOff,
   Save, ExternalLink, Zap, AlertCircle, Cpu,
 } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
@@ -101,9 +101,8 @@ export default function Admin() {
   const tabs = [
     { id: 'overview',  label: 'Overview',  icon: FileText },
     { id: 'users',     label: 'Users',     icon: Users },
-    { id: 'config',    label: 'Config',    icon: SettingsIcon },
     { id: 'sync',      label: 'Sync',      icon: Database },
-    { id: 'keys',     label: 'API Keys', icon: Key },
+    { id: 'keys',     label: 'Configuration', icon: Key },
     { id: 'logs',      label: 'Logs',      icon: Activity },
     { id: 'scheduler', label: 'Scheduler', icon: Clock },
   ] as const;

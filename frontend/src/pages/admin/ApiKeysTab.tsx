@@ -26,12 +26,17 @@ export default function ApiKeysTab() {
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState<string | null>(null);
   const [results, setResults] = useState<Record<string, TestResult>>({});
+  const [llmStatus, setLlmStatus] = useState<any>(null);
 
   async function load() {
     setLoading(true);
     setError(null);
     try {
-      const r = await api.get('/admin/keys');
+      const [r, l] = await Promise.all([
+        api.get('/admin/keys'),
+        api.get('/admin/llm/status').catch(() => null),
+      ]);
+      setLlmStatus(l?.data || null);
       setSlots(r.data.slots || []);
     } catch (e: any) {
       setError(e?.response?.data?.detail || e?.message || 'Failed to load keys');
@@ -109,6 +114,20 @@ export default function ApiKeysTab() {
       {error && (
         <div className="px-3 py-2 rounded bg-danger/10 text-danger text-sm border border-danger/20">
           {error}
+        </div>
+      )}
+
+      {llmStatus && (
+        <div className="rounded border border-line p-3 bg-surface-2">
+          <p className="text-xs font-medium text-ink-3 mb-2">LLM Provider Status</p>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
+            {Object.entries(llmStatus).map(([k, v]) => (
+              <div key={k} className="flex flex-col">
+                <span className="text-ink-4">{k}</span>
+                <span className="font-mono text-ink">{typeof v === 'object' ? JSON.stringify(v) : String(v)}</span>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 
