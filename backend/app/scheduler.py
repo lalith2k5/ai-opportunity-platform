@@ -211,6 +211,82 @@ def _sync_spec_hooks():
         db.close()
 
 
+def _deliver_notifications():
+    """Spec 35.4 / FR-24: turn undelivered MAJOR ChangeEvents into user
+    notifications. Dedup via AgentLog marker so re-runs never double-send."""
+    from app.database import SessionLocal as _SL
+    from app import models as _M
+
+    db = _SL()
+    try:
+        recent_events = (
+            db.query(_M.ChangeEvent)
+            .filter(_M.ChangeEvent.significance == "MAJOR")
+            .order_by(_M.ChangeEvent.id.desc())
+            .limit(200)
+            .all()
+        )
+        if not recent_events:
+            return {"delivered": 0, "reason": "no_events"}
+
+        delivered = 0
+        for ev in recent_events:
+            marker = f"delivered:ChangeEvent:{ev.id}"
+            already = (
+                db.query(_M.AgentLog)
+                .filter(_M.AgentLog.action == marker)
+                .first()
+            )
+            if already:
+                continue
+
+            title = ""
+            link = "/dashboard"
+            if ev.entity_type == "OPPORTUNITY":
+                opp = db.query(_M.Opportunity).filter(_M.Opportunity.id == int(ev.entity_id)).first()
+                if opp:
+                    if ev.change_type == "score_changed":
+                        title = f"Score changed: {opp.title[:80]}"
+                    else:
+                        title = f"{ev.change_type.replace('_', ' ').title()}: {opp.title[:80]}"
+                    link = f"/opportunities/{opp.id}"
+                else:
+                    title = f"{ev.entity_type} {ev.entity_id}: {ev.change_type}"
+            elif ev.entity_type == "GAP":
+                title = f"Research gap status changed (id={ev.entity_id})"
+                link = "/review"
+            else:
+                title = f"{ev.entity_type} {ev.entity_id}: {ev.change_type}"
+
+            n = _M.Notification(
+                type="change_alert",
+                title=title[:200],
+                message=f"Auto-generated from {ev.change_type} event #{ev.id}",
+                link=link,
+                severity="info",
+                read=False,
+            )
+            db.add(n)
+            db.add(_M.AgentLog(
+                agent_name="Notifier",
+                action=marker,
+                status="success",
+                details={"change_event_id": ev.id, "notification_title": title[:120]},
+            ))
+            delivered += 1
+
+        db.commit()
+        if delivered:
+            logger.info(f"[Notifier] Delivered {delivered} notification(s)")
+        return {"delivered": delivered}
+    except Exception as e:
+        db.rollback()
+        logger.warning(f"[Notifier] delivery failed: {e}")
+        return {"delivered": 0, "error": str(e)}
+    finally:
+        db.close()
+
+
 def start_scheduler():
     """Start the background scheduler if not already running."""
     global _scheduler
@@ -238,6 +314,15 @@ def start_scheduler():
         name="Spec hooks: conflict sweep + ChangeEvent scan",
         replace_existing=True,
         next_run_time=datetime.now() + timedelta(minutes=2),
+    )
+
+    _scheduler.add_job(
+        _deliver_notifications,
+        trigger=IntervalTrigger(minutes=30),
+        id="notification_delivery",
+        name="Deliver MAJOR ChangeEvents as notifications",
+        replace_existing=True,
+        next_run_time=datetime.now() + timedelta(minutes=3),
     )
 
     _scheduler.add_job(
