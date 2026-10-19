@@ -47,6 +47,7 @@ def get_opportunities(
     problem_type: Optional[str] = None,
     offset: int = 0,
     limit: int = 1000,
+    status: Optional[str] = "UNDER_REVIEW",
     db: Session = Depends(get_db),
     _=Depends(get_current_user),
 ):
