@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { CheckCircle2, XCircle, Loader2, Save, X } from 'lucide-react';
+import { CheckCircle2, XCircle, Loader2, RefreshCw } from 'lucide-react';
 import { api } from '../../services/api';
 
 interface Slot {
@@ -63,19 +63,6 @@ export default function ApiKeysTab() {
     }
   }
 
-  async function del(name: string) {
-    if (!window.confirm(`Remove ${name}? This cannot be undone.`)) return;
-    setBusy(name);
-    try {
-      await api.delete(`/admin/keys/${name}`);
-      await load();
-    } catch (e: any) {
-      setError(e?.response?.data?.detail || 'Delete failed');
-    } finally {
-      setBusy(null);
-    }
-  }
-
   async function test(name: string) {
     setBusy(name);
     try {
@@ -94,74 +81,87 @@ export default function ApiKeysTab() {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-lg font-semibold text-ink">API Keys</h2>
-          <p className="text-sm text-ink-3">
+          <h2 className="text-xl font-semibold text-ink">API Keys</h2>
+          <p className="text-sm text-ink-3 mt-1">
             Manage third-party API keys. Values are encrypted at rest and take effect within 60 seconds.
           </p>
         </div>
         <button
           onClick={load}
           disabled={loading}
-          className="px-3 py-1.5 text-sm rounded border border-line hover:bg-surface-2 disabled:opacity-50"
+          className="flex items-center gap-2 px-3 py-1.5 text-sm rounded border border-line hover:bg-surface-2 disabled:opacity-50 transition-colors"
         >
-          {loading ? 'Loading…' : 'Refresh'}
+          <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
+          Refresh
         </button>
       </div>
 
       {error && (
-        <div className="px-3 py-2 rounded bg-danger/10 text-danger text-sm border border-danger/20">
+        <div className="px-4 py-3 rounded-lg bg-danger/10 text-danger text-sm border border-danger/20">
           {error}
         </div>
       )}
 
       {llmStatus && (
-        <div className="rounded border border-line p-3 bg-surface-2">
-          <p className="text-xs font-medium text-ink-3 mb-2">LLM Provider Status</p>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
-            {Object.entries(llmStatus).map(([k, v]) => (
-              <div key={k} className="flex flex-col">
-                <span className="text-ink-4">{k}</span>
-                <span className="font-mono text-ink">{typeof v === 'object' ? JSON.stringify(v) : String(v)}</span>
-              </div>
-            ))}
+        <div className="rounded-lg border border-line p-4 bg-surface-2">
+          <h3 className="text-sm font-medium text-ink mb-3">LLM Provider Status</h3>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div>
+              <p className="text-xs text-ink-4 uppercase tracking-wider">Enabled</p>
+              <p className="text-sm font-medium text-ink mt-0.5">{llmStatus.enabled ? 'Yes' : 'No'}</p>
+            </div>
+            <div>
+              <p className="text-xs text-ink-4 uppercase tracking-wider">Primary</p>
+              <p className="text-sm font-medium text-ink mt-0.5">{llmStatus.primary || '—'}</p>
+            </div>
+            <div>
+              <p className="text-xs text-ink-4 uppercase tracking-wider">Last Used</p>
+              <p className="text-sm font-medium text-ink mt-0.5">{llmStatus.last_used || '—'}</p>
+            </div>
+            <div>
+              <p className="text-xs text-ink-4 uppercase tracking-wider">Available</p>
+              <p className="text-sm font-medium text-ink mt-0.5">
+                {Array.isArray(llmStatus.available) ? llmStatus.available.join(', ') : '—'}
+              </p>
+            </div>
           </div>
         </div>
       )}
 
-      <div className="rounded border border-line overflow-hidden">
+      <div className="rounded-lg border border-line overflow-hidden bg-surface">
         <table className="w-full text-sm">
-          <thead className="bg-surface-2 text-ink-3">
+          <thead className="bg-surface-2 text-ink-3 border-b border-line">
             <tr>
-              <th className="text-left px-3 py-2 font-medium">Key</th>
-              <th className="text-left px-3 py-2 font-medium">Status</th>
-              <th className="text-left px-3 py-2 font-medium">Source</th>
-              <th className="text-left px-3 py-2 font-medium">Value</th>
-              <th className="text-right px-3 py-2 font-medium">Actions</th>
+              <th className="text-left px-4 py-3 font-medium">Key</th>
+              <th className="text-left px-4 py-3 font-medium">Status</th>
+              <th className="text-left px-4 py-3 font-medium">Source</th>
+              <th className="text-left px-4 py-3 font-medium">Value</th>
+              <th className="text-right px-4 py-3 font-medium">Actions</th>
             </tr>
           </thead>
-          <tbody>
+          <tbody className="divide-y divide-line">
             {slots.map(s => {
               const r = results[s.name];
               const isEditing = editing === s.name;
               return (
-                <tr key={s.name} className="border-t border-line">
-                  <td className="px-3 py-2 font-mono text-xs">{s.name}</td>
-                  <td className="px-3 py-2">
+                <tr key={s.name} className="hover:bg-surface-2/50 transition-colors">
+                  <td className="px-4 py-3 font-mono text-xs text-ink">{s.name}</td>
+                  <td className="px-4 py-3">
                     {s.configured ? (
-                      <span className="inline-flex items-center gap-1 text-success text-xs">
-                        <CheckCircle2 size={12} /> configured
+                      <span className="inline-flex items-center gap-1.5 text-success text-xs font-medium">
+                        <CheckCircle2 size={14} /> Configured
                       </span>
                     ) : (
-                      <span className="inline-flex items-center gap-1 text-ink-4 text-xs">
-                        <XCircle size={12} /> not set
+                      <span className="inline-flex items-center gap-1.5 text-ink-4 text-xs">
+                        <XCircle size={14} /> Not set
                       </span>
                     )}
                   </td>
-                  <td className="px-3 py-2 text-xs text-ink-3">{s.source}</td>
-                  <td className="px-3 py-2">
+                  <td className="px-4 py-3 text-xs text-ink-3 uppercase tracking-wider">{s.source}</td>
+                  <td className="px-4 py-3">
                     {isEditing ? (
                       <input
                         type="password"
@@ -172,62 +172,53 @@ export default function ApiKeysTab() {
                           if (e.key === 'Escape') cancelEdit();
                         }}
                         placeholder="Paste new value"
-                        className="w-full px-2 py-1 text-xs rounded border border-line bg-canvas font-mono"
+                        className="w-full px-2 py-1.5 text-xs rounded border border-line bg-canvas font-mono focus:outline-none focus:ring-1 focus:ring-accent"
                         autoFocus
                       />
                     ) : (
                       <span className="text-xs text-ink-3 font-mono">{s.preview || '—'}</span>
                     )}
                     {r && (
-                      <div className={`mt-1 text-xs ${r.ok ? 'text-success' : 'text-danger'}`}>
+                      <div className={`mt-1 text-[10px] font-medium ${r.ok ? 'text-success' : 'text-danger'}`}>
                         {r.ok
-                          ? `✓ test passed${r.status ? ` (${r.status})` : ''}`
-                          : `✗ ${r.error || r.message || 'failed'}`}
+                          ? `✓ Test passed${r.status ? ` (${r.status})` : ''}`
+                          : `✗ ${r.error || r.message || 'Failed'}`}
                       </div>
                     )}
                   </td>
-                  <td className="px-3 py-2 text-right">
-                    <div className="inline-flex gap-1">
+                  <td className="px-4 py-3 text-right">
+                    <div className="inline-flex gap-2">
                       {isEditing ? (
                         <>
                           <button
                             onClick={() => save(s.name)}
                             disabled={busy === s.name || !input.trim()}
-                            className="px-2 py-1 text-xs rounded bg-accent text-white disabled:opacity-50"
+                            className="px-3 py-1.5 text-xs rounded bg-accent text-white hover:bg-accent/90 disabled:opacity-50 transition-colors"
                           >
-                            {busy === s.name ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />}
+                            {busy === s.name ? <Loader2 size={12} className="animate-spin" /> : 'Save'}
                           </button>
                           <button
                             onClick={cancelEdit}
-                            className="px-2 py-1 text-xs rounded border border-line hover:bg-surface-2"
+                            className="px-3 py-1.5 text-xs rounded border border-line hover:bg-surface-2 transition-colors"
                           >
-                            <X size={12} />
+                            Cancel
                           </button>
                         </>
                       ) : (
                         <>
                           <button
                             onClick={() => { setEditing(s.name); setInput(''); }}
-                            className="px-2 py-1 text-xs rounded border border-line hover:bg-surface-2"
+                            className="px-3 py-1.5 text-xs rounded border border-line hover:bg-surface-2 transition-colors"
                           >
                             Set
                           </button>
                           <button
                             onClick={() => test(s.name)}
                             disabled={busy === s.name || !s.configured}
-                            className="px-2 py-1 text-xs rounded border border-line hover:bg-surface-2 disabled:opacity-40"
+                            className="px-3 py-1.5 text-xs rounded border border-line hover:bg-surface-2 disabled:opacity-40 transition-colors"
                           >
-                            {busy === s.name ? '…' : 'Test'}
+                            {busy === s.name ? <Loader2 size={12} className="animate-spin" /> : 'Test'}
                           </button>
-                          {s.source === 'db' && (
-                            <button
-                              onClick={() => del(s.name)}
-                              disabled={busy === s.name}
-                              className="px-2 py-1 text-xs rounded border border-danger/40 text-danger hover:bg-danger/10 disabled:opacity-40"
-                            >
-                              Delete
-                            </button>
-                          )}
                         </>
                       )}
                     </div>
@@ -238,18 +229,20 @@ export default function ApiKeysTab() {
           </tbody>
         </table>
         {loading && slots.length === 0 && (
-          <div className="p-6 text-center text-ink-3 text-sm">Loading…</div>
+          <div className="p-8 text-center text-ink-3 text-sm flex items-center justify-center gap-2">
+            <Loader2 size={16} className="animate-spin" /> Loading keys…
+          </div>
         )}
       </div>
 
-      <div className="text-xs text-ink-4 space-y-1">
-        <p className="font-medium text-ink-3">Where to get free keys:</p>
-        <ul className="list-disc list-inside space-y-0.5">
-          <li>OpenAlex: <a href="https://openalex.org/action/register" className="text-accent hover:underline" target="_blank" rel="noreferrer">openalex.org/action/register</a></li>
-          <li>Stack Exchange: <a href="https://stackapps.com/apps/oauth/register" className="text-accent hover:underline" target="_blank" rel="noreferrer">stackapps.com/apps/oauth/register</a></li>
-          <li>USPTO ODP: <a href="https://data.uspto.gov/myodp" className="text-accent hover:underline" target="_blank" rel="noreferrer">data.uspto.gov/myodp</a></li>
-          <li>EPO OPS: <a href="https://developers.epo.org" className="text-accent hover:underline" target="_blank" rel="noreferrer">developers.epo.org</a> (Non-paying access)</li>
-          <li>Dev.to: <a href="https://dev.to/settings/extensions" className="text-accent hover:underline" target="_blank" rel="noreferrer">dev.to/settings/extensions</a></li>
+      <div className="rounded-lg border border-line p-4 bg-surface-2">
+        <h3 className="text-sm font-medium text-ink mb-3">Where to get free keys</h3>
+        <ul className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm text-ink-3">
+          <li><a href="https://openalex.org/action/register" className="text-accent hover:underline" target="_blank" rel="noreferrer">OpenAlex</a> — openalex.org/action/register</li>
+          <li><a href="https://stackapps.com/apps/oauth/register" className="text-accent hover:underline" target="_blank" rel="noreferrer">Stack Exchange</a> — stackapps.com/apps/oauth/register</li>
+          <li><a href="https://data.uspto.gov/myodp" className="text-accent hover:underline" target="_blank" rel="noreferrer">USPTO ODP</a> — data.uspto.gov/myodp</li>
+          <li><a href="https://developers.epo.org" className="text-accent hover:underline" target="_blank" rel="noreferrer">EPO OPS</a> — developers.epo.org (Non-paying access)</li>
+          <li><a href="https://dev.to/settings/extensions" className="text-accent hover:underline" target="_blank" rel="noreferrer">Dev.to</a> — dev.to/settings/extensions</li>
         </ul>
       </div>
     </div>
