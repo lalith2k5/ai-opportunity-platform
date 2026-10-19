@@ -53,6 +53,49 @@ class BaseProvider:
         raise NotImplementedError
 
 
+class FreeLMProvider(BaseProvider):
+    """Local freelm serve gateway -- pools free tiers with auto-failover."""
+    name = "freelm"
+
+    def __init__(self):
+        self.client = None
+        self.base_url = "http://127.0.0.1:4000/v1"
+        self.api_key = "freelm"
+        try:
+            from openai import OpenAI
+            self.client = OpenAI(
+                base_url=self.base_url,
+                api_key=self.api_key,
+            )
+        except Exception as e:
+            logger.warning(f"FreeLM init failed: {e}")
+            self.client = None
+
+    def is_configured(self) -> bool:
+        return self.client is not None
+
+    def generate(self, prompt: str, context: str = "") -> str:
+        messages = []
+        if context:
+            messages.append({
+                "role": "system",
+                "content": (
+                    "You are an innovation intelligence analyst with access to live platform data. "
+                    "If the context has a STRUCTURED DATA section, use those exact numbers/titles. "
+                    "If it has DOCUMENT EXCERPTS, cite them. If neither answers the question, say so."
+                ),
+            })
+            messages.append({"role": "user", "content": f"Context:\n{context}\n\nQuestion: {prompt}"})
+        else:
+            messages.append({"role": "user", "content": prompt})
+
+        response = self.client.chat.completions.create(
+            model="auto",
+            messages=messages,
+        )
+        return response.choices[0].message.content
+
+
 class GeminiProvider(BaseProvider):
     name = "gemini"
 
@@ -260,6 +303,7 @@ class LLMService:
         if getattr(self, "_initialized", False):
             return
         self.providers = {
+            "freelm":     FreeLMProvider(),
             "gemini":     GeminiProvider(),
             "openrouter": OpenRouterProvider(),
             "openai":     OpenAIProvider(),
