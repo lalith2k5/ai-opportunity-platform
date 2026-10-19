@@ -40,6 +40,8 @@ class Settings:
     EMBEDDING_MODEL: str = "all-MiniLM-L6-v2"
 
     # Challenge portals — industry / gov problem statements (ProblemProfile)
+    LICENSE_GATE_ENFORCE: bool = os.getenv("LICENSE_GATE_ENFORCE", "false").lower() in ("1", "true", "yes")
+
     ENABLE_CHALLENGE_PORTALS: bool = os.getenv("ENABLE_CHALLENGE_PORTALS", "true").lower() in ("1", "true", "yes")
     CHALLENGE_PORTAL_CAP: int = int(os.getenv("CHALLENGE_PORTAL_CAP", "20"))
     PROBLEM_EXTRACTION_CAP: int = int(os.getenv("PROBLEM_EXTRACTION_CAP", "8"))

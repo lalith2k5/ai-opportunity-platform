@@ -130,3 +130,13 @@ class DataCollectionAgent:
             f"{len(results['patents'])} patents"
         )
         return results
+
+
+# ============================================================
+# Spec 6.7 / FR-27: license gate wrapper.
+# When LICENSE_GATE_ENFORCE=true, collect_all raises RuntimeError if any
+# LicenseRecord is not APPROVED or is expired. When false (default),
+# zero behaviour change -- wrapper is a no-op.
+# ============================================================
+from app.services.license_service import enforce_license_gate as _enforce_license_gate
+DataCollectionAgent.collect_all = _enforce_license_gate(DataCollectionAgent.collect_all)
