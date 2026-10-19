@@ -26,6 +26,7 @@ import ResearchDetail from './pages/ResearchDetail';
 import RD from './pages/RD';
 import RDProblemDetail from './pages/RDProblemDetail';
 import { useAuth } from './context/AuthContext';
+import Review from './pages/Review';
 
 const wrap = (el: React.ReactNode) => (
   <ProtectedRoute><Layout>{el}</Layout></ProtectedRoute>
@@ -63,6 +64,7 @@ export default function App() {
       <Route path="/opportunities" element={wrap(<Opportunities />)} />
       <Route path="/recommendations" element={wrap(<Recommendations />)} />
       <Route path="/knowledge-graph" element={wrap(<KnowledgeGraph />)} />
+      <Route path="/review" element={wrap(<Review />)} />
 
       <Route path="/ideas" element={wrap(<Ideas />)} />
       <Route path="/ideas/:id" element={wrap(<IdeaDetail />)} />

@@ -103,6 +103,26 @@ function SidebarContent({
           </div>
         ))}
 
+        {(user?.role === 'admin' || user?.role === 'reviewer') && (
+          <div className="mb-4">
+            <p className="px-2 mb-1.5 text-2xs font-semibold text-ink-4 uppercase tracking-wider">Review</p>
+            <Link
+              to="/review"
+              className={`relative flex items-center gap-2.5 px-2 py-2 rounded-md text-sm transition-colors ${
+                location.pathname === '/review'
+                  ? 'bg-accent/10 text-ink font-medium'
+                  : 'text-ink-2 hover:bg-overlay hover:text-ink'
+              }`}
+            >
+              {location.pathname === '/review' && (
+                <span className="absolute left-0 top-1.5 bottom-1.5 w-[2px] rounded-full bg-accent" />
+              )}
+              <Shield size={15} className={location.pathname === '/review' ? 'text-accent' : ''} />
+              <span>Expert Review</span>
+            </Link>
+          </div>
+        )}
+
         {user?.role === 'admin' && (
           <div className="mb-4">
             <p className="px-2 mb-1.5 text-2xs font-semibold text-ink-4 uppercase tracking-wider">Admin</p>

@@ -698,3 +698,23 @@ export const getProblemProfiles = (params?: {
 
 export const getRDProblemDetail = (profileId: number) =>
   api.get<RDProblemDetail>(`/rd/problems/${profileId}`).then(r => r.data);
+
+
+export interface ReviewQueueItem {
+  id: number;
+  title: string;
+  description: string;
+  gap_score: number;
+  gap_confidence: number;
+  kind: 'CAPABILITY' | 'COVERAGE' | string;
+  gap_status: string;
+  supporting_limitations: string[];
+  problem_cluster_id: number | null;
+  created_at: string | null;
+}
+
+export const getReviewQueue = (limit: number = 100) =>
+  api.get<{ count: number; items: ReviewQueueItem[] }>('/admin/review/queue', { params: { limit } }).then(r => r.data);
+
+export const decideGap = (gapId: number, decision: 'VALIDATED' | 'REVISED' | 'REJECTED', rationale: string) =>
+  api.post(`/admin/review/gaps/${gapId}/decide`, { decision, rationale }).then(r => r.data);

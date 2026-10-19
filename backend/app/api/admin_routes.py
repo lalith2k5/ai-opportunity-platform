@@ -167,3 +167,89 @@ def admin_run_pipeline(
     result = orch.run_full_pipeline(query, user_id=user.id)
     return {"query": query, "documents_count": result["documents_count"],
             "opportunities": len(result["opportunities"])}
+
+
+# ============================================================
+# Module 18 -- Expert Review Queue (spec 25, FR-22)
+# ============================================================
+from pydantic import BaseModel as _PydBaseModel
+
+
+class _ReviewDecision(_PydBaseModel):
+    decision: str
+    rationale: str = ""
+
+
+@router.get("/review/queue")
+def review_queue(
+    limit: int = 100,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(require_role("admin", "reviewer")),
+):
+    rows = (
+        db.query(models.ResearchGap)
+        .filter(models.ResearchGap.gap_status.in_(["PROPOSED", "UNDER_REVIEW"]))
+        .order_by(models.ResearchGap.gap_score.desc())
+        .limit(limit)
+        .all()
+    )
+    return {
+        "count": len(rows),
+        "items": [
+            {
+                "id": r.id,
+                "title": r.title,
+                "description": r.description,
+                "gap_score": r.gap_score,
+                "gap_confidence": r.gap_confidence or 0,
+                "kind": r.kind or "COVERAGE",
+                "gap_status": r.gap_status or "PROPOSED",
+                "supporting_limitations": r.supporting_limitations or [],
+                "problem_cluster_id": r.problem_cluster_id,
+                "created_at": r.created_at.isoformat() if r.created_at else None,
+            }
+            for r in rows
+        ],
+    }
+
+
+@router.post("/review/gaps/{gap_id}/decide")
+def decide_gap(
+    gap_id: int,
+    payload: _ReviewDecision,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(require_role("admin", "reviewer")),
+):
+    valid_decisions = {"VALIDATED", "REVISED", "REJECTED"}
+    d = (payload.decision or "").strip().upper()
+    if d not in valid_decisions:
+        raise HTTPException(400, "decision must be one of " + str(sorted(valid_decisions)))
+
+    gap = db.query(models.ResearchGap).filter(models.ResearchGap.id == gap_id).first()
+    if not gap:
+        raise HTTPException(404, "Research gap not found")
+
+    prev = gap.gap_status or "PROPOSED"
+    gap.gap_status = d
+
+    db.add(models.Feedback(
+        target_type="GAP",
+        target_id=str(gap_id),
+        user_id=user.id,
+        decision=d,
+        rationale=(payload.rationale or "")[:2000],
+    ))
+    db.add(models.ChangeEvent(
+        entity_type="GAP",
+        entity_id=str(gap_id),
+        change_type="status_changed",
+        significance="MAJOR",
+    ))
+
+    db.commit()
+    return {
+        "id": gap.id,
+        "previous_status": prev,
+        "new_status": gap.gap_status,
+        "decided_by": user.email,
+    }
