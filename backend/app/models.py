@@ -458,3 +458,64 @@ class TrendConfig(Base):
     default_window = Column(Integer, default=90)
     is_active = Column(Boolean, default=True)
     published_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class ConflictFlag(Base):
+    __tablename__ = "conflict_flags"
+    id = Column(Integer, primary_key=True)
+    target_type = Column(String(32), nullable=False)
+    target_id = Column(String(64), nullable=False)
+    severity = Column(String(16), nullable=False, default="MINOR")
+    rule_applied = Column(String(16), nullable=False, default="UNRESOLVED")
+    evidence_ids = Column(JSON, default=list)
+    raised_at = Column(DateTime(timezone=True), server_default=func.now())
+    resolved_at = Column(DateTime(timezone=True), nullable=True)
+    resolution = Column(Text, nullable=True)
+
+
+class Feedback(Base):
+    __tablename__ = "feedback"
+    id = Column(Integer, primary_key=True)
+    target_type = Column(String(32), nullable=False)
+    target_id = Column(String(64), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    rating = Column(Integer, nullable=True)
+    comment = Column(Text, nullable=True)
+    decision = Column(String(32), nullable=True)
+    rationale = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class LicenseRecord(Base):
+    __tablename__ = "license_records"
+    id = Column(Integer, primary_key=True)
+    source_name = Column(String(64), unique=True, nullable=False)
+    status = Column(String(16), nullable=False, default="PENDING")
+    terms_url = Column(String(500), nullable=True)
+    robots_policy = Column(String(64), nullable=True)
+    redistribution = Column(String(64), nullable=True)
+    pii_rules = Column(Text, nullable=True)
+    retention_days = Column(Integer, nullable=True)
+    legal_basis = Column(String(200), nullable=True)
+    next_review_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class ChangeEvent(Base):
+    __tablename__ = "change_events"
+    id = Column(Integer, primary_key=True)
+    entity_type = Column(String(32), nullable=False)
+    entity_id = Column(String(64), nullable=False)
+    change_type = Column(String(64), nullable=False)
+    detected_at = Column(DateTime(timezone=True), server_default=func.now())
+    significance = Column(String(16), nullable=False, default="MINOR")
+
+
+class Limitation(Base):
+    __tablename__ = "limitations"
+    id = Column(Integer, primary_key=True)
+    paper_id = Column(Integer, ForeignKey("problem_papers.id"), nullable=False, index=True)
+    description = Column(Text, nullable=False)
+    category = Column(String(64), nullable=True)
+    limitation_source = Column(String(16), nullable=False, default="EXPLICIT")
+    created_at = Column(DateTime(timezone=True), server_default=func.now())

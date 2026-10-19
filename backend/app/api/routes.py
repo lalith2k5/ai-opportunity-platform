@@ -173,7 +173,20 @@ def get_problems(db: Session = Depends(get_db), _=Depends(get_current_user)):
 
 @router.get("/research-gaps")
 def get_research_gaps(db: Session = Depends(get_db), _=Depends(get_current_user)):
-    return db.query(models.ResearchGap).order_by(models.ResearchGap.gap_score.desc()).limit(50).all()
+    rows = db.query(models.ResearchGap).order_by(models.ResearchGap.gap_score.desc()).limit(50).all()
+    return [
+        {
+            "id": r.id,
+            "title": r.title,
+            "description": r.description,
+            "gap_score": r.gap_score,
+            "gap_confidence": r.gap_confidence or 0,
+            "kind": r.kind or "COVERAGE",
+            "gap_status": r.gap_status or "PROPOSED",
+            "supporting_limitations": r.supporting_limitations or [],
+        }
+        for r in rows
+    ]
 
 def _compute_growth(db, trend_name: str) -> dict:
     """7-day avg vs prior-7-day avg of the mention_count. Returns growth metrics."""
@@ -641,6 +654,10 @@ def get_opportunity(opp_id: int, db: Session = Depends(get_db)):
             "title": gap.title,
             "description": gap.description,
             "gap_score": gap.gap_score,
+            "gap_confidence": gap.gap_confidence or 0,
+            "kind": gap.kind or "COVERAGE",
+            "gap_status": gap.gap_status or "PROPOSED",
+            "supporting_limitations": gap.supporting_limitations or [],
             "evidence": gap.evidence,
         } if gap else None,
         "sources": related_sources,

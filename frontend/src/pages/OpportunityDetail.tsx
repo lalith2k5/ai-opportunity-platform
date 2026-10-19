@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { getOpportunityDetail, getOpportunityRecommendations } from '../services/api';
 import DetailActions from '../components/DetailActions';
+import GapStatusBadge from '../components/GapStatusBadge';
 import SectionCard from '../components/ui/SectionCard';
 
 const ACCENT_MAP: Record<string, 'accent' | 'purple' | 'sky' | 'success' | 'warning' | 'orange' | 'muted'> = {
@@ -507,6 +508,16 @@ export default function OpportunityDetail() {
           <div className="flex items-center gap-2 mb-4">
             <FileText size={14} className="text-success" />
             <h2 className="text-xs font-medium text-ink uppercase tracking-wider">Potential research gap</h2>
+          </div>
+          <div className="mb-4 flex items-center gap-2 flex-wrap">
+            <GapStatusBadge kind={gap.kind} status={gap.gap_status} />
+          </div>
+          <div className="mb-4 px-3 py-2 bg-warning/5 border border-warning/20 rounded-md flex items-start gap-2">
+            <span className="text-warning flex-shrink-0 mt-0.5">⚠</span>
+            <p className="text-2xs text-ink-2 leading-relaxed">
+              This is a <span className="font-semibold">potential</span> research gap requiring expert validation
+              before it is treated as authoritative. Current status: <span className="font-mono">{gap.gap_status || 'PROPOSED'}</span>.
+            </p>
           </div>
           <p className="text-sm text-ink-2 leading-relaxed mb-4">{gap.description}</p>
 

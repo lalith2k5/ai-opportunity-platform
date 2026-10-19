@@ -4,6 +4,7 @@ import {
   downloadOpportunitiesJSON, downloadGapsJSON, downloadFullJSON,
   type Opportunity, type ResearchGap, type Trend,
 } from '../services/api';
+import GapStatusBadge from '../components/GapStatusBadge';
 import { Download, FileText, Loader2, FileDown, TrendingUp, Braces, ChevronDown } from 'lucide-react';
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,
@@ -231,7 +232,8 @@ export default function Reports() {
                     <p className="text-xs text-ink-2 leading-snug flex-1">{g.title}</p>
                     <span className="text-xs font-mono tabular-nums text-success flex-shrink-0">{g.gap_score.toFixed(2)}</span>
                   </div>
-                  <p className="text-2xs text-ink-4 leading-relaxed line-clamp-2">{g.description}</p>
+                  <p className="text-2xs text-ink-4 leading-relaxed line-clamp-2 mb-1.5">{g.description}</p>
+                  <GapStatusBadge kind={g.kind} status={g.gap_status} />
                 </div>
               ))
             )}

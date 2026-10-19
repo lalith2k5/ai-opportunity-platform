@@ -122,6 +122,10 @@ export interface ResearchGap {
   title: string;
   description: string;
   gap_score: number;
+  gap_confidence?: number;
+  kind?: 'CAPABILITY' | 'COVERAGE';
+  gap_status?: 'PROPOSED' | 'UNDER_REVIEW' | 'VALIDATED' | 'REVISED' | 'REJECTED';
+  supporting_limitations?: string[];
 }
 
 export interface Trend {

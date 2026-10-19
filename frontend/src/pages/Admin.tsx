@@ -15,7 +15,7 @@ import {
 import { useToast } from '../context/ToastContext';
 import { useConfirm } from '../context/ConfirmContext';
 
-const ROLE_OPTIONS = ['student', 'researcher', 'entrepreneur', 'investor', 'admin'];
+const ROLE_OPTIONS = ['student', 'researcher', 'entrepreneur', 'investor', 'reviewer', 'admin'];
 
 type Tab = 'overview' | 'users' | 'logs' | 'scheduler' | 'config' | 'sync';
 

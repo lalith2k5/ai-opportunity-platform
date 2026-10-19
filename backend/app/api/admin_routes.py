@@ -49,7 +49,7 @@ def update_user_role(
     db: Session = Depends(get_db),
     user: models.User = Depends(require_role("admin")),
 ):
-    allowed = {"student", "researcher", "entrepreneur", "investor", "admin"}
+    allowed = {"student", "researcher", "entrepreneur", "investor", "admin", "reviewer"}
     if role not in allowed:
         raise HTTPException(400, f"Role must be one of {allowed}")
     target = db.query(models.User).filter(models.User.id == user_id).first()

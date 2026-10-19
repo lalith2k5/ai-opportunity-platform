@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { getResearchGaps, type ResearchGap } from '../services/api';
+import GapStatusBadge from './GapStatusBadge';
 
 export default function ResearchGapSummary() {
   const [gaps, setGaps] = useState<ResearchGap[]>([]);
@@ -24,6 +25,9 @@ export default function ResearchGapSummary() {
             <span className="text-2xs font-mono tabular-nums text-success flex-shrink-0">
               {g.gap_score.toFixed(2)}
             </span>
+          </div>
+          <div className="mb-1.5">
+            <GapStatusBadge kind={g.kind} status={g.gap_status} compact />
           </div>
           <div className="w-full h-1 bg-overlay rounded-full overflow-hidden">
             <div className="h-full bg-success" style={{ width: `${g.gap_score * 100}%` }} />
