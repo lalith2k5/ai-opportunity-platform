@@ -61,6 +61,11 @@ export interface Opportunity {
   competition_score: number;
   feasibility_score: number;
   market_readiness_score: number;
+  opportunity_score_spec?: number;
+  confidence_spec?: number;
+  weights_version?: string;
+  confidence_version?: string;
+  spec_status?: string;
   explanation?: string;
   // ---- Phase 6.1 enrichment (SRS §34 Opportunity Card) ----
   domain?: string | null;

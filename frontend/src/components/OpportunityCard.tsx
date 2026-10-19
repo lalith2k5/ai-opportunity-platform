@@ -28,7 +28,9 @@ export default function OpportunityCard({
   to?: string;
 }) {
   const href = to ?? `/opportunities/${opp.id}`;
-  const isHigh = opp.opportunity_score > 0.6;
+  const specScore = opp.opportunity_score_spec ?? Math.round(opp.opportunity_score * 100);
+  const specConf = opp.confidence_spec ?? Math.round(opp.confidence_score * 100);
+  const isHigh = specScore > 60;
 
   return (
     <Link
@@ -58,7 +60,7 @@ export default function OpportunityCard({
           <p className={`text-2xl font-bold font-mono tabular-nums leading-none tracking-tight ${
             isHigh ? 'text-success' : 'text-accent'
           }`}>
-            {opp.opportunity_score.toFixed(2)}
+            {(specScore / 100).toFixed(2)}
           </p>
           <p className="text-2xs text-ink-4 mt-1.5 uppercase tracking-[0.08em]">Score</p>
         </div>
@@ -73,7 +75,7 @@ export default function OpportunityCard({
 
       <div className="relative flex items-center justify-between mt-4 pt-3.5 border-t border-edge-subtle">
         <span className="text-2xs text-ink-4 uppercase tracking-[0.08em]">
-          Confidence {opp.confidence_score.toFixed(2)}
+          Confidence {specConf}
         </span>
         <span className="text-2xs text-accent font-medium flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all duration-200 -translate-x-1 group-hover:translate-x-0">
           View <ArrowUpRight size={11} />

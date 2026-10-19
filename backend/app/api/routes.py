@@ -607,6 +607,11 @@ def get_opportunity(opp_id: int, db: Session = Depends(get_db)):
             "technology_suitability_score": opp.technology_suitability_score or 0.0,
             "evidence_strength_score": opp.evidence_strength_score or 0.0,
             "recency_score": opp.recency_score or 0.0,
+            "opportunity_score_spec": opp.opportunity_score_spec or 0.0,
+            "confidence_spec": opp.confidence_spec or 0,
+            "weights_version": opp.weights_version or "v1.0.0",
+            "confidence_version": opp.confidence_version or "v1.0.0",
+            "spec_status": opp.status or "PROPOSED",
             "explanation": opp.explanation,
             # ---- Phase 6.1 enrichment (SRS §34) ----
             "domain": opp.domain,

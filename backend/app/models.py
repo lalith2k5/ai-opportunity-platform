@@ -73,6 +73,12 @@ class ResearchGap(Base):
     problem_cluster_id = Column(Integer, ForeignKey("problem_clusters.id"))
     gap_score = Column(Float, default=0.0)
     evidence = Column(JSON)
+
+    kind = Column(String(16), default="COVERAGE")
+    gap_status = Column(String(32), default="PROPOSED")
+    gap_confidence = Column(Integer, default=0)
+    supporting_limitations = Column(JSON, default=list)
+
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 class Trend(Base):
@@ -120,6 +126,13 @@ class Opportunity(Base):
     technology_suitability_score = Column(Float, default=0.0)
     evidence_strength_score = Column(Float, default=0.0)
     recency_score = Column(Float, default=0.0)
+
+    opportunity_score_spec = Column(Float, default=0.0)
+    confidence_spec = Column(Integer, default=0)
+    weights_version = Column(String(32), default="v1.0.0")
+    confidence_version = Column(String(32), default="v1.0.0")
+    trend_window = Column(Integer, default=90)
+    status = Column(String(32), default="PROPOSED")
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
@@ -396,4 +409,52 @@ class OpportunityEvidence(Base):
     url = Column(String(500))
     relevance_score = Column(Float, default=0.0)
     snippet = Column(Text)
+
+    polarity = Column(String(16), default="SUPPORTS")
+
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class WeightConfig(Base):
+    __tablename__ = "weight_configs"
+    id = Column(Integer, primary_key=True)
+    version = Column(String(32), unique=True, nullable=False)
+    w_problem = Column(Float, default=0.20)
+    w_tech = Column(Float, default=0.15)
+    w_gap = Column(Float, default=0.20)
+    w_trend = Column(Float, default=0.15)
+    w_evidence = Column(Float, default=0.15)
+    w_feasibility = Column(Float, default=0.10)
+    w_recency = Column(Float, default=0.05)
+    is_active = Column(Boolean, default=True)
+    published_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class ConfidenceConfig(Base):
+    __tablename__ = "confidence_configs"
+    id = Column(Integer, primary_key=True)
+    version = Column(String(32), unique=True, nullable=False)
+    beta1 = Column(Float, default=0.30)
+    beta2 = Column(Float, default=0.25)
+    beta3 = Column(Float, default=0.25)
+    beta4 = Column(Float, default=0.20)
+    n_max = Column(Integer, default=5)
+    d_max = Column(Integer, default=6)
+    conflict_penalty = Column(Float, default=0.50)
+    is_active = Column(Boolean, default=True)
+    published_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class TrendConfig(Base):
+    __tablename__ = "trend_configs"
+    id = Column(Integer, primary_key=True)
+    version = Column(String(32), unique=True, nullable=False)
+    window_short = Column(Integer, default=30)
+    window_mid = Column(Integer, default=90)
+    window_long = Column(Integer, default=365)
+    emerging_threshold = Column(Float, default=0.5)
+    growing_threshold = Column(Float, default=0.2)
+    declining_threshold = Column(Float, default=-0.2)
+    default_window = Column(Integer, default=90)
+    is_active = Column(Boolean, default=True)
+    published_at = Column(DateTime(timezone=True), server_default=func.now())

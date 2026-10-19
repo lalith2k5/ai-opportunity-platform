@@ -108,7 +108,9 @@ export default function OpportunityDetail() {
   const organization = data.opportunity?.organization;
   const problemProfile = data.problem_profile;
   const linkedPapers = data.linked_papers || [];
-  const isHigh = opp.opportunity_score > 0.6;
+  const specScore = opp.opportunity_score_spec ?? Math.round(opp.opportunity_score * 100);
+  const specConf = opp.confidence_spec ?? Math.round(opp.confidence_score * 100);
+  const isHigh = specScore > 60;
 
   const techs: string[] = Array.isArray(opp.related_technologies) ? opp.related_technologies : [];
   const papers: string[] = Array.isArray(opp.existing_research) ? opp.existing_research : [];
@@ -193,13 +195,13 @@ export default function OpportunityDetail() {
           <div className="text-right flex-shrink-0">
             <div className="flex items-baseline gap-1 justify-end">
               <span className={`text-5xl font-bold font-mono tabular-nums leading-none tracking-tight ${isHigh ? 'text-success' : 'text-accent'}`}>
-                {opp.opportunity_score.toFixed(2)}
+                {specScore}
               </span>
-              <span className="text-sm text-ink-4 font-mono">/1.00</span>
+              <span className="text-sm text-ink-4 font-mono">/100</span>
             </div>
             <p className="text-2xs text-ink-4 uppercase tracking-wider mt-2">Opportunity score</p>
             <p className="text-xs text-ink-3 mt-1 font-mono tabular-nums">
-              Confidence {opp.confidence_score.toFixed(2)}
+              Confidence {specConf} / 100
             </p>
           </div>
         </div>

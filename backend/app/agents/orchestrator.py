@@ -507,6 +507,69 @@ class OrchestratorAgent:
                 except Exception as _e:
                     logger.warning(f"[Enrichment] new-score calc failed: {_e}")
 
+                try:
+                    from app.scoring.configs import (
+                        load_active_weight_config,
+                        load_active_confidence_config,
+                    )
+                    from app.scoring.scoring_agent import (
+                        compute_score as _compute_score_spec,
+                        compute_confidence as _compute_conf_spec,
+                        factor_recency as _factor_recency_spec,
+                    )
+                    from datetime import datetime as _dt_spec, timezone as _tz_spec
+                    _w_cfg = load_active_weight_config()
+                    _c_cfg = load_active_confidence_config()
+                    _s_problem = float(opp.demand_score or 0.0) * 100
+                    _s_tech = float(opp.technology_suitability_score or 0.0) * 100
+                    _s_gap = float(opp.research_gap_score or 0.0) * 100
+                    _s_trend = float(opp.trend_score or 0.0) * 100
+                    _s_evidence = float(opp.evidence_strength_score or 0.0) * 100
+                    _s_feasibility = float(opp.feasibility_score or 0.0) * 100
+                    _now_spec = _dt_spec.now(_tz_spec.utc)
+                    if evs:
+                        _ages = []
+                        for _ev in evs:
+                            _ts = _ev.created_at
+                            if _ts is None:
+                                continue
+                            if _ts.tzinfo is None:
+                                _ts = _ts.replace(tzinfo=_tz_spec.utc)
+                            _ages.append(max(0, int((_now_spec - _ts).total_seconds() // 86400)))
+                        _mean_age = (sum(_ages) / len(_ages)) if _ages else 30.0
+                    elif opp.created_at is not None:
+                        _ts = opp.created_at
+                        if _ts.tzinfo is None:
+                            _ts = _ts.replace(tzinfo=_tz_spec.utc)
+                        _mean_age = max(0.0, (_now_spec - _ts).total_seconds() / 86400.0)
+                    else:
+                        _mean_age = 30.0
+                    _s_recency = _factor_recency_spec(_mean_age)
+                    try:
+                        _spec_score = _compute_score_spec(
+                            _s_problem, _s_tech, _s_gap, _s_trend,
+                            _s_evidence, _s_feasibility, _s_recency, _w_cfg,
+                        )
+                    except ValueError as _ve:
+                        logger.warning(f"[Enrichment] spec score failed opp={opp.id}: {_ve}")
+                        _spec_score = 0
+                    opp.opportunity_score_spec = float(_spec_score)
+                    opp.weights_version = _w_cfg.version
+                    opp.trend_window = 90
+                    _ev_items = [
+                        {
+                            "polarity": getattr(_ev, "polarity", "SUPPORTS") or "SUPPORTS",
+                            "source_type": _ev.source or "unknown",
+                            "credibility_weight": float(_ev.relevance_score or 0.5),
+                            "doc_id": str(_ev.id),
+                        }
+                        for _ev in evs
+                    ]
+                    opp.confidence_spec = int(_compute_conf_spec(_ev_items, 0.0, _c_cfg))
+                    opp.confidence_version = _c_cfg.version
+                except Exception as _e:
+                    logger.warning(f"[Enrichment] spec scoring block failed: {_e}")
+
                 snapshots.append({
                     "opportunity_row": opp,
                     "title": opp.title,
