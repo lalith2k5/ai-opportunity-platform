@@ -96,6 +96,48 @@ class FreeLMProvider(BaseProvider):
         return response.choices[0].message.content
 
 
+class GroqProvider(BaseProvider):
+    """Groq API -- ultra-fast inference, OpenAI-compatible."""
+    name = "groq"
+
+    def __init__(self):
+        self.client = None
+        try:
+            from openai import OpenAI
+            if getattr(settings, "GROQ_API_KEY", ""):
+                self.client = OpenAI(
+                    base_url="https://api.groq.com/openai/v1",
+                    api_key=settings.GROQ_API_KEY,
+                )
+        except Exception as e:
+            logger.warning(f"Groq init failed: {e}")
+            self.client = None
+
+    def is_configured(self) -> bool:
+        return self.client is not None
+
+    def generate(self, prompt: str, context: str = "") -> str:
+        messages = []
+        if context:
+            messages.append({
+                "role": "system",
+                "content": (
+                    "You are an innovation intelligence analyst with access to live platform data. "
+                    "If the context has a STRUCTURED DATA section, use those exact numbers/titles. "
+                    "If it has DOCUMENT EXCERPTS, cite them. If neither answers the question, say so."
+                ),
+            })
+            messages.append({"role": "user", "content": f"Context:\n{context}\n\nQuestion: {prompt}"})
+        else:
+            messages.append({"role": "user", "content": prompt})
+
+        response = self.client.chat.completions.create(
+            model=getattr(settings, "GROQ_MODEL", "openai/gpt-oss-20b"),
+            messages=messages,
+        )
+        return response.choices[0].message.content
+
+
 class GeminiProvider(BaseProvider):
     name = "gemini"
 
@@ -290,7 +332,7 @@ class LLMService:
     across requests. Every caller gets the same object.
     """
 
-    PROVIDER_ORDER = ["freelm", "gemini", "openrouter", "openai", "anthropic"]
+    PROVIDER_ORDER = ["groq", "freelm", "gemini", "openrouter", "openai", "anthropic"]
     _instance = None
 
     def __new__(cls):
@@ -303,6 +345,7 @@ class LLMService:
         if getattr(self, "_initialized", False):
             return
         self.providers = {
+            "groq":       GroqProvider(),
             "freelm":     FreeLMProvider(),
             "gemini":     GeminiProvider(),
             "openrouter": OpenRouterProvider(),
