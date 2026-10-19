@@ -8,6 +8,7 @@ Providers (in priority order when set as primary):
 Any provider that raises is skipped, and the next configured one is used.
 """
 from app.config import settings
+from app.services.api_keys import get_key
 from app.logger import logger
 
 
@@ -104,10 +105,10 @@ class GroqProvider(BaseProvider):
         self.client = None
         try:
             from openai import OpenAI
-            if getattr(settings, "GROQ_API_KEY", ""):
+            if get_key("GROQ_API_KEY"):
                 self.client = OpenAI(
                     base_url="https://api.groq.com/openai/v1",
-                    api_key=settings.GROQ_API_KEY,
+                    api_key=get_key("GROQ_API_KEY"),
                 )
         except Exception as e:
             logger.warning(f"Groq init failed: {e}")
@@ -143,12 +144,12 @@ class GeminiProvider(BaseProvider):
 
     def __init__(self):
         self.client = None
-        if settings.GEMINI_API_KEY:
+        if get_key("GEMINI_API_KEY"):
             try:
                 from google import genai
                 from google.genai import types as _genai_types
                 self.client = genai.Client(
-                    api_key=settings.GEMINI_API_KEY,
+                    api_key=get_key("GEMINI_API_KEY"),
                     http_options=_genai_types.HttpOptions(timeout=90_000),
                 )
             except Exception as e:
@@ -197,10 +198,10 @@ class OpenAIProvider(BaseProvider):
 
     def __init__(self):
         self.client = None
-        if settings.OPENAI_API_KEY:
+        if get_key("OPENAI_API_KEY"):
             try:
                 from openai import OpenAI
-                self.client = OpenAI(api_key=settings.OPENAI_API_KEY)
+                self.client = OpenAI(api_key=get_key("OPENAI_API_KEY"))
             except ImportError:
                 logger.warning("openai package not installed — skipping OpenAI provider")
                 self.client = None
@@ -244,11 +245,11 @@ class OpenRouterProvider(BaseProvider):
 
     def __init__(self):
         self.client = None
-        if settings.OPENROUTER_API_KEY:
+        if get_key("OPENROUTER_API_KEY"):
             try:
                 from openai import OpenAI
                 self.client = OpenAI(
-                    api_key=settings.OPENROUTER_API_KEY,
+                    api_key=get_key("OPENROUTER_API_KEY"),
                     base_url="https://openrouter.ai/api/v1",
                     default_headers={
                         "HTTP-Referer": "http://localhost",
@@ -292,10 +293,10 @@ class AnthropicProvider(BaseProvider):
 
     def __init__(self):
         self.client = None
-        if settings.ANTHROPIC_API_KEY:
+        if get_key("ANTHROPIC_API_KEY"):
             try:
                 from anthropic import Anthropic
-                self.client = Anthropic(api_key=settings.ANTHROPIC_API_KEY)
+                self.client = Anthropic(api_key=get_key("ANTHROPIC_API_KEY"))
             except ImportError:
                 logger.warning("anthropic package not installed — skipping Anthropic provider")
                 self.client = None
@@ -340,6 +341,11 @@ class LLMService:
             cls._instance = super().__new__(cls)
             cls._instance._initialized = False
         return cls._instance
+
+    @classmethod
+    def reset(cls):
+        """Clear the singleton so providers re-instantiate with fresh keys."""
+        cls._instance = None
 
     def __init__(self):
         if getattr(self, "_initialized", False):

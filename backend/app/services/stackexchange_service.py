@@ -3,6 +3,7 @@ import requests
 import time
 from datetime import datetime, timezone
 from app.config import settings
+from app.services.api_keys import get_key
 from app.logger import logger
 
 BASE = "https://api.stackexchange.com/2.3"
@@ -12,7 +13,7 @@ class StackExchangeService:
     def __init__(self, site="stackoverflow", timeout=DEFAULT_TIMEOUT):
         self.site = site
         self.timeout = timeout
-        self.api_key = getattr(settings, "STACKEXCHANGE_API_KEY", "")
+        self.api_key = get_key("STACKEXCHANGE_API_KEY")
         self._backoff_until = 0.0
 
     def _get(self, path, params):

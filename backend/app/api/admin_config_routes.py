@@ -2,7 +2,7 @@ import re
 from pathlib import Path
 from typing import Optional, Dict
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from sqlalchemy import func
@@ -12,6 +12,8 @@ from app import models
 from app.auth.dependencies import require_role
 from app.config import settings
 from app.logger import logger
+from app.auth.dependencies import get_current_user
+from app.models import User
 
 router = APIRouter(prefix="/admin", tags=["admin-config"])
 
@@ -347,3 +349,84 @@ def llm_status(
     from app.services.llm_service import LLMService
     svc = LLMService()
     return svc.status()
+
+
+# ---- API key management endpoints (admin only) ----
+def _require_admin(user: User = Depends(get_current_user)):
+    if not user or getattr(user, "role", None) != "admin":
+        raise HTTPException(status_code=403, detail="Admin only")
+    return user
+
+
+@router.get("/keys")
+def list_api_keys(_user: User = Depends(_require_admin)):
+    return {"slots": list_all_slots()}
+
+
+@router.post("/keys/{name}")
+async def set_api_key_endpoint(name: str, request: Request, user: User = Depends(_require_admin)):
+    body = await request.json()
+    value = (body.get("value") or "").strip()
+    if not value:
+        raise HTTPException(status_code=400, detail="Empty value")
+    set_key(name, value, user_id=getattr(user, "id", None))
+    try:
+        from app.services.llm_service import LLMService
+        LLMService.reset()
+    except Exception:
+        pass
+    return {"ok": True, "name": name, "configured": True}
+
+
+@router.delete("/keys/{name}")
+def delete_api_key_endpoint(name: str, user: User = Depends(_require_admin)):
+    delete_key(name)
+    try:
+        from app.services.llm_service import LLMService
+        LLMService.reset()
+    except Exception:
+        pass
+    return {"ok": True, "name": name, "deleted": True}
+
+
+@router.post("/keys/{name}/test")
+def test_api_key_endpoint(name: str, _user: User = Depends(_require_admin)):
+    import requests as _req
+    val = get_key(name)
+    if not val:
+        return {"ok": False, "error": "not configured"}
+    try:
+        if name == "GROQ_API_KEY":
+            r = _req.post("https://api.groq.com/openai/v1/chat/completions",
+                          headers={"Authorization": f"Bearer {val}", "Content-Type": "application/json"},
+                          json={"model": "openai/gpt-oss-20b",
+                                "messages": [{"role": "user", "content": "OK"}], "max_tokens": 5},
+                          timeout=10)
+            return {"ok": r.status_code == 200, "status": r.status_code, "message": r.text[:200]}
+        if name == "GEMINI_API_KEY":
+            r = _req.get(f"https://generativelanguage.googleapis.com/v1/models?key={val}", timeout=10)
+            return {"ok": r.status_code == 200, "status": r.status_code}
+        if name == "OPENAI_API_KEY":
+            r = _req.get("https://api.openai.com/v1/models",
+                         headers={"Authorization": f"Bearer {val}"}, timeout=10)
+            return {"ok": r.status_code == 200, "status": r.status_code}
+        if name == "ANTHROPIC_API_KEY":
+            r = _req.post("https://api.anthropic.com/v1/messages",
+                          headers={"x-api-key": val, "anthropic-version": "2023-06-01", "Content-Type": "application/json"},
+                          json={"model": "claude-3-5-haiku-20241022", "max_tokens": 5,
+                                "messages": [{"role": "user", "content": "OK"}]}, timeout=10)
+            return {"ok": r.status_code == 200, "status": r.status_code}
+        if name == "GITHUB_TOKEN":
+            r = _req.get("https://api.github.com/user",
+                         headers={"Authorization": f"token {val}"}, timeout=10)
+            return {"ok": r.status_code == 200, "status": r.status_code}
+        if name == "STACKEXCHANGE_API_KEY":
+            r = _req.get("https://api.stackexchange.com/2.3/info", params={"key": val, "site": "stackoverflow"}, timeout=10)
+            return {"ok": r.status_code == 200, "status": r.status_code}
+        if name == "OPENALEX_API_KEY":
+            r = _req.get("https://api.openalex.org/works", params={"api_key": val, "per-page": 1}, timeout=10)
+            return {"ok": r.status_code == 200, "status": r.status_code}
+        return {"ok": True, "message": "stored (no automated test for this key type)"}
+    except Exception as e:
+        return {"ok": False, "error": str(e)[:200]}
+

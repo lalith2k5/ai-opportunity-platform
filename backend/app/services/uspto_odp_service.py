@@ -2,6 +2,7 @@
 import requests
 from datetime import datetime, timezone
 from app.config import settings
+from app.services.api_keys import get_key
 from app.logger import logger
 
 BASE = "https://api.uspto.gov/api/v1"
@@ -10,7 +11,7 @@ DEFAULT_TIMEOUT = 25
 class UsptoOdpService:
     def __init__(self, timeout=DEFAULT_TIMEOUT):
         self.timeout = timeout
-        self.api_key = getattr(settings, "USPTO_ODP_API_KEY", "")
+        self.api_key = get_key("USPTO_ODP_API_KEY")
 
     def is_configured(self):
         return bool(self.api_key)

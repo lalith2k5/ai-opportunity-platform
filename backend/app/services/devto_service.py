@@ -2,6 +2,7 @@
 import requests
 from datetime import datetime, timezone
 from app.config import settings
+from app.services.api_keys import get_key
 from app.logger import logger
 
 BASE = "https://dev.to/api"
@@ -10,7 +11,7 @@ DEFAULT_TIMEOUT = 20
 class DevToService:
     def __init__(self, timeout=DEFAULT_TIMEOUT):
         self.timeout = timeout
-        self.api_key = getattr(settings, "DEVTO_API_KEY", "")
+        self.api_key = get_key("DEVTO_API_KEY")
 
     def _headers(self):
         h = {"User-Agent": "AI-Opportunity-Platform/1.0"}

@@ -1,5 +1,6 @@
 import requests
 from app.config import settings
+from app.services.api_keys import get_key
 from app.logger import logger
 from app.services.retry_helper import api_retry
 
@@ -10,8 +11,8 @@ class GitHubService:
 
     def __init__(self):
         self.headers = {"Accept": "application/vnd.github.v3+json"}
-        if settings.GITHUB_TOKEN:
-            self.headers["Authorization"] = f"token {settings.GITHUB_TOKEN}"
+        if get_key("GITHUB_TOKEN"):
+            self.headers["Authorization"] = f"token {get_key("GITHUB_TOKEN")}"
 
     @api_retry(max_attempts=3)
     def _get(self, url, params):

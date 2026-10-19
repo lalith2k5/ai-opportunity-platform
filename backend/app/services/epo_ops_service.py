@@ -3,6 +3,7 @@ import requests
 import time
 from datetime import datetime, timezone
 from app.config import settings
+from app.services.api_keys import get_key
 from app.logger import logger
 
 AUTH_URL = "https://ops.epo.org/3.2/auth/accesstoken"
@@ -12,8 +13,8 @@ DEFAULT_TIMEOUT = 30
 class EpoOpsService:
     def __init__(self, timeout=DEFAULT_TIMEOUT):
         self.timeout = timeout
-        self.consumer_key = getattr(settings, "EPO_OPS_CONSUMER_KEY", "")
-        self.consumer_secret = getattr(settings, "EPO_OPS_CONSUMER_SECRET", "")
+        self.consumer_key = get_key("EPO_OPS_CONSUMER_KEY")
+        self.consumer_secret = get_key("EPO_OPS_CONSUMER_SECRET")
         self._token = None
         self._token_expiry = 0.0
 
