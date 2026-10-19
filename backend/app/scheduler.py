@@ -156,6 +156,61 @@ def _cleanup_old_logs():
         db.close()
 
 
+def _sync_spec_hooks():
+    """Periodic spec hooks: conflict sweep (28.3) + score-delta ChangeEvents (35.2)."""
+    try:
+        from app.services.conflict_detector import sweep_all_opportunities
+        stats = sweep_all_opportunities(limit=200)
+        logger.info(f"[SyncHooks] Conflict sweep: {stats}")
+    except Exception as e:
+        logger.warning(f"[SyncHooks] Conflict sweep failed: {e}")
+
+    from app.database import SessionLocal as _SL
+    from app import models as _M
+    db = _SL()
+    try:
+        opps = db.query(_M.Opportunity.id).limit(200).all()
+        new_events = 0
+        for (oid,) in opps:
+            snaps = (
+                db.query(_M.OpportunityScoreHistory)
+                .filter(_M.OpportunityScoreHistory.opportunity_id == oid)
+                .order_by(_M.OpportunityScoreHistory.recorded_at.desc())
+                .limit(2)
+                .all()
+            )
+            if len(snaps) < 2:
+                continue
+            delta = abs((snaps[0].opportunity_score or 0.0) - (snaps[1].opportunity_score or 0.0))
+            if delta < 5.0:
+                continue
+            existing = (
+                db.query(_M.ChangeEvent)
+                .filter(_M.ChangeEvent.entity_type == "OPPORTUNITY")
+                .filter(_M.ChangeEvent.entity_id == str(oid))
+                .filter(_M.ChangeEvent.change_type == "score_changed")
+                .filter(_M.ChangeEvent.detected_at >= snaps[0].recorded_at)
+                .first()
+            )
+            if existing:
+                continue
+            db.add(_M.ChangeEvent(
+                entity_type="OPPORTUNITY",
+                entity_id=str(oid),
+                change_type="score_changed",
+                significance="MAJOR",
+            ))
+            new_events += 1
+        db.commit()
+        if new_events:
+            logger.info(f"[SyncHooks] Emitted {new_events} score_changed ChangeEvent(s)")
+    except Exception as e:
+        db.rollback()
+        logger.warning(f"[SyncHooks] ChangeEvent scan failed: {e}")
+    finally:
+        db.close()
+
+
 def start_scheduler():
     """Start the background scheduler if not already running."""
     global _scheduler
@@ -176,6 +231,15 @@ def start_scheduler():
     )
 
     # Daily cleanup at 3 AM
+    _scheduler.add_job(
+        _sync_spec_hooks,
+        trigger=IntervalTrigger(minutes=15),
+        id="spec_sync_hooks",
+        name="Spec hooks: conflict sweep + ChangeEvent scan",
+        replace_existing=True,
+        next_run_time=datetime.now() + timedelta(minutes=2),
+    )
+
     _scheduler.add_job(
         _cleanup_old_logs,
         trigger=CronTrigger(hour=3, minute=0),
