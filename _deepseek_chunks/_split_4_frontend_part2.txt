@@ -1,0 +1,2722 @@
+# ============ CHUNK: _split_4_frontend_part2.txt ============
+# Files in this chunk: 12
+
+===== FILE: ./frontend/src/pages/ForgotPassword.tsx =====
+import { useState } from 'react';
+import { Link } from 'react-router-dom';
+import { forgotPassword } from '../services/api';
+import AuthShell from '../components/AuthShell';
+import { Field, Alert } from '../components/Field';
+import { Loader2, ArrowRight } from 'lucide-react';
+
+export default function ForgotPassword() {
+  const [email, setEmail] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [resetLink, setResetLink] = useState('');
+  const [sent, setSent] = useState(false);
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true); setError(''); setResetLink(''); setSent(false);
+    try {
+      const res = await forgotPassword(email);
+      if (res.reset_url) setResetLink(res.reset_url);
+      else setSent(true);
+    } catch (e: any) {
+      setError(e?.response?.data?.detail || e.message);
+    } finally { setLoading(false); }
+  };
+
+  return (
+    <AuthShell
+      title="Reset your password"
+      subtitle="Enter your email and we'll generate a reset link."
+      footer={
+        <Link to="/login" className="text-accent hover:text-accent-hover font-medium">
+          Back to sign in
+        </Link>
+      }
+    >
+      <form onSubmit={submit} className="space-y-4">
+        {error && <Alert type="error">{error}</Alert>}
+
+        {sent ? (
+          <>
+            <Alert type="success">
+              If <strong>{email}</strong> is registered, a reset link has been sent.
+              Check your inbox (and spam folder).
+            </Alert>
+            <button
+              type="button"
+              onClick={() => { setSent(false); setEmail(''); }}
+              className="btn-ghost w-full text-xs"
+            >
+              Send to a different email
+            </button>
+          </>
+        ) : resetLink ? (
+          <>
+            <Alert type="success">
+              Reset link generated (dev mode).
+            </Alert>
+            <Link
+              to={resetLink.replace('http://localhost:5173', '')}
+              className="btn-primary w-full py-2.5"
+            >
+              Open reset link <ArrowRight size={15} />
+            </Link>
+            <button
+              type="button"
+              onClick={() => setResetLink('')}
+              className="btn-ghost w-full text-xs"
+            >
+              Send to a different email
+            </button>
+          </>
+        ) : (
+          <>
+            <Field label="Email" htmlFor="email">
+              <input id="email" type="email" required value={email}
+                onChange={e => setEmail(e.target.value)}
+                placeholder="you@example.com" className="input" />
+            </Field>
+            <button type="submit" disabled={loading} className="btn-primary w-full py-2.5">
+              {loading ? <Loader2 className="animate-spin" size={15} /> : null}
+              {loading ? 'Sending…' : 'Send reset link'}
+            </button>
+          </>
+        )}
+      </form>
+    </AuthShell>
+  );
+}
+
+===== FILE: ./frontend/src/pages/KnowledgeGraph.tsx =====
+import { useEffect, useMemo, useRef, useState } from 'react';
+import ForceGraph2D from 'react-force-graph-2d';
+import {
+  getKGNodes,
+  getKGEdgesList,
+  getKGEntityTypes,
+  getKGSemanticChain,
+} from '../services/api';
+import {
+  Loader2,
+  Network,
+  Filter,
+  X,
+  ExternalLink,
+  Info,
+} from 'lucide-react';
+
+/* ---------- Colors per entity type ---------- */
+const TYPE_COLORS: Record<string, string> = {
+  Technology:         '#5e6ad2',
+  Problem:            '#f59e0b',
+  ResearchPaper:      '#10b981',
+  Author:             '#8b5cf6',
+  Repository:         '#06b6d4',
+  Industry:           '#ec4899',
+  Article:            '#f472b6',
+  ResearchGap:        '#ef4444',
+  StartupOpportunity: '#22c55e',
+  RDLab:              '#a855f7',
+  Document:           '#94a3b8',
+  Keyword:            '#64748b',
+  unknown:            '#6b7280',
+};
+
+const colorForType = (t: string) => TYPE_COLORS[t] || TYPE_COLORS.unknown;
+
+const ALL_TYPES = Object.keys(TYPE_COLORS).filter(t => t !== 'unknown');
+
+/* ---------- Types ---------- */
+interface KGNode {
+  id: number;
+  name: string;
+  type: string;
+  metadata?: Record<string, any>;
+}
+
+interface KGEdge {
+  source: string;
+  target: string;
+  relation: string;
+}
+
+interface GraphNode {
+  id: string;
+  name: string;
+  type: string;
+  metadata: Record<string, any>;
+  degree: number;
+  x?: number;
+  y?: number;
+}
+
+interface GraphLink {
+  source: string;
+  target: string;
+  relation: string;
+}
+
+interface ChainNeighbor {
+  name: string;
+  type: string;
+}
+
+/* ---------- Component ---------- */
+export default function KnowledgeGraph() {
+  const [loading, setLoading] = useState(true);
+  const [nodes, setNodes] = useState<KGNode[]>([]);
+  const [edges, setEdges] = useState<KGEdge[]>([]);
+  const [typeCounts, setTypeCounts] = useState<Record<string, number>>({});
+  const [activeTypes, setActiveTypes] = useState<Set<string>>(new Set(ALL_TYPES));
+  const [nodeLimit, setNodeLimit] = useState(400);
+  const [selected, setSelected] = useState<GraphNode | null>(null);
+  const [neighbors, setNeighbors] = useState<ChainNeighbor[]>([]);
+  const [loadingNeighbors, setLoadingNeighbors] = useState(false);
+  const [showFilters, setShowFilters] = useState(true);
+
+  const fgRef = useRef<any>(null);
+
+  /* ---------- Initial load ---------- */
+  useEffect(() => {
+    setLoading(true);
+    Promise.all([
+      getKGNodes({ limit: nodeLimit }),
+      getKGEdgesList({ limit: nodeLimit * 2 }),
+      getKGEntityTypes(),
+    ])
+      .then(([n, e, t]) => {
+        setNodes(n);
+        setEdges(e);
+        const counts: Record<string, number> = {};
+        for (const row of t) {
+          counts[row.type] = row.count;
+        }
+        setTypeCounts(counts);
+        // Default-enable all types that actually have nodes
+        setActiveTypes(new Set(Object.keys(counts).filter(k => counts[k] > 0)));
+      })
+      .catch(err => console.error('KG load error:', err))
+      .finally(() => setLoading(false));
+  }, [nodeLimit]);
+
+  /* ---------- Build graph data (filtered) ---------- */
+  const graphData = useMemo(() => {
+    const filteredNodes = nodes.filter(n => activeTypes.has(n.type));
+    const validNames = new Set(filteredNodes.map(n => n.name));
+
+    // Compute degree from full edge list
+    const degree: Record<string, number> = {};
+    for (const e of edges) {
+      degree[e.source] = (degree[e.source] || 0) + 1;
+      degree[e.target] = (degree[e.target] || 0) + 1;
+    }
+
+    const graphNodes: GraphNode[] = filteredNodes.map(n => ({
+      id: n.name,       // force-graph links reference name
+      name: n.name,
+      type: n.type,
+      metadata: n.metadata || {},
+      degree: degree[n.name] || 0,
+    }));
+
+    const graphLinks: GraphLink[] = edges
+      .filter(e => validNames.has(e.source) && validNames.has(e.target))
+      .map(e => ({
+        source: e.source,
+        target: e.target,
+        relation: e.relation,
+      }));
+
+    return { nodes: graphNodes, links: graphLinks };
+  }, [nodes, edges, activeTypes]);
+
+  /* ---------- Fetch neighbors when a node is selected ---------- */
+  useEffect(() => {
+    if (!selected) {
+      setNeighbors([]);
+      return;
+    }
+    setLoadingNeighbors(true);
+    getKGSemanticChain(selected.name, 1)
+      .then((data: any) => {
+        setNeighbors(data.nodes || []);
+      })
+      .catch(() => setNeighbors([]))
+      .finally(() => setLoadingNeighbors(false));
+  }, [selected]);
+
+  /* ---------- Zoom controls ---------- */
+  const zoomIn = () => {
+    if (!fgRef.current) return;
+    const g = fgRef.current;
+    g.zoom(g.zoom() * 1.4, 300);
+  };
+  const zoomOut = () => {
+    if (!fgRef.current) return;
+    const g = fgRef.current;
+    g.zoom(g.zoom() / 1.4, 300);
+  };
+  const resetView = () => {
+    if (!fgRef.current) return;
+    fgRef.current.zoomToFit(500);
+  };
+
+  /* ---------- Filter toggle ---------- */
+  const toggleType = (t: string) => {
+    setActiveTypes(prev => {
+      const next = new Set(prev);
+      if (next.has(t)) next.delete(t);
+      else next.add(t);
+      return next;
+    });
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-screen">
+        <Loader2 className="animate-spin text-accent" size={32} />
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col h-screen">
+
+      {/* Header */}
+      <div className="border-b border-edge bg-surface px-6 py-4 flex items-center justify-between gap-4 flex-wrap">
+        <div className="flex items-center gap-3">
+          <div className="w-8 h-8 rounded-md bg-accent/10 flex items-center justify-center">
+            <Network className="text-accent" size={16} />
+          </div>
+          <div>
+            <h1 className="text-base font-semibold text-ink tracking-tight">Knowledge Graph</h1>
+            <p className="text-2xs text-ink-4">
+              {graphData.nodes.length} nodes · {graphData.links.length} edges shown
+              {' · '}
+              <span className="text-ink-3">
+                {nodes.length} total loaded
+              </span>
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <select
+            value={nodeLimit}
+            onChange={e => setNodeLimit(Number(e.target.value))}
+            className="input text-xs py-1.5"
+            title="How many nodes to load"
+          >
+            <option value={200}>200 nodes</option>
+            <option value={400}>400 nodes</option>
+            <option value={800}>800 nodes</option>
+            <option value={1500}>1500 nodes</option>
+          </select>
+
+          <button
+            onClick={() => setShowFilters(s => !s)}
+            className="btn-secondary text-xs"
+          >
+            <Filter size={13} />
+            {showFilters ? 'Hide filters' : 'Show filters'}
+          </button>
+        </div>
+      </div>
+
+      {/* Body */}
+      <div className="flex-1 flex min-h-0 relative">
+
+        {/* Left: filter panel */}
+        {showFilters && (
+          <aside className="w-64 border-r border-edge bg-surface flex-shrink-0 overflow-y-auto">
+            <div className="px-4 py-3 border-b border-edge-subtle">
+              <p className="text-2xs font-medium text-ink-4 uppercase tracking-wider">
+                Entity types
+              </p>
+            </div>
+
+            <div className="p-2">
+              {ALL_TYPES.map(t => {
+                const count = typeCounts[t] || 0;
+                if (count === 0) return null;
+                const active = activeTypes.has(t);
+                return (
+                  <button
+                    key={t}
+                    onClick={() => toggleType(t)}
+                    className={`w-full flex items-center justify-between gap-2 px-2.5 py-2 rounded-md text-xs transition-colors ${
+                      active ? 'bg-overlay text-ink' : 'text-ink-4 hover:bg-subtle'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span
+                        className="w-2.5 h-2.5 rounded-full flex-shrink-0"
+                        style={{ backgroundColor: colorForType(t), opacity: active ? 1 : 0.4 }}
+                      />
+                      <span className="truncate">{t}</span>
+                    </div>
+                    <span className="font-mono tabular-nums text-2xs flex-shrink-0">
+                      {count}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="border-t border-edge-subtle p-3 flex items-center gap-2">
+              <button
+                onClick={() => setActiveTypes(new Set(ALL_TYPES))}
+                className="btn-ghost text-2xs flex-1"
+              >
+                All
+              </button>
+              <button
+                onClick={() => setActiveTypes(new Set())}
+                className="btn-ghost text-2xs flex-1"
+              >
+                None
+              </button>
+            </div>
+
+            {/* Zoom controls */}
+            <div className="border-t border-edge-subtle p-3">
+              <p className="text-2xs font-medium text-ink-4 uppercase tracking-wider mb-2">
+                View
+              </p>
+              <div className="flex items-center gap-1.5">
+                <button onClick={zoomIn}  className="btn-secondary text-xs flex-1">+</button>
+                <button onClick={zoomOut} className="btn-secondary text-xs flex-1">−</button>
+                <button onClick={resetView} className="btn-secondary text-xs flex-1">Fit</button>
+              </div>
+            </div>
+          </aside>
+        )}
+
+        {/* Center: graph canvas */}
+        <div className="flex-1 relative bg-canvas overflow-hidden">
+          {graphData.nodes.length === 0 ? (
+            <div className="absolute inset-0 flex items-center justify-center">
+              <div className="text-center">
+                <Network className="text-ink-4 mx-auto mb-3" size={32} />
+                <p className="text-sm text-ink-3">No nodes match your filters</p>
+                <button
+                  onClick={() => setActiveTypes(new Set(ALL_TYPES))}
+                  className="btn-primary text-xs mt-3"
+                >
+                  Reset filters
+                </button>
+              </div>
+            </div>
+          ) : (
+            <ForceGraph2D
+              ref={fgRef}
+              graphData={graphData}
+              backgroundColor="rgba(0,0,0,0)"
+              nodeLabel={(n: GraphNode) => `${n.name} (${n.type})`}
+              nodeColor={(n: GraphNode) => colorForType(n.type)}
+              nodeVal={(n: GraphNode) => Math.max(1, Math.sqrt(n.degree) * 1.5)}
+              nodeRelSize={4}
+              linkColor={() => 'rgba(148, 163, 184, 0.25)'}
+              linkWidth={0.5}
+              linkDirectionalArrowLength={2.5}
+              linkDirectionalArrowRelPos={1}
+              linkLabel={(l: GraphLink) => l.relation}
+              onNodeClick={(n: GraphNode) => setSelected(n)}
+              onBackgroundClick={() => setSelected(null)}
+              cooldownTicks={80}
+              warmupTicks={20}
+              d3AlphaDecay={0.03}
+              d3VelocityDecay={0.3}
+              enableNodeDrag={true}
+              enableZoomInteraction={true}
+              enablePanInteraction={true}
+            />
+          )}
+        </div>
+
+        {/* Right: node detail panel */}
+        {selected && (
+          <aside className="w-80 border-l border-edge bg-surface flex-shrink-0 flex flex-col overflow-hidden">
+            <div className="px-4 py-3 border-b border-edge flex items-start justify-between gap-2">
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2 mb-1">
+                  <span
+                    className="w-2.5 h-2.5 rounded-full flex-shrink-0"
+                    style={{ backgroundColor: colorForType(selected.type) }}
+                  />
+                  <span className="text-2xs text-ink-4 uppercase tracking-wider">
+                    {selected.type}
+                  </span>
+                </div>
+                <p className="text-sm font-semibold text-ink leading-tight break-words">
+                  {selected.name}
+                </p>
+              </div>
+              <button
+                onClick={() => setSelected(null)}
+                className="p-1.5 rounded-md text-ink-4 hover:text-ink hover:bg-overlay transition-colors flex-shrink-0"
+              >
+                <X size={14} />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-4 space-y-4">
+
+              {/* Metadata */}
+              {Object.keys(selected.metadata).length > 0 && (
+                <div>
+                  <p className="text-2xs font-medium text-ink-4 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                    <Info size={11} /> Metadata
+                  </p>
+                  <div className="space-y-1.5">
+                    {Object.entries(selected.metadata).map(([k, v]) => (
+                      <div key={k} className="flex items-start justify-between gap-2">
+                        <span className="text-2xs text-ink-4 font-mono">{k}</span>
+                        <span className="text-2xs text-ink-2 text-right break-all flex-1">
+                          {typeof v === 'object' ? JSON.stringify(v) : String(v)}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* External link if URL present */}
+              {selected.metadata?.url && (
+                <a
+                  href={selected.metadata.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="flex items-center gap-2 px-3 py-2 rounded-md border border-edge hover:border-accent/40 hover:bg-overlay transition-colors text-xs text-ink-2 group"
+                >
+                  <ExternalLink size={12} className="text-ink-4 group-hover:text-accent" />
+                  <span className="truncate">{selected.metadata.url}</span>
+                </a>
+              )}
+
+              {/* Neighbors */}
+              <div>
+                <p className="text-2xs font-medium text-ink-4 uppercase tracking-wider mb-2">
+                  Neighbors {loadingNeighbors ? '…' : `(${neighbors.length})`}
+                </p>
+                {loadingNeighbors ? (
+                  <Loader2 className="animate-spin text-ink-4" size={14} />
+                ) : neighbors.length === 0 ? (
+                  <p className="text-2xs text-ink-4 italic">No connected nodes</p>
+                ) : (
+                  <div className="space-y-0.5">
+                    {neighbors
+                      .filter(n => n.name !== selected.name)
+                      .slice(0, 30)
+                      .map(n => {
+                        const nodeObj = graphData.nodes.find(
+                          gn => gn.name === n.name
+                        );
+                        return (
+                          <button
+                            key={n.name}
+                            onClick={() => {
+                              if (nodeObj) {
+                                setSelected(nodeObj);
+                                if (fgRef.current) {
+                                  fgRef.current.centerAt(
+                                    nodeObj.x,
+                                    nodeObj.y,
+                                    400
+                                  );
+                                }
+                              }
+                            }}
+                            className="w-full text-left flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-overlay transition-colors group"
+                          >
+                            <span
+                              className="w-1.5 h-1.5 rounded-full flex-shrink-0"
+                              style={{ backgroundColor: colorForType(n.type) }}
+                            />
+                            <span className="text-2xs text-ink-2 truncate flex-1 group-hover:text-accent transition-colors">
+                              {n.name}
+                            </span>
+                          </button>
+                        );
+                      })}
+                  </div>
+                )}
+              </div>
+
+            </div>
+          </aside>
+        )}
+      </div>
+    </div>
+  );
+}
+
+===== FILE: ./frontend/src/pages/Login.tsx =====
+import { useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext';
+import AuthShell from '../components/AuthShell';
+import { Field, Alert } from '../components/Field';
+import { Loader2 } from 'lucide-react';
+
+export default function Login() {
+  const { login } = useAuth();
+  const navigate = useNavigate();
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true); setError('');
+    try {
+      await login(email, password);
+      navigate('/');
+    } catch (err: any) {
+      setError(err.message || 'Login failed');
+    } finally { setLoading(false); }
+  };
+
+  return (
+    <AuthShell
+      title="Welcome back"
+      subtitle="Sign in to continue to your workspace."
+      footer={
+        <>
+          Don't have an account?{' '}
+          <Link to="/register" className="text-accent hover:text-accent-hover font-medium">Create one</Link>
+        </>
+      }
+    >
+      <form onSubmit={submit} className="space-y-4">
+        {error && <Alert type="error">{error}</Alert>}
+
+        <Field label="Email" htmlFor="email">
+          <input
+            id="email" type="email" autoComplete="email" required
+            value={email} onChange={e => setEmail(e.target.value)}
+            placeholder="you@example.com"
+            className="input"
+          />
+        </Field>
+
+        <Field
+          label="Password"
+          htmlFor="password"
+          action={
+            <Link to="/forgot-password" className="text-2xs text-accent hover:text-accent-hover font-medium">
+              Forgot?
+            </Link>
+          }
+        >
+          <input
+            id="password" type="password" autoComplete="current-password" required
+            value={password} onChange={e => setPassword(e.target.value)}
+            placeholder="••••••••"
+            className="input"
+          />
+        </Field>
+
+        <button type="submit" disabled={loading} className="btn-primary w-full py-2.5">
+          {loading ? <Loader2 className="animate-spin" size={15} /> : null}
+          {loading ? 'Signing in…' : 'Sign in'}
+        </button>
+      </form>
+    </AuthShell>
+  );
+}
+
+===== FILE: ./frontend/src/pages/Opportunities.tsx =====
+import { useEffect, useState, useMemo } from 'react';
+import { getOpportunities, type Opportunity } from '../services/api';
+import OpportunityCard from '../components/OpportunityCard';
+import { Loader2, Zap, ArrowUpDown, Search, SlidersHorizontal } from 'lucide-react';
+
+type SortKey = 'opportunity_score' | 'demand_score' | 'research_gap_score' | 'trend_score' | 'feasibility_score' | 'title';
+
+export default function Opportunities() {
+  const [opps, setOpps] = useState<Opportunity[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
+  const [sortBy, setSortBy] = useState<SortKey>('opportunity_score');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
+  const [minScore, setMinScore] = useState(0);
+  const [page, setPage] = useState(1);
+  const pageSize = 12;
+
+  useEffect(() => {
+    getOpportunities().then(setOpps).finally(() => setLoading(false));
+  }, []);
+
+  const filtered = useMemo(() => {
+    let result = [...opps];
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      result = result.filter(o =>
+        o.title.toLowerCase().includes(q) ||
+        (o.description || '').toLowerCase().includes(q)
+      );
+    }
+    if (minScore > 0) result = result.filter(o => o.opportunity_score >= minScore);
+    result.sort((a, b) => {
+      const av = a[sortBy];
+      const bv = b[sortBy];
+      if (typeof av === 'string' && typeof bv === 'string') {
+        return sortDir === 'asc' ? av.localeCompare(bv) : bv.localeCompare(av);
+      }
+      const an = av as number;
+      const bn = bv as number;
+      return sortDir === 'asc' ? an - bn : bn - an;
+    });
+    return result;
+  }, [opps, search, sortBy, sortDir, minScore]);
+
+  const totalPages = Math.ceil(filtered.length / pageSize);
+  const paginated = filtered.slice((page - 1) * pageSize, page * pageSize);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-screen">
+        <Loader2 className="animate-spin text-accent" size={32} />
+      </div>
+    );
+  }
+
+  return (
+    <div className="p-6 lg:p-8 max-w-[1500px] mx-auto">
+
+      {/* Header */}
+      <div className="mb-6">
+        <div className="flex items-center gap-3 mb-1">
+          <div className="w-8 h-8 rounded-md bg-accent/10 flex items-center justify-center">
+            <Zap className="text-accent" size={16} />
+          </div>
+          <h1 className="text-2xl font-bold text-ink tracking-tight">Opportunities</h1>
+        </div>
+        <p className="text-sm text-ink-3">
+          Showing <span className="text-ink font-medium">{paginated.length}</span> of{' '}
+          <span className="text-ink font-medium">{filtered.length}</span> ranked opportunities
+        </p>
+      </div>
+
+      {/* Filter bar */}
+      <div className="bg-surface border border-edge rounded-lg p-3 mb-6 flex flex-col md:flex-row gap-3 items-stretch md:items-center">
+
+        <div className="relative flex-1 md:max-w-md">
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-ink-4" size={14} />
+          <input
+            type="text"
+            value={search}
+            onChange={e => { setSearch(e.target.value); setPage(1); }}
+            placeholder="Search opportunities…"
+            className="input pl-8 text-sm"
+          />
+        </div>
+
+        <div className="flex items-center gap-2">
+          <select
+            value={sortBy}
+            onChange={e => setSortBy(e.target.value as SortKey)}
+            className="input text-sm"
+          >
+            <option value="opportunity_score">Overall score</option>
+            <option value="demand_score">Demand</option>
+            <option value="research_gap_score">Research gap</option>
+            <option value="trend_score">Trend</option>
+            <option value="feasibility_score">Feasibility</option>
+            <option value="title">Title</option>
+          </select>
+
+          <button
+            onClick={() => setSortDir(d => d === 'asc' ? 'desc' : 'asc')}
+            title={sortDir === 'desc' ? 'Descending' : 'Ascending'}
+            className="btn-secondary text-xs flex-shrink-0"
+          >
+            <ArrowUpDown size={13} />
+            {sortDir === 'desc' ? 'Desc' : 'Asc'}
+          </button>
+        </div>
+
+        <div className="flex items-center gap-3 md:ml-auto md:pl-4 md:border-l md:border-edge">
+          <SlidersHorizontal size={13} className="text-ink-4 flex-shrink-0" />
+          <input
+            type="range"
+            min="0"
+            max="1"
+            step="0.1"
+            value={minScore}
+            onChange={e => { setMinScore(Number(e.target.value)); setPage(1); }}
+            className="flex-1 md:w-32 accent-accent"
+          />
+          <span className="text-xs text-ink-3 font-mono tabular-nums w-8 text-right flex-shrink-0">
+            {minScore.toFixed(1)}
+          </span>
+        </div>
+
+      </div>
+
+      {/* Results */}
+      {filtered.length === 0 ? (
+        <div className="bg-surface border border-edge border-dashed rounded-lg p-12 text-center">
+          <Search className="text-ink-4 mx-auto mb-3" size={22} />
+          <p className="text-sm text-ink-2 font-medium">No opportunities match your filters</p>
+          <button
+            onClick={() => { setSearch(''); setMinScore(0); setPage(1); }}
+            className="btn-ghost text-xs mt-3 mx-auto"
+          >
+            Clear filters
+          </button>
+        </div>
+      ) : (
+        <>
+          <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-3">
+            {paginated.map(opp => <OpportunityCard key={opp.id} opp={opp} />)}
+          </div>
+
+          {totalPages > 1 && (
+            <div className="flex items-center justify-center gap-1 mt-8">
+              <button
+                onClick={() => setPage(p => Math.max(1, p - 1))}
+                disabled={page === 1}
+                className="btn-secondary text-xs"
+              >
+                Previous
+              </button>
+
+              <div className="flex items-center gap-1 mx-2">
+                {Array.from({ length: Math.min(totalPages, 7) }, (_, i) => {
+                  let pageNum: number;
+                  if (totalPages <= 7) pageNum = i + 1;
+                  else if (page <= 4) pageNum = i + 1;
+                  else if (page >= totalPages - 3) pageNum = totalPages - 6 + i;
+                  else pageNum = page - 3 + i;
+                  return (
+                    <button
+                      key={pageNum}
+                      onClick={() => setPage(pageNum)}
+                      className={`w-8 h-8 rounded-md text-xs font-mono tabular-nums transition-all ${
+                        page === pageNum
+                          ? 'bg-accent text-accent-fg'
+                          : 'text-ink-2 hover:bg-overlay border border-edge'
+                      }`}
+                    >
+                      {pageNum}
+                    </button>
+                  );
+                })}
+              </div>
+
+              <button
+                onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                disabled={page === totalPages}
+                className="btn-secondary text-xs"
+              >
+                Next
+              </button>
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+===== FILE: ./frontend/src/pages/OpportunityDetail.tsx =====
+import { useEffect, useState } from 'react';
+import { useParams, Link } from 'react-router-dom';
+import { getOpportunityDetail } from '../services/api';
+import ScoreHistoryChart from '../components/ScoreHistoryChart';
+import {
+  Loader2, ArrowLeft, Lightbulb, AlertCircle, TrendingUp,
+  FileText, CheckCircle2, ExternalLink, Sparkles, Cpu, Target,
+  FlaskConical, BookOpen, Zap, Shield,
+} from 'lucide-react';
+
+function ScoreRow({ label, value, color }: { label: string; value: number; color: string }) {
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-1.5">
+        <span className="text-xs text-ink-3">{label}</span>
+        <span className="text-xs font-mono tabular-nums text-ink font-medium">{value.toFixed(2)}</span>
+      </div>
+      <div className="h-1.5 bg-overlay rounded-full overflow-hidden">
+        <div className={`h-full ${color}`} style={{ width: `${Math.min(100, value * 100)}%` }} />
+      </div>
+    </div>
+  );
+}
+
+function Section({
+  icon: Icon, title, children, accent = 'text-accent',
+}: { icon: any; title: string; children: React.ReactNode; accent?: string }) {
+  return (
+    <div className="bg-surface border border-edge rounded-lg p-5">
+      <div className="flex items-center gap-2 mb-4">
+        <Icon size={14} className={accent} />
+        <h2 className="text-xs font-medium text-ink uppercase tracking-wider">{title}</h2>
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function EmptyNote({ children }: { children: React.ReactNode }) {
+  return <p className="text-xs text-ink-4 italic">{children}</p>;
+}
+
+function AiBadge() {
+  return (
+    <span className="badge bg-accent/10 text-accent border border-accent/30">
+      <Sparkles size={10} /> AI-generated
+    </span>
+  );
+}
+
+export default function OpportunityDetail() {
+  const { id } = useParams<{ id: string }>();
+  const [data, setData] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    if (!id) return;
+    getOpportunityDetail(Number(id))
+      .then(setData)
+      .catch(e => setError(e?.response?.data?.detail || e.message))
+      .finally(() => setLoading(false));
+  }, [id]);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-screen">
+        <Loader2 className="animate-spin text-accent" size={32} />
+      </div>
+    );
+  }
+
+  if (error || !data) {
+    return (
+      <div className="p-8 max-w-3xl mx-auto">
+        <Link to="/opportunities" className="btn-ghost text-xs mb-4">
+          <ArrowLeft size={13} /> Back to opportunities
+        </Link>
+        <div className="bg-danger/10 border border-danger/30 rounded-lg p-5">
+          <AlertCircle className="text-danger mb-2" size={20} />
+          <p className="text-danger text-sm">{error || 'Opportunity not found'}</p>
+        </div>
+      </div>
+    );
+  }
+
+  const opp = data.opportunity;
+  const cluster = data.problem_cluster;
+  const gap = data.research_gap;
+  const isHigh = opp.opportunity_score > 0.6;
+
+  const techs: string[] = Array.isArray(opp.related_technologies) ? opp.related_technologies : [];
+  const papers: string[] = Array.isArray(opp.existing_research) ? opp.existing_research : [];
+  const evidence: { source: string; url: string; title: string }[] =
+    Array.isArray(opp.evidence_sources) ? opp.evidence_sources : [];
+  const limitations = (opp.known_limitations || '').split(' | ').map((s: string) => s.trim()).filter(Boolean);
+  const hasEnrichment = Boolean(
+    opp.domain || opp.industry || techs.length || papers.length ||
+    opp.suggested_research_direction || opp.suggested_project_direction ||
+    opp.existing_approaches || opp.known_limitations || opp.emerging_trend || evidence.length
+  );
+
+  // Group evidence by source for compact display
+  const evidenceBySource: Record<string, typeof evidence> = {};
+  for (const e of evidence) {
+    (evidenceBySource[e.source] = evidenceBySource[e.source] || []).push(e);
+  }
+
+  return (
+    <div className="p-6 lg:p-8 max-w-5xl mx-auto">
+
+      {/* Back link */}
+      <Link
+        to="/opportunities"
+        className="inline-flex items-center gap-1 text-xs text-ink-3 hover:text-ink transition-colors mb-6"
+      >
+        <ArrowLeft size={13} /> Back to opportunities
+      </Link>
+
+      {/* Hero */}
+      <div className="bg-surface border border-edge rounded-lg p-6 mb-5">
+        <div className="flex items-start justify-between gap-6 flex-wrap">
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 mb-3 flex-wrap">
+              <span className={`badge ${
+                isHigh
+                  ? 'bg-success/15 text-success border border-success/30'
+                  : 'bg-accent/15 text-accent border border-accent/30'
+              }`}>
+                {isHigh ? 'High priority' : 'Moderate'}
+              </span>
+              {opp.domain && (
+                <span className="badge bg-overlay text-ink-3 border border-edge">
+                  {opp.domain}
+                </span>
+              )}
+              {opp.industry && opp.industry !== opp.domain && (
+                <span className="badge bg-overlay text-ink-3 border border-edge">
+                  {opp.industry}
+                </span>
+              )}
+              {opp.emerging_trend && (
+                <span className="badge bg-warning/15 text-warning border border-warning/30">
+                  <TrendingUp size={10} /> {opp.emerging_trend}
+                </span>
+              )}
+              <span className="text-2xs text-ink-4 font-mono">#{opp.id}</span>
+            </div>
+            <h1 className="text-2xl font-bold text-ink tracking-tight leading-tight mb-2">
+              {opp.title}
+            </h1>
+            <p className="text-sm text-ink-2 leading-relaxed">{opp.description}</p>
+          </div>
+
+          <div className="text-right flex-shrink-0">
+            <div className="flex items-baseline gap-1 justify-end">
+              <span className="text-4xl font-bold text-accent font-mono tabular-nums leading-none tracking-tight">
+                {opp.opportunity_score.toFixed(2)}
+              </span>
+              <span className="text-sm text-ink-4 font-mono">/1.00</span>
+            </div>
+            <p className="text-2xs text-ink-4 uppercase tracking-wider mt-2">Opportunity score</p>
+            <p className="text-xs text-ink-3 mt-1 font-mono tabular-nums">
+              Confidence {opp.confidence_score.toFixed(2)}
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* Suggested directions (top placement — most actionable) */}
+      {(opp.suggested_research_direction || opp.suggested_project_direction) && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-5">
+          {opp.suggested_research_direction && (
+            <div className="bg-accent/[0.06] border border-accent/25 rounded-lg p-5">
+              <div className="flex items-center gap-2 mb-3">
+                <FlaskConical size={14} className="text-accent" />
+                <h2 className="text-xs font-medium text-ink uppercase tracking-wider">Suggested research</h2>
+                <AiBadge />
+              </div>
+              <p className="text-sm text-ink leading-relaxed">
+                {opp.suggested_research_direction}
+              </p>
+            </div>
+          )}
+          {opp.suggested_project_direction && (
+            <div className="bg-success/[0.06] border border-success/25 rounded-lg p-5">
+              <div className="flex items-center gap-2 mb-3">
+                <Zap size={14} className="text-success" />
+                <h2 className="text-xs font-medium text-ink uppercase tracking-wider">Suggested project</h2>
+                <AiBadge />
+              </div>
+              <p className="text-sm text-ink leading-relaxed">
+                {opp.suggested_project_direction}
+              </p>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Two-column: scoring + explanation */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 mb-5">
+        <Section icon={TrendingUp} title="Scoring breakdown">
+          <div className="space-y-3.5">
+            <ScoreRow label="Market demand"          value={opp.demand_score}            color="bg-accent" />
+            <ScoreRow label="Research gap"           value={opp.research_gap_score}      color="bg-success" />
+            <ScoreRow label="Technology trend"       value={opp.trend_score}             color="bg-warning" />
+            <ScoreRow label="Innovation"             value={opp.innovation_score ?? 0}   color="bg-pink-500" />
+            <ScoreRow label="Competition"            value={opp.competition_score}       color="bg-danger" />
+            <ScoreRow label="Technical feasibility"  value={opp.feasibility_score}       color="bg-sky-500" />
+            <ScoreRow label="Market readiness"       value={opp.market_readiness_score}  color="bg-purple-500" />
+          </div>
+        </Section>
+
+        <Section icon={Sparkles} title="AI explanation" accent="text-warning">
+          <p className="text-sm text-ink-2 leading-relaxed">
+            {opp.explanation || 'No explanation available.'}
+          </p>
+          <div className="mt-4 pt-4 border-t border-edge-subtle">
+            <p className="text-2xs text-ink-4 uppercase tracking-wider mb-2">Best suited for</p>
+            <p className="text-xs text-ink-2">
+              {isHigh ? 'Researchers, entrepreneurs, and investors' : 'Students and early-stage researchers'}
+            </p>
+          </div>
+        </Section>
+      </div>
+
+      {/* Enrichment card */}
+      {hasEnrichment ? (
+        <div className="bg-surface border border-edge rounded-lg p-5 mb-5">
+          <div className="flex items-center gap-2 mb-5">
+            <Target size={14} className="text-accent" />
+            <h2 className="text-xs font-medium text-ink uppercase tracking-wider">Opportunity card enrichment</h2>
+            <AiBadge />
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+
+            {techs.length > 0 && (
+              <div>
+                <p className="text-2xs text-ink-4 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                  <Cpu size={11} /> Related technologies
+                </p>
+                <div className="flex flex-wrap gap-1.5">
+                  {techs.map(t => (
+                    <span key={t} className="badge bg-accent/10 text-accent border border-accent/30">
+                      {t}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {papers.length > 0 && (
+              <div>
+                <p className="text-2xs text-ink-4 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                  <BookOpen size={11} /> Existing research ({papers.length})
+                </p>
+                <ul className="space-y-1.5">
+                  {papers.slice(0, 6).map((p, i) => (
+                    <li key={i} className="text-xs text-ink-2 leading-snug">
+                      <span className="text-ink-4 font-mono mr-1.5">{i + 1}.</span>
+                      {p}
+                    </li>
+                  ))}
+                  {papers.length > 6 && (
+                    <li className="text-2xs text-ink-4 italic">+{papers.length - 6} more</li>
+                  )}
+                </ul>
+              </div>
+            )}
+
+            {opp.existing_approaches && (
+              <div className="md:col-span-2">
+                <p className="text-2xs text-ink-4 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                  <FileText size={11} /> Existing approaches
+                </p>
+                <p className="text-xs text-ink-2 leading-relaxed">{opp.existing_approaches}</p>
+              </div>
+            )}
+
+            {limitations.length > 0 && (
+              <div className="md:col-span-2">
+                <p className="text-2xs text-ink-4 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                  <AlertCircle size={11} /> Known limitations
+                </p>
+                <ul className="space-y-1.5">
+                  {limitations.slice(0, 8).map((lim: string, i: number) => (
+                    <li key={i} className="flex items-start gap-2 text-xs text-ink-2 leading-relaxed">
+                      <span className="text-warning flex-shrink-0 mt-0.5">•</span>
+                      <span>{lim}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {evidence.length > 0 && (
+              <div className="md:col-span-2">
+                <p className="text-2xs text-ink-4 uppercase tracking-wider mb-3 flex items-center gap-1.5">
+                  <Shield size={11} /> Evidence sources ({evidence.length})
+                </p>
+                <div className="space-y-3">
+                  {Object.entries(evidenceBySource).map(([src, items]) => (
+                    <div key={src}>
+                      <div className="flex items-center gap-2 mb-1.5">
+                        <span className="badge bg-overlay text-ink-3 border border-edge uppercase">
+                          {src}
+                        </span>
+                        <span className="text-2xs text-ink-4 font-mono">{items.length}</span>
+                      </div>
+                      <div className="space-y-1">
+                        {items.slice(0, 4).map((e, i) => (
+                          <a
+                            key={i}
+                            href={e.url}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="flex items-start gap-2 px-2.5 py-1.5 rounded-md border border-edge-subtle hover:border-accent/40 hover:bg-overlay transition-colors group"
+                          >
+                            <span className="text-xs text-ink-2 leading-snug flex-1 group-hover:text-accent transition-colors line-clamp-1">
+                              {e.title || e.url}
+                            </span>
+                            <ExternalLink size={11} className="text-ink-4 group-hover:text-accent flex-shrink-0 mt-0.5 transition-colors" />
+                          </a>
+                        ))}
+                        {items.length > 4 && (
+                          <p className="text-2xs text-ink-4 italic pl-2.5">
+                            +{items.length - 4} more from this source
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+          </div>
+        </div>
+      ) : (
+        <div className="bg-surface border border-edge border-dashed rounded-lg p-5 mb-5">
+          <div className="flex items-center gap-2 mb-2">
+            <Target size={14} className="text-ink-4" />
+            <h2 className="text-xs font-medium text-ink-3 uppercase tracking-wider">Opportunity card enrichment</h2>
+          </div>
+          <EmptyNote>
+            No enrichment data yet. Run a fresh pipeline and this card will populate with
+            technologies, papers, limitations, and suggested directions.
+          </EmptyNote>
+        </div>
+      )}
+
+      {/* Problem cluster */}
+      {cluster && (
+        <div className="bg-surface border border-edge rounded-lg p-5 mb-5">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <AlertCircle size={14} className="text-warning" />
+              <h2 className="text-xs font-medium text-ink uppercase tracking-wider">Associated problem cluster</h2>
+            </div>
+            <span className="text-2xs text-ink-4 font-mono">{cluster.source_count} sources</span>
+          </div>
+          <p className="text-sm text-ink-2 leading-relaxed mb-3">{cluster.description}</p>
+          {cluster.keywords?.length > 0 && (
+            <div className="flex flex-wrap gap-1.5">
+              {cluster.keywords.slice(0, 12).map((kw: string) => (
+                <span key={kw} className="badge bg-overlay text-ink-3 border border-edge">{kw}</span>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Research gap */}
+      {gap && (
+        <div className="bg-surface border border-edge rounded-lg p-5 mb-5">
+          <div className="flex items-center gap-2 mb-4">
+            <FileText size={14} className="text-success" />
+            <h2 className="text-xs font-medium text-ink uppercase tracking-wider">Research gap analysis</h2>
+          </div>
+          <p className="text-sm text-ink-2 leading-relaxed mb-4">{gap.description}</p>
+
+          <div className="grid grid-cols-2 gap-4 mb-4 pb-4 border-b border-edge-subtle">
+            <div>
+              <p className="text-2xs text-ink-4 uppercase tracking-wider mb-1">Gap score</p>
+              <p className="text-lg font-semibold text-success font-mono tabular-nums">
+                {gap.gap_score.toFixed(2)}
+              </p>
+            </div>
+            {gap.evidence?.coverage !== undefined && (
+              <div>
+                <p className="text-2xs text-ink-4 uppercase tracking-wider mb-1">Coverage</p>
+                <p className="text-lg font-semibold text-ink font-mono tabular-nums">
+                  {(gap.evidence.coverage * 100).toFixed(0)}%
+                </p>
+              </div>
+            )}
+          </div>
+
+          {gap.evidence?.future_work_snippets?.length > 0 && (
+            <div>
+              <p className="text-2xs text-ink-4 uppercase tracking-wider mb-3">Future-work signals from arXiv</p>
+              <div className="space-y-3">
+                {gap.evidence.future_work_snippets.slice(0, 3).map((fws: any, i: number) => (
+                  <div key={i} className="pl-3 border-l-2 border-edge-strong">
+                    <p className="text-xs text-ink-3 italic leading-relaxed">"{fws.snippet?.slice(0, 200)}…"</p>
+                    <p className="text-2xs text-ink-4 mt-1">{fws.paper?.slice(0, 70)}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Source references */}
+      <Section icon={FileText} title="Source references">
+        <div className="space-y-3">
+          {data.sources && data.sources.length > 0 && (
+            <div>
+              <p className="text-2xs text-ink-4 uppercase tracking-wider mb-2">
+                Original sources ({data.sources.length})
+              </p>
+              <div className="space-y-1.5">
+                {data.sources.map((src: any) => (
+                  <a
+                    key={src.id}
+                    href={src.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="flex items-start gap-2.5 px-3 py-2 rounded-md border border-edge hover:border-accent/40 hover:bg-overlay transition-colors group"
+                  >
+                    <span className="badge bg-overlay text-ink-3 border border-edge flex-shrink-0 mt-0.5 uppercase">
+                      {src.source}
+                    </span>
+                    <span className="text-xs text-ink-2 leading-snug flex-1 group-hover:text-accent transition-colors line-clamp-2">
+                      {src.title || '(untitled)'}
+                    </span>
+                    <ExternalLink size={12} className="text-ink-4 group-hover:text-accent flex-shrink-0 mt-1 transition-colors" />
+                  </a>
+                ))}
+              </div>
+              <div className="mt-4 pt-4 border-t border-edge-subtle" />
+            </div>
+          )}
+
+          <div className="flex items-start gap-3">
+            <CheckCircle2 size={14} className="text-success flex-shrink-0 mt-0.5" />
+            <div>
+              <p className="text-xs text-ink font-medium mb-0.5">Cluster keywords</p>
+              <p className="text-xs text-ink-3">
+                {cluster?.keywords?.slice(0, 8).join(' · ') || 'N/A'}
+              </p>
+            </div>
+          </div>
+          <div className="flex items-start gap-3">
+            <CheckCircle2 size={14} className="text-success flex-shrink-0 mt-0.5" />
+            <div>
+              <p className="text-xs text-ink font-medium mb-0.5">Cluster size</p>
+              <p className="text-xs text-ink-3">{cluster?.source_count || 0} sources analyzed</p>
+            </div>
+          </div>
+          {gap && (
+            <div className="flex items-start gap-3">
+              <CheckCircle2 size={14} className="text-success flex-shrink-0 mt-0.5" />
+              <div>
+                <p className="text-xs text-ink font-medium mb-0.5">Research coverage</p>
+                <p className="text-xs text-ink-3">
+                  {((gap.evidence?.coverage || 0) * 100).toFixed(0)}% of key terms appear in recent papers
+                </p>
+              </div>
+            </div>
+          )}
+        </div>
+      </Section>
+
+      {/* Score history */}
+      <div className="mt-5">
+        <ScoreHistoryChart oppId={opp.id} />
+      </div>
+
+      {/* Recommendation CTA */}
+      <div className="mt-5 bg-surface border border-edge rounded-lg p-5 flex items-center justify-between gap-4 flex-wrap">
+        <div className="flex items-start gap-3">
+          <Lightbulb size={18} className="text-warning flex-shrink-0 mt-0.5" />
+          <div>
+            <p className="text-sm text-ink font-medium">Recommended next step</p>
+            <p className="text-xs text-ink-3 mt-0.5">
+              Validate this opportunity with {cluster?.source_count || 'multiple'} real-world data points and run the AI chat for follow-up questions.
+            </p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <Link to="/chat" className="btn-secondary text-xs">
+            <Sparkles size={13} /> Ask AI
+          </Link>
+          <Link to="/reports" className="btn-primary text-xs">
+            <ExternalLink size={13} /> Add to report
+          </Link>
+        </div>
+      </div>
+
+    </div>
+  );
+}
+
+===== FILE: ./frontend/src/pages/ProblemProfiles.tsx =====
+import { useEffect, useState } from 'react';
+import { Loader2, Target, Building2, ExternalLink, Filter, Search } from 'lucide-react';
+import { api } from '../services/api';
+
+interface ProblemProfile {
+  id: number;
+  organization: string;
+  problem_title: string;
+  problem_description: string;
+  industry_domain: string;
+  problem_type: string;
+  technology_stage: 'used' | 'exploring' | 'potential';
+  required_technology: string[];
+  current_approach: string;
+  known_limitations: string;
+  expected_outcome: string;
+  source: string;
+  source_url: string;
+  keywords: string[];
+  problem_status: string;
+  student_suitability: 'high' | 'medium' | 'low';
+  extracted_by: string;
+  created_at: string;
+}
+
+interface Stats {
+  total: number;
+  by_domain: Record<string, number>;
+  by_suitability: Record<string, number>;
+  by_source: Record<string, number>;
+}
+
+const STAGE_COLORS: Record<string, string> = {
+  used: 'bg-success/15 text-success border-success/30',
+  exploring: 'bg-warning/15 text-warning border-warning/30',
+  potential: 'bg-accent/15 text-accent border-accent/30',
+};
+
+const SUITABILITY_COLORS: Record<string, string> = {
+  high: 'bg-success/15 text-success border-success/30',
+  medium: 'bg-warning/15 text-warning border-warning/30',
+  low: 'bg-ink-4/15 text-ink-3 border-edge',
+};
+
+export default function ProblemProfiles() {
+  const [items, setItems] = useState<ProblemProfile[]>([]);
+  const [stats, setStats] = useState<Stats | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
+  const [domain, setDomain] = useState('');
+  const [suitability, setSuitability] = useState('');
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const params: any = { limit: 100 };
+      if (domain) params.domain = domain;
+      if (suitability) params.student_suitability = suitability;
+      if (search) params.search = search;
+      const [listRes, statsRes] = await Promise.all([
+        api.get('/problem-profiles', { params }),
+        api.get('/problem-profiles/stats'),
+      ]);
+      setItems(listRes.data.items || []);
+      setStats(statsRes.data);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { load(); }, [domain, suitability]);
+
+  const submitSearch = (e: React.FormEvent) => {
+    e.preventDefault();
+    load();
+  };
+
+  const domains = stats ? Object.keys(stats.by_domain).sort() : [];
+
+  return (
+    <div className="p-6 lg:p-8 max-w-[1400px] mx-auto">
+
+      {/* Header */}
+      <div className="mb-6 flex items-start justify-between gap-4 flex-wrap">
+        <div>
+          <div className="flex items-center gap-3 mb-1">
+            <div className="w-8 h-8 rounded-md bg-accent/10 flex items-center justify-center">
+              <Target className="text-accent" size={16} />
+            </div>
+            <h1 className="text-2xl font-bold text-ink tracking-tight">Problem Profiles</h1>
+          </div>
+          <p className="text-sm text-ink-3">
+            Structured industry & government R&D problems — extracted from SBIR, challenge.gov and other public portals.
+          </p>
+        </div>
+        {stats && (
+          <div className="flex items-center gap-2 text-xs text-ink-3">
+            <span>Total: <span className="text-ink font-mono">{stats.total}</span></span>
+          </div>
+        )}
+      </div>
+
+      {/* Filters */}
+      <form onSubmit={submitSearch} className="bg-surface border border-edge rounded-lg p-3 mb-5 flex flex-col md:flex-row gap-3">
+        <div className="relative flex-1">
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-ink-4" size={14} />
+          <input
+            type="text"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="Search title, description, organization…"
+            className="input pl-8 text-sm w-full"
+          />
+        </div>
+        <select value={domain} onChange={e => setDomain(e.target.value)} className="input text-sm">
+          <option value="">All domains</option>
+          {domains.map(d => <option key={d} value={d}>{d}</option>)}
+        </select>
+        <select value={suitability} onChange={e => setSuitability(e.target.value)} className="input text-sm">
+          <option value="">Any suitability</option>
+          <option value="high">High (student-friendly)</option>
+          <option value="medium">Medium</option>
+          <option value="low">Low</option>
+        </select>
+        <button type="submit" className="btn-primary text-xs">
+          <Filter size={13} /> Apply
+        </button>
+      </form>
+
+      {/* Body */}
+      {loading ? (
+        <div className="flex items-center justify-center py-20">
+          <Loader2 className="animate-spin text-accent" size={28} />
+        </div>
+      ) : items.length === 0 ? (
+        <div className="bg-surface border border-edge border-dashed rounded-lg p-12 text-center">
+          <Target className="text-ink-4 mx-auto mb-3" size={24} />
+          <p className="text-sm text-ink-2 font-medium">No problem profiles yet</p>
+          <p className="text-xs text-ink-4 mt-1 max-w-md mx-auto">
+            Run the pipeline — problem profiles are extracted automatically from SBIR solicitations and challenge.gov feeds.
+          </p>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {items.map(p => (
+            <div key={p.id} className="bg-surface border border-edge rounded-lg p-5 hover:border-accent/40 transition-colors">
+              <div className="flex items-start justify-between gap-4 mb-3">
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2 mb-1.5 flex-wrap">
+                    <span className={`badge ${STAGE_COLORS[p.technology_stage] || STAGE_COLORS.potential}`}>
+                      {p.technology_stage}
+                    </span>
+                    <span className={`badge ${SUITABILITY_COLORS[p.student_suitability] || SUITABILITY_COLORS.medium}`}>
+                      {p.student_suitability} suitability
+                    </span>
+                    <span className="badge bg-overlay text-ink-3 border border-edge">
+                      {p.industry_domain}
+                    </span>
+                    <span className="badge bg-overlay text-ink-3 border border-edge">
+                      {p.problem_type}
+                    </span>
+                  </div>
+                  <h3 className="text-ink font-semibold text-base leading-snug">{p.problem_title}</h3>
+                  <div className="flex items-center gap-1.5 mt-1 text-2xs text-ink-4">
+                    <Building2 size={11} />
+                    <span>{p.organization || 'Unknown org'}</span>
+                    <span className="mx-1">·</span>
+                    <span>{p.source}</span>
+                  </div>
+                </div>
+                {p.source_url && (
+                  <a
+                    href={p.source_url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-accent hover:text-accent-hover flex items-center gap-1 text-xs flex-shrink-0"
+                  >
+                    Source <ExternalLink size={11} />
+                  </a>
+                )}
+              </div>
+
+              <p className="text-sm text-ink-2 leading-relaxed mb-3">{p.problem_description}</p>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-3">
+                {p.current_approach && (
+                  <div>
+                    <p className="text-2xs text-ink-4 uppercase tracking-wider mb-1">Current approach</p>
+                    <p className="text-xs text-ink-2 leading-relaxed">{p.current_approach}</p>
+                  </div>
+                )}
+                {p.known_limitations && (
+                  <div>
+                    <p className="text-2xs text-ink-4 uppercase tracking-wider mb-1">Known limitations</p>
+                    <p className="text-xs text-ink-2 leading-relaxed">{p.known_limitations}</p>
+                  </div>
+                )}
+              </div>
+
+              {p.expected_outcome && (
+                <div className="mb-3">
+                  <p className="text-2xs text-ink-4 uppercase tracking-wider mb-1">Expected outcome</p>
+                  <p className="text-xs text-ink-2 leading-relaxed">{p.expected_outcome}</p>
+                </div>
+              )}
+
+              {p.required_technology?.length > 0 && (
+                <div className="flex flex-wrap gap-1.5 pt-3 border-t border-edge-subtle">
+                  {p.required_technology.map(t => (
+                    <span key={t} className="badge bg-accent/10 text-accent border border-accent/30">
+                      {t}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+===== FILE: ./frontend/src/pages/Problems.tsx =====
+import { useEffect, useState, useMemo } from 'react';
+import { getProblems, type ProblemCluster } from '../services/api';
+import { Loader2, TrendingUp, ArrowUpDown } from 'lucide-react';
+
+type SortKey = 'demand_score' | 'source_count' | 'title';
+
+export default function Problems() {
+  const [problems, setProblems] = useState<ProblemCluster[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [sortBy, setSortBy] = useState<SortKey>('demand_score');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
+
+  useEffect(() => {
+    getProblems().then(setProblems).finally(() => setLoading(false));
+  }, []);
+
+  const sorted = useMemo(() => {
+    return [...problems].sort((a, b) => {
+      const av = a[sortBy];
+      const bv = b[sortBy];
+      if (typeof av === 'string' && typeof bv === 'string') {
+        return sortDir === 'asc' ? av.localeCompare(bv) : bv.localeCompare(av);
+      }
+      const an = av as number;
+      const bn = bv as number;
+      return sortDir === 'asc' ? an - bn : bn - an;
+    });
+  }, [problems, sortBy, sortDir]);
+
+  const toggleSort = (key: SortKey) => {
+    if (sortBy === key) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+    else { setSortBy(key); setSortDir('desc'); }
+  };
+
+  const avgDemand = problems.length
+    ? problems.reduce((s, p) => s + p.demand_score, 0) / problems.length
+    : 0;
+  const totalSources = problems.reduce((s, p) => s + p.source_count, 0);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-screen">
+        <Loader2 className="animate-spin text-accent" size={32} />
+      </div>
+    );
+  }
+
+  return (
+    <div className="p-6 lg:p-8 max-w-[1500px] mx-auto">
+
+      {/* Header */}
+      <div className="mb-6">
+        <div className="flex items-center gap-3 mb-1">
+          <div className="w-8 h-8 rounded-md bg-warning/10 flex items-center justify-center">
+            <TrendingUp className="text-warning" size={16} />
+          </div>
+          <h1 className="text-2xl font-bold text-ink tracking-tight">Problem rankings</h1>
+        </div>
+        <p className="text-sm text-ink-3">Recurring real-world problems clustered from multi-source signals</p>
+      </div>
+
+      {/* Stat row */}
+      <div className="grid grid-cols-3 gap-3 mb-6">
+        <div className="bg-surface border border-edge rounded-lg p-4">
+          <p className="text-2xs font-medium text-ink-4 uppercase tracking-wider mb-2">Total clusters</p>
+          <p className="text-2xl font-semibold text-ink font-mono tabular-nums">{problems.length}</p>
+        </div>
+        <div className="bg-surface border border-edge rounded-lg p-4">
+          <p className="text-2xs font-medium text-ink-4 uppercase tracking-wider mb-2">Avg demand</p>
+          <p className="text-2xl font-semibold text-success font-mono tabular-nums">{avgDemand.toFixed(2)}</p>
+        </div>
+        <div className="bg-surface border border-edge rounded-lg p-4">
+          <p className="text-2xs font-medium text-ink-4 uppercase tracking-wider mb-2">Total sources</p>
+          <p className="text-2xl font-semibold text-accent font-mono tabular-nums">{totalSources}</p>
+        </div>
+      </div>
+
+      {/* Table */}
+      <div className="bg-surface border border-edge rounded-lg overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-edge bg-overlay">
+                <th className="text-left text-2xs font-medium text-ink-4 uppercase tracking-wider px-4 py-2.5 w-10">#</th>
+                <th className="text-left px-4 py-2.5">
+                  <button
+                    onClick={() => toggleSort('title')}
+                    className="flex items-center gap-1 text-2xs font-medium text-ink-4 uppercase tracking-wider hover:text-ink-2 transition-colors"
+                  >
+                    Title <ArrowUpDown size={10} />
+                  </button>
+                </th>
+                <th className="text-right px-4 py-2.5">
+                  <button
+                    onClick={() => toggleSort('source_count')}
+                    className="ml-auto flex items-center gap-1 text-2xs font-medium text-ink-4 uppercase tracking-wider hover:text-ink-2 transition-colors"
+                  >
+                    Sources <ArrowUpDown size={10} />
+                  </button>
+                </th>
+                <th className="text-right px-4 py-2.5 w-48">
+                  <button
+                    onClick={() => toggleSort('demand_score')}
+                    className="ml-auto flex items-center gap-1 text-2xs font-medium text-ink-4 uppercase tracking-wider hover:text-ink-2 transition-colors"
+                  >
+                    Demand <ArrowUpDown size={10} />
+                  </button>
+                </th>
+                <th className="text-left px-4 py-2.5">Keywords</th>
+              </tr>
+            </thead>
+            <tbody>
+              {sorted.map((p, i) => (
+                <tr key={p.id} className="border-b border-edge-subtle last:border-0 hover:bg-overlay/60 transition-colors">
+                  <td className="px-4 py-3 text-ink-4 font-mono text-xs">{i + 1}</td>
+                  <td className="px-4 py-3 text-ink-2 text-xs leading-snug">{p.title}</td>
+                  <td className="px-4 py-3 text-right text-ink-3 font-mono tabular-nums text-xs">{p.source_count}</td>
+                  <td className="px-4 py-3">
+                    <div className="flex items-center justify-end gap-2.5">
+                      <div className="w-24 h-1 bg-overlay rounded-full overflow-hidden">
+                        <div className="h-full bg-success" style={{ width: `${Math.min(100, p.demand_score * 100)}%` }} />
+                      </div>
+                      <span className="text-success font-mono tabular-nums text-xs w-9 text-right">{p.demand_score.toFixed(2)}</span>
+                    </div>
+                  </td>
+                  <td className="px-4 py-3">
+                    <div className="flex flex-wrap gap-1">
+                      {p.keywords?.slice(0, 4).map(k => (
+                        <span key={k} className="badge bg-overlay text-ink-3 border border-edge">
+                          {k}
+                        </span>
+                      ))}
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+===== FILE: ./frontend/src/pages/Profile.tsx =====
+import { useState } from 'react';
+import { useAuth } from '../context/AuthContext';
+import { updateProfile, changePassword } from '../services/api';
+import { Loader2, CheckCircle2, User as UserIcon, Lock, Shield } from 'lucide-react';
+
+function Alert({ type, children }: { type: 'success' | 'error'; children: React.ReactNode }) {
+  const cls = type === 'success'
+    ? 'bg-success/10 border-success/30 text-success'
+    : 'bg-danger/10 border-danger/30 text-danger';
+  return (
+    <div className={`text-xs border rounded-md px-3 py-2.5 flex items-center gap-2 ${cls}`}>
+      <CheckCircle2 size={13} className="flex-shrink-0" />
+      <span>{children}</span>
+    </div>
+  );
+}
+
+export default function Profile() {
+  const { user } = useAuth();
+  const [name, setName] = useState(user?.name || '');
+  const [email, setEmail] = useState(user?.email || '');
+  const [savingProfile, setSavingProfile] = useState(false);
+  const [profileMsg, setProfileMsg] = useState('');
+  const [profileErr, setProfileErr] = useState('');
+
+  const [oldPw, setOldPw] = useState('');
+  const [newPw, setNewPw] = useState('');
+  const [confirmPw, setConfirmPw] = useState('');
+  const [savingPw, setSavingPw] = useState(false);
+  const [pwMsg, setPwMsg] = useState('');
+  const [pwErr, setPwErr] = useState('');
+
+  const saveProfile = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSavingProfile(true); setProfileMsg(''); setProfileErr('');
+    try {
+      await updateProfile({ name, email });
+      setProfileMsg('Profile updated successfully');
+      localStorage.setItem('aod_user', JSON.stringify({ ...user, name, email }));
+    } catch (e: any) {
+      setProfileErr(e?.response?.data?.detail || e.message);
+    } finally { setSavingProfile(false); }
+  };
+
+  const savePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setPwMsg(''); setPwErr('');
+    if (newPw !== confirmPw) { setPwErr('Passwords do not match'); return; }
+    setSavingPw(true);
+    try {
+      await changePassword(oldPw, newPw);
+      setPwMsg('Password changed successfully');
+      setOldPw(''); setNewPw(''); setConfirmPw('');
+    } catch (e: any) {
+      setPwErr(e?.response?.data?.detail || e.message);
+    } finally { setSavingPw(false); }
+  };
+
+  return (
+    <div className="p-6 lg:p-8 max-w-3xl mx-auto">
+
+      {/* Header */}
+      <div className="mb-6 flex items-center gap-4">
+        <div className="w-14 h-14 rounded-xl bg-accent flex items-center justify-center text-accent-fg">
+          <UserIcon size={24} />
+        </div>
+        <div>
+          <h1 className="text-2xl font-bold text-ink tracking-tight">{user?.name}</h1>
+          <div className="flex items-center gap-2 mt-1">
+            <span className="text-sm text-ink-3">{user?.email}</span>
+            <span className="badge bg-accent/10 text-accent border border-accent/30 capitalize">
+              {user?.role}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {/* Basic info */}
+      <form onSubmit={saveProfile} className="bg-surface border border-edge rounded-lg p-6 mb-5">
+        <div className="flex items-center gap-2 mb-5">
+          <UserIcon size={14} className="text-accent" />
+          <h2 className="text-xs font-medium text-ink uppercase tracking-wider">Basic information</h2>
+        </div>
+
+        <div className="space-y-4">
+          {profileMsg && <Alert type="success">{profileMsg}</Alert>}
+          {profileErr && <Alert type="error">{profileErr}</Alert>}
+
+          <div>
+            <label className="block text-xs font-medium text-ink-2 mb-1.5">Name</label>
+            <input type="text" value={name} onChange={e => setName(e.target.value)} required className="input" />
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-ink-2 mb-1.5">Email</label>
+            <input type="email" value={email} onChange={e => setEmail(e.target.value)} required className="input" />
+          </div>
+
+          <div className="flex justify-end pt-2">
+            <button type="submit" disabled={savingProfile} className="btn-primary text-xs">
+              {savingProfile && <Loader2 className="animate-spin" size={12} />}
+              {savingProfile ? 'Saving…' : 'Save changes'}
+            </button>
+          </div>
+        </div>
+      </form>
+
+      {/* Password */}
+      <form onSubmit={savePassword} className="bg-surface border border-edge rounded-lg p-6">
+        <div className="flex items-center gap-2 mb-5">
+          <Lock size={14} className="text-warning" />
+          <h2 className="text-xs font-medium text-ink uppercase tracking-wider">Change password</h2>
+        </div>
+
+        <div className="space-y-4">
+          {pwMsg && <Alert type="success">{pwMsg}</Alert>}
+          {pwErr && <Alert type="error">{pwErr}</Alert>}
+
+          <div>
+            <label className="block text-xs font-medium text-ink-2 mb-1.5">Current password</label>
+            <input type="password" value={oldPw} onChange={e => setOldPw(e.target.value)} required className="input" />
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-medium text-ink-2 mb-1.5">New password</label>
+              <input type="password" value={newPw} onChange={e => setNewPw(e.target.value)} required className="input" />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-ink-2 mb-1.5">Confirm new password</label>
+              <input type="password" value={confirmPw} onChange={e => setConfirmPw(e.target.value)} required className="input" />
+            </div>
+          </div>
+
+          <div className="flex justify-end pt-2">
+            <button type="submit" disabled={savingPw} className="btn-primary text-xs">
+              {savingPw && <Loader2 className="animate-spin" size={12} />}
+              {savingPw ? 'Changing…' : 'Change password'}
+            </button>
+          </div>
+        </div>
+      </form>
+
+      {/* Security note */}
+      <div className="mt-5 flex items-start gap-3 px-1">
+        <Shield size={14} className="text-ink-4 flex-shrink-0 mt-0.5" />
+        <p className="text-2xs text-ink-4 leading-relaxed">
+          Your password is protected with bcrypt hashing. Changing it will sign you out of all other devices automatically.
+        </p>
+      </div>
+
+    </div>
+  );
+}
+
+===== FILE: ./frontend/src/pages/RDWorkflow.tsx =====
+import { useState } from 'react';
+import { getRDFlow } from '../services/api';
+import { Loader2, Factory, Search, Cpu, BookOpen, TrendingUp, Zap } from 'lucide-react';
+
+const INDUSTRIES = [
+  '', 'Healthcare', 'Manufacturing', 'Education', 'Finance', 'Cybersecurity',
+  'Transportation', 'Energy', 'Agriculture', 'Software', 'Robotics',
+  'Aerospace', 'Environment', 'Defense', 'Other',
+];
+
+export default function RDWorkflow() {
+  const [problem, setProblem] = useState('');
+  const [industry, setIndustry] = useState('');
+  const [data, setData] = useState<any>(null);
+  const [loading, setLoading] = useState(false);
+
+  const run = async () => {
+    setLoading(true);
+    try {
+      const d = await getRDFlow(problem || undefined, industry || undefined, 15);
+      setData(d);
+    } catch { setData(null); }
+    finally { setLoading(false); }
+  };
+
+  return (
+    <div className="p-6 lg:p-8 max-w-[1400px] mx-auto">
+      <div className="mb-6 flex items-center gap-3">
+        <div className="w-8 h-8 rounded-md bg-warning/10 flex items-center justify-center">
+          <Factory className="text-warning" size={16} />
+        </div>
+        <div>
+          <h1 className="text-2xl font-bold text-ink tracking-tight">R&D workflow</h1>
+          <p className="text-sm text-ink-3">Industry problem → technology & research landscape → innovation opportunities.</p>
+        </div>
+      </div>
+
+      <div className="bg-surface border border-edge rounded-lg p-4 mb-6 flex flex-col md:flex-row gap-3">
+        <div className="relative flex-1">
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-ink-4" size={14} />
+          <input
+            type="text"
+            value={problem}
+            onChange={e => setProblem(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && !loading && run()}
+            placeholder="Industry problem (e.g. real-time defect detection under changing conditions)…"
+            className="input pl-8 text-sm"
+          />
+        </div>
+        <select value={industry} onChange={e => setIndustry(e.target.value)} className="input text-sm md:w-48">
+          {INDUSTRIES.map(i => <option key={i} value={i}>{i || 'Any industry'}</option>)}
+        </select>
+        <button onClick={run} disabled={loading} className="btn-primary text-xs whitespace-nowrap">
+          {loading ? <Loader2 className="animate-spin" size={13} /> : <Factory size={13} />}
+          {loading ? 'Analyzing…' : 'Analyze landscape'}
+        </button>
+      </div>
+
+      {loading && (
+        <div className="flex items-center justify-center py-20">
+          <Loader2 className="animate-spin text-accent" size={28} />
+        </div>
+      )}
+
+      {!loading && data && data.profile_count === 0 && (
+        <div className="bg-surface border border-edge border-dashed rounded-lg p-12 text-center">
+          <Factory className="text-ink-4 mx-auto mb-3" size={24} />
+          <p className="text-sm text-ink-2 font-medium">No matching industry problems found</p>
+          <p className="text-xs text-ink-4 mt-1">Try a broader query or leave the fields blank for an overview.</p>
+        </div>
+      )}
+
+      {!loading && data && data.profile_count > 0 && (
+        <>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+            {[
+              { l: 'Profiles scanned', v: data.profile_count, c: 'text-ink' },
+              { l: 'Technologies',     v: data.technologies?.length || 0, c: 'text-accent' },
+              { l: 'Research papers',  v: data.research?.length || 0,     c: 'text-success' },
+              { l: 'Opportunities',    v: data.opportunities?.length || 0, c: 'text-warning' },
+            ].map(s => (
+              <div key={s.l} className="bg-surface border border-edge rounded-lg p-4">
+                <p className="text-2xs text-ink-4 uppercase tracking-wider mb-2">{s.l}</p>
+                <p className={`text-2xl font-semibold font-mono tabular-nums ${s.c}`}>{s.v}</p>
+              </div>
+            ))}
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+            <div className="bg-surface border border-edge rounded-lg p-5">
+              <div className="flex items-center gap-2 mb-4">
+                <Cpu size={14} className="text-accent" />
+                <h2 className="text-xs font-medium text-ink uppercase tracking-wider">Technology landscape</h2>
+              </div>
+              {data.technologies?.length ? (
+                <div className="flex flex-wrap gap-2">
+                  {data.technologies.map((t: any) => (
+                    <div key={t.name} className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md bg-accent/[0.08] border border-accent/30">
+                      <span className="text-xs text-accent font-medium">{t.name}</span>
+                      <span className="text-2xs text-ink-4">{t.avg_confidence?.toFixed(2)}</span>
+                      {t.stages?.length > 0 && (
+                        <span className="text-2xs text-ink-4 italic">{t.stages.join('/')}</span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ) : <p className="text-xs text-ink-4 italic">No technologies linked.</p>}
+            </div>
+
+            <div className="bg-surface border border-edge rounded-lg p-5">
+              <div className="flex items-center gap-2 mb-4">
+                <BookOpen size={14} className="text-success" />
+                <h2 className="text-xs font-medium text-ink uppercase tracking-wider">Research landscape</h2>
+              </div>
+              {data.research?.length ? (
+                <ul className="space-y-2 max-h-80 overflow-y-auto pr-1">
+                  {data.research.map((p: any) => (
+                    <li key={p.arxiv_id} className="flex items-start justify-between gap-3">
+                      <a
+                        href={p.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-xs text-ink-2 leading-snug flex-1 hover:text-accent transition-colors"
+                      >
+                        {p.title}
+                      </a>
+                      <span className="text-2xs text-ink-4 font-mono flex-shrink-0">
+                        {p.relevance_score?.toFixed(2)}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              ) : <p className="text-xs text-ink-4 italic">No research papers linked.</p>}
+            </div>
+
+            <div className="bg-surface border border-edge rounded-lg p-5">
+              <div className="flex items-center gap-2 mb-4">
+                <TrendingUp size={14} className="text-warning" />
+                <h2 className="text-xs font-medium text-ink uppercase tracking-wider">Emerging trends</h2>
+              </div>
+              {data.trends?.length ? (
+                <div className="space-y-2">
+                  {data.trends.map((t: any) => (
+                    <div key={t.name} className="flex items-center gap-3">
+                      <span className="text-xs text-ink-2 truncate flex-1">{t.name}</span>
+                      <div className="w-20 h-1 bg-overlay rounded-full overflow-hidden flex-shrink-0">
+                        <div className="h-full bg-warning" style={{ width: `${(t.trend_score || 0) * 100}%` }} />
+                      </div>
+                      <span className="text-2xs font-mono tabular-nums text-ink-4 w-8 text-right flex-shrink-0">
+                        {t.trend_score?.toFixed(2)}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              ) : <p className="text-xs text-ink-4 italic">No matching trends.</p>}
+            </div>
+
+            <div className="bg-surface border border-edge rounded-lg p-5">
+              <div className="flex items-center gap-2 mb-4">
+                <Zap size={14} className="text-warning" />
+                <h2 className="text-xs font-medium text-ink uppercase tracking-wider">Innovation opportunities</h2>
+              </div>
+              {data.opportunities?.length ? (
+                <div className="space-y-2">
+                  {data.opportunities.map((o: any) => (
+                    <a
+                      key={o.id}
+                      href={`/opportunities/${o.id}`}
+                      className="flex items-start justify-between gap-3 py-2 px-2 -mx-2 rounded-md hover:bg-overlay transition-colors group"
+                    >
+                      <span className="text-xs text-ink-2 leading-snug flex-1 group-hover:text-accent transition-colors line-clamp-2">
+                        {o.title}
+                      </span>
+                      <span className="text-xs font-mono text-accent flex-shrink-0">
+                        {o.opportunity_score?.toFixed(2)}
+                      </span>
+                    </a>
+                  ))}
+                </div>
+              ) : <p className="text-xs text-ink-4 italic">No opportunities found.</p>}
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+===== FILE: ./frontend/src/pages/Recommendations.tsx =====
+import { useEffect, useState, useMemo } from 'react';
+import { Link } from 'react-router-dom';
+import { getOpportunities, type Opportunity } from '../services/api';
+import { useAuth } from '../context/AuthContext';
+import OpportunityCard from '../components/OpportunityCard';
+import {
+  Loader2, Sparkles, Rocket, FlaskConical, Gem, TrendingUp,
+  ArrowRight, Target, Zap, Info,
+} from 'lucide-react';
+
+/* ---------- Role-aware weighting ---------- */
+type RoleKey = 'student' | 'researcher' | 'entrepreneur' | 'investor' | 'admin';
+
+const ROLE_WEIGHTS: Record<RoleKey, Partial<Record<keyof Opportunity, number>>> = {
+  student:      { opportunity_score: 0.4, feasibility_score: 0.3, trend_score: 0.2, competition_score: -0.1 },
+  researcher:   { opportunity_score: 0.3, research_gap_score: 0.5, trend_score: 0.1, market_readiness_score: -0.1 },
+  entrepreneur: { opportunity_score: 0.4, market_readiness_score: 0.3, feasibility_score: 0.2, competition_score: -0.1 },
+  investor:     { opportunity_score: 0.4, trend_score: 0.3, market_readiness_score: 0.3 },
+  admin:        { opportunity_score: 1.0 },
+};
+
+const ROLE_LABELS: Record<RoleKey, { title: string; blurb: string }> = {
+  student:      { title: 'Student',      blurb: 'Feasible projects, emerging technologies, and startup ideas you can actually build.' },
+  researcher:   { title: 'Researcher',   blurb: 'High research-gap opportunities and under-explored areas worth a paper.' },
+  entrepreneur: { title: 'Entrepreneur', blurb: 'Buildable ideas with real market demand and clear technical paths.' },
+  investor:     { title: 'Investor',     blurb: 'High-growth trends and market-ready categories with strong momentum.' },
+  admin:        { title: 'All roles',    blurb: 'Every opportunity ranked by overall score.' },
+};
+
+function scoreForRole(opp: Opportunity, role: RoleKey): number {
+  const weights = ROLE_WEIGHTS[role] || ROLE_WEIGHTS.admin;
+  let sum = 0;
+  for (const [key, w] of Object.entries(weights)) {
+    const v = (opp as any)[key] as number;
+    if (typeof v === 'number') sum += v * (w as number);
+  }
+  return sum;
+}
+
+/* ---------- Shelf ---------- */
+function Shelf({
+  icon: Icon,
+  title,
+  subtitle,
+  items,
+  accent = 'text-accent',
+  emptyText = 'Nothing here yet — run a pipeline to populate.',
+}: {
+  icon: any;
+  title: string;
+  subtitle: string;
+  items: Opportunity[];
+  accent?: string;
+  emptyText?: string;
+}) {
+  return (
+    <section className="mb-8">
+      <div className="flex items-center gap-2 mb-1">
+        <Icon size={15} className={accent} />
+        <h2 className="text-ink font-semibold text-base tracking-tight">{title}</h2>
+        <span className="badge bg-overlay text-ink-3 border border-edge ml-1">{items.length}</span>
+      </div>
+      <p className="text-xs text-ink-4 mb-4">{subtitle}</p>
+
+      {items.length === 0 ? (
+        <div className="border border-edge border-dashed rounded-lg p-6 text-center bg-surface/40">
+          <p className="text-xs text-ink-4">{emptyText}</p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+          {items.map(o => <OpportunityCard key={o.id} opp={o} />)}
+        </div>
+      )}
+    </section>
+  );
+}
+
+/* ---------- Top pick hero card ---------- */
+function TopPickCard({ opp, rank, reason }: { opp: Opportunity; rank: number; reason: string }) {
+  return (
+    <Link
+      to={`/opportunities/${opp.id}`}
+      className="group relative block bg-surface border border-edge rounded-lg p-5 hover:border-accent/50 hover:bg-overlay transition-all"
+    >
+      <div className="flex items-start justify-between gap-3 mb-3">
+        <div className="flex items-center gap-2">
+          <span className="w-6 h-6 rounded-md bg-accent text-accent-fg flex items-center justify-center text-2xs font-bold">
+            {rank}
+          </span>
+          <span className="badge bg-accent/10 text-accent border border-accent/30">Top pick</span>
+        </div>
+        <div className="text-right">
+          <p className="text-2xl font-bold font-mono tabular-nums text-accent leading-none">
+            {opp.opportunity_score.toFixed(2)}
+          </p>
+          <p className="text-2xs text-ink-4 uppercase tracking-wider mt-1">Score</p>
+        </div>
+      </div>
+
+      <h3 className="text-ink font-semibold text-sm leading-snug line-clamp-2 mb-2 group-hover:text-accent transition-colors">
+        {opp.title}
+      </h3>
+      <p className="text-xs text-ink-3 leading-relaxed line-clamp-2 mb-4">{opp.description}</p>
+
+      <div className="flex items-start gap-2 px-3 py-2.5 bg-accent/[0.06] border border-accent/20 rounded-md mb-3">
+        <Sparkles size={12} className="text-accent flex-shrink-0 mt-0.5" />
+        <p className="text-2xs text-ink-2 leading-snug">{reason}</p>
+      </div>
+
+      <div className="flex items-center justify-between text-2xs">
+        <span className="text-ink-4 font-mono">
+          Demand {opp.demand_score.toFixed(2)} · Gap {opp.research_gap_score.toFixed(2)} · Feasibility {opp.feasibility_score.toFixed(2)}
+        </span>
+        <ArrowRight size={11} className="text-ink-4 group-hover:text-accent transition-colors" />
+      </div>
+    </Link>
+  );
+}
+
+/* ---------- Page ---------- */
+export default function Recommendations() {
+  const { user } = useAuth();
+  const [opps, setOpps] = useState<Opportunity[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    getOpportunities().then(setOpps).finally(() => setLoading(false));
+  }, []);
+
+  const role = ((user?.role || 'student') as RoleKey);
+  const roleInfo = ROLE_LABELS[role] || ROLE_LABELS.student;
+
+  const {
+    topPicks,
+    roleMatched,
+    buildable,
+    researchGold,
+    hiddenGems,
+    risingStars,
+  } = useMemo(() => {
+    const sortedByRole = [...opps].sort(
+      (a, b) => scoreForRole(b, role) - scoreForRole(a, role),
+    );
+
+    // Top 3 overall — plus generate a reason for each
+    const top = [...opps]
+      .sort((a, b) => b.opportunity_score - a.opportunity_score)
+      .slice(0, 3)
+      .map(o => ({
+        opp: o,
+        reason: (() => {
+          const parts: string[] = [];
+          if (o.research_gap_score > 0.5) parts.push('high research gap');
+          if (o.demand_score > 0.6) parts.push('strong market demand');
+          if (o.trend_score > 0.6) parts.push('rising tech trend');
+          if (o.feasibility_score > 0.6) parts.push('buildable today');
+          return parts.length
+            ? `Standout due to ${parts.slice(0, 2).join(' and ')}.`
+            : 'Highest composite score across all factors.';
+        })(),
+      }));
+
+    return {
+      topPicks: top,
+      roleMatched: sortedByRole.filter(o => o.opportunity_score >= 0.5).slice(0, 6),
+      buildable: [...opps]
+        .filter(o => o.feasibility_score >= 0.6 && o.market_readiness_score >= 0.5)
+        .sort((a, b) => (b.feasibility_score + b.market_readiness_score) - (a.feasibility_score + a.market_readiness_score))
+        .slice(0, 6),
+      researchGold: [...opps]
+        .filter(o => o.research_gap_score >= 0.5)
+        .sort((a, b) => b.research_gap_score - a.research_gap_score)
+        .slice(0, 6),
+      hiddenGems: [...opps]
+        .filter(o => o.opportunity_score >= 0.55 && o.competition_score <= 0.5)
+        .sort((a, b) => b.opportunity_score - a.opportunity_score)
+        .slice(0, 6),
+      risingStars: [...opps]
+        .filter(o => o.trend_score >= 0.6)
+        .sort((a, b) => b.trend_score - a.trend_score)
+        .slice(0, 6),
+    };
+  }, [opps, role]);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-screen">
+        <Loader2 className="animate-spin text-accent" size={32} />
+      </div>
+    );
+  }
+
+  return (
+    <div className="p-6 lg:p-8 max-w-[1500px] mx-auto">
+
+      {/* Header */}
+      <div className="mb-8">
+        <div className="flex items-center gap-3 mb-2">
+          <div className="w-8 h-8 rounded-md bg-accent/10 flex items-center justify-center">
+            <Sparkles className="text-accent" size={16} />
+          </div>
+          <div>
+            <h1 className="text-2xl font-bold text-ink tracking-tight">
+              Recommendations for you
+            </h1>
+            <p className="text-sm text-ink-3 mt-0.5">
+              Curated picks tuned to your <span className="text-ink-2 font-medium capitalize">{roleInfo.title}</span> profile
+            </p>
+          </div>
+        </div>
+
+        <div className="mt-4 px-4 py-3 bg-accent/[0.05] border border-accent/20 rounded-lg flex items-start gap-3">
+          <Info size={14} className="text-accent flex-shrink-0 mt-0.5" />
+          <p className="text-xs text-ink-2 leading-relaxed">{roleInfo.blurb}</p>
+        </div>
+      </div>
+
+      {opps.length === 0 ? (
+        <div className="bg-surface border border-edge border-dashed rounded-lg p-12 text-center">
+          <Sparkles className="text-ink-4 mx-auto mb-3" size={24} />
+          <p className="text-sm text-ink-2 font-medium">No opportunities yet</p>
+          <p className="text-xs text-ink-4 mt-1">Run the pipeline a few times to populate recommendations.</p>
+          <Link to="/search" className="btn-primary text-xs mt-4 inline-flex">
+            Run pipeline
+          </Link>
+        </div>
+      ) : (
+        <>
+          {/* Top picks hero */}
+          {topPicks.length > 0 && (
+            <section className="mb-10">
+              <div className="flex items-center gap-2 mb-1">
+                <Target size={15} className="text-warning" />
+                <h2 className="text-ink font-semibold text-base tracking-tight">Today's top picks</h2>
+              </div>
+              <p className="text-xs text-ink-4 mb-4">
+                The three highest-scoring opportunities right now, with the standout signals for each.
+              </p>
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                {topPicks.map((p, i) => (
+                  <TopPickCard key={p.opp.id} opp={p.opp} rank={i + 1} reason={p.reason} />
+                ))}
+              </div>
+            </section>
+          )}
+
+          {/* Role-matched */}
+          <Shelf
+            icon={Zap}
+            title={`Best match for ${roleInfo.title.toLowerCase()}s`}
+            subtitle="Ranked by a scoring model weighted for your role."
+            items={roleMatched}
+            accent="text-accent"
+          />
+
+          {/* Buildable */}
+          <Shelf
+            icon={Rocket}
+            title="Ready to build"
+            subtitle="High technical feasibility + strong market readiness. Practical starting points."
+            items={buildable}
+            accent="text-success"
+            emptyText="No opportunities with both high feasibility and market readiness yet."
+          />
+
+          {/* Research gold */}
+          <Shelf
+            icon={FlaskConical}
+            title="Research goldmine"
+            subtitle="Large research coverage gaps — promising territory for papers and theses."
+            items={researchGold}
+            accent="text-purple-500"
+            emptyText="No opportunities with significant research gaps detected yet."
+          />
+
+          {/* Hidden gems */}
+          <Shelf
+            icon={Gem}
+            title="Hidden gems"
+            subtitle="Strong overall scores paired with low competition. Less crowded territory."
+            items={hiddenGems}
+            accent="text-warning"
+            emptyText="No low-competition, high-score opportunities yet."
+          />
+
+          {/* Rising stars */}
+          <Shelf
+            icon={TrendingUp}
+            title="Rising stars"
+            subtitle="Opportunities riding strong technology trend signals."
+            items={risingStars}
+            accent="text-sky-500"
+            emptyText="No high-trend opportunities detected yet."
+          />
+
+          {/* Footer CTA */}
+          <div className="mt-10 bg-surface border border-edge rounded-lg p-5 flex items-center justify-between gap-4 flex-wrap">
+            <div className="flex items-start gap-3">
+              <Sparkles size={16} className="text-accent flex-shrink-0 mt-0.5" />
+              <div>
+                <p className="text-sm text-ink font-medium">Want personalized deep dives?</p>
+                <p className="text-xs text-ink-3 mt-0.5">
+                  Ask the AI assistant follow-up questions about any recommendation.
+                </p>
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <Link to="/opportunities" className="btn-secondary text-xs">
+                All opportunities
+              </Link>
+              <Link to="/chat" className="btn-primary text-xs">
+                <Sparkles size={13} /> Ask AI
+              </Link>
+            </div>
+          </div>
+        </>
+      )}
+
+    </div>
+  );
+}
+
+===== FILE: ./frontend/src/pages/Register.tsx =====
+import { useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext';
+import AuthShell from '../components/AuthShell';
+import { Field, Alert } from '../components/Field';
+import { Loader2 } from 'lucide-react';
+
+const ROLES = [
+  { value: 'student',      label: 'Student',       hint: 'Project ideas, topics' },
+  { value: 'researcher',   label: 'Researcher',    hint: 'Gaps, papers, trends' },
+  { value: 'entrepreneur', label: 'Entrepreneur',  hint: 'Startup opportunities' },
+  { value: 'investor',     label: 'Investor',      hint: 'Market signals' },
+];
+
+export default function Register() {
+  const { register } = useAuth();
+  const navigate = useNavigate();
+  const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [confirm, setConfirm] = useState('');
+  const [role, setRole] = useState('student');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+    if (password !== confirm) { setError('Passwords do not match'); return; }
+    if (password.length < 6) { setError('Password must be at least 6 characters'); return; }
+    setLoading(true);
+    try {
+      await register(name, email, password, role);
+      navigate('/');
+    } catch (err: any) {
+      setError(err.message || 'Registration failed');
+    } finally { setLoading(false); }
+  };
+
+  return (
+    <AuthShell
+      title="Create your account"
+      subtitle="Start discovering opportunities in under a minute."
+      footer={
+        <>
+          Already have an account?{' '}
+          <Link to="/login" className="text-accent hover:text-accent-hover font-medium">Sign in</Link>
+        </>
+      }
+    >
+      <form onSubmit={submit} className="space-y-4">
+        {error && <Alert type="error">{error}</Alert>}
+
+        <Field label="Full name" htmlFor="name">
+          <input id="name" type="text" required value={name}
+            onChange={e => setName(e.target.value)} placeholder="Jane Doe" className="input" />
+        </Field>
+
+        <Field label="Email" htmlFor="email">
+          <input id="email" type="email" autoComplete="email" required value={email}
+            onChange={e => setEmail(e.target.value)} placeholder="you@example.com" className="input" />
+        </Field>
+
+        <Field label="I am a…" hint={ROLES.find(r => r.value === role)?.hint}>
+          <div className="grid grid-cols-2 gap-2">
+            {ROLES.map(r => (
+              <button
+                key={r.value}
+                type="button"
+                onClick={() => setRole(r.value)}
+                className={`px-3 py-2 text-sm rounded-md border text-left transition-all ${
+                  role === r.value
+                    ? 'bg-accent/10 border-accent/50 text-ink font-medium'
+                    : 'bg-canvas border-edge text-ink-2 hover:border-edge-strong'
+                }`}
+              >
+                {r.label}
+              </button>
+            ))}
+          </div>
+        </Field>
+
+        <Field label="Password" htmlFor="password" hint="Minimum 6 characters">
+          <input id="password" type="password" autoComplete="new-password" required
+            value={password} onChange={e => setPassword(e.target.value)}
+            placeholder="••••••••" className="input" />
+        </Field>
+
+        <Field label="Confirm password" htmlFor="confirm">
+          <input id="confirm" type="password" autoComplete="new-password" required
+            value={confirm} onChange={e => setConfirm(e.target.value)}
+            placeholder="••••••••" className="input" />
+        </Field>
+
+        <button type="submit" disabled={loading} className="btn-primary w-full py-2.5">
+          {loading ? <Loader2 className="animate-spin" size={15} /> : null}
+          {loading ? 'Creating account…' : 'Create account'}
+        </button>
+      </form>
+    </AuthShell>
+  );
+}
+
+===== FILE: ./frontend/src/pages/Reports.tsx =====
+import { useEffect, useState } from 'react';
+import {
+  getOpportunities, getResearchGaps, getTrends, downloadPDFReport,
+  downloadOpportunitiesJSON, downloadGapsJSON, downloadFullJSON,
+  type Opportunity, type ResearchGap, type Trend,
+} from '../services/api';
+import { Download, FileText, Loader2, FileDown, TrendingUp, Braces, ChevronDown } from 'lucide-react';
+import {
+  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,
+  PieChart, Pie, Cell, Legend,
+} from 'recharts';
+
+const COLORS = ['#5e6ad2', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4'];
+
+export default function Reports() {
+  const [opportunities, setOpportunities] = useState<Opportunity[]>([]);
+  const [gaps, setGaps] = useState<ResearchGap[]>([]);
+  const [trends, setTrends] = useState<Trend[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [pdfLoading, setPdfLoading] = useState(false);
+  const [jsonOpen, setJsonOpen] = useState(false);
+
+  useEffect(() => {
+    Promise.all([getOpportunities(), getResearchGaps(), getTrends()])
+      .then(([o, g, t]) => { setOpportunities(o); setGaps(g); setTrends(t); })
+      .finally(() => setLoading(false));
+  }, []);
+
+  const downloadCSV = () => {
+    const headers = ['Title', 'Score', 'Confidence', 'Demand', 'Research Gap', 'Trend'];
+    const rows = opportunities.map(o => [
+      `"${o.title.replace(/"/g, '""')}"`,
+      o.opportunity_score.toFixed(3), o.confidence_score.toFixed(3),
+      o.demand_score.toFixed(3), o.research_gap_score.toFixed(3), o.trend_score.toFixed(3),
+    ]);
+    const csv = [headers, ...rows].map(r => r.join(',')).join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `opportunities_${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const downloadPDF = async () => {
+    setPdfLoading(true);
+    try { await downloadPDFReport(); }
+    catch (e: any) { alert(`PDF error: ${e.message}`); }
+    finally { setPdfLoading(false); }
+  };
+
+  const exportJSON = async (kind: 'opps' | 'gaps' | 'full') => {
+    setJsonOpen(false);
+    try {
+      if (kind === 'opps') await downloadOpportunitiesJSON();
+      else if (kind === 'gaps') await downloadGapsJSON();
+      else await downloadFullJSON();
+    } catch (e: any) {
+      alert(`Export failed: ${e.message}`);
+    }
+  };
+
+  if (loading) {
+    return <div className="flex items-center justify-center h-screen"><Loader2 className="animate-spin text-accent" size={32} /></div>;
+  }
+
+  const scoreData = opportunities.slice(0, 10).map(o => ({
+    name: o.title.length > 20 ? o.title.slice(0, 20) + '…' : o.title,
+    score: Number(o.opportunity_score.toFixed(2)),
+  }));
+
+  const categoryCounts: Record<string, number> = {};
+  trends.forEach(t => { categoryCounts[t.category || 'general'] = (categoryCounts[t.category || 'general'] || 0) + 1; });
+  const pieData = Object.entries(categoryCounts).map(([name, value]) => ({ name, value }));
+
+  const tooltipStyle = {
+    backgroundColor: 'rgb(var(--bg-overlay))',
+    border: '1px solid rgb(var(--border-default))',
+    borderRadius: 6,
+    color: 'rgb(var(--text-primary))',
+    fontSize: 12,
+    padding: '8px 10px',
+  };
+
+  return (
+    <div className="p-6 lg:p-8 max-w-[1500px] mx-auto">
+
+      {/* Header */}
+      <div className="mb-6 flex items-center justify-between gap-4 flex-wrap">
+        <div className="flex items-center gap-3">
+          <div className="w-8 h-8 rounded-md bg-accent/10 flex items-center justify-center">
+            <FileText className="text-accent" size={16} />
+          </div>
+          <div>
+            <h1 className="text-2xl font-bold text-ink tracking-tight">Reports & analytics</h1>
+            <p className="text-sm text-ink-3">Visual insights and downloadable reports</p>
+          </div>
+        </div>
+        <div className="flex gap-2">
+          <button onClick={downloadCSV} disabled={opportunities.length === 0} className="btn-secondary text-xs">
+            <Download size={13} /> CSV
+          </button>
+          <div className="relative">
+            <button
+              onClick={() => setJsonOpen(o => !o)}
+              className="btn-secondary text-xs"
+              disabled={opportunities.length === 0}
+            >
+              <Braces size={13} /> JSON <ChevronDown size={11} />
+            </button>
+            {jsonOpen && (
+              <>
+                <div className="fixed inset-0 z-40" onClick={() => setJsonOpen(false)} />
+                <div className="absolute right-0 top-full mt-1 w-56 bg-overlay border border-edge rounded-lg shadow-xl z-50 overflow-hidden animate-slide-up">
+                  <button
+                    onClick={() => exportJSON('opps')}
+                    className="w-full text-left px-3.5 py-2.5 text-xs text-ink-2 hover:bg-subtle hover:text-ink transition-colors border-b border-edge-subtle"
+                  >
+                    <span className="font-medium text-ink">Opportunities only</span>
+                    <span className="block text-2xs text-ink-4 mt-0.5">JSON array with all scoring fields</span>
+                  </button>
+                  <button
+                    onClick={() => exportJSON('gaps')}
+                    className="w-full text-left px-3.5 py-2.5 text-xs text-ink-2 hover:bg-subtle hover:text-ink transition-colors border-b border-edge-subtle"
+                  >
+                    <span className="font-medium text-ink">Research gaps only</span>
+                    <span className="block text-2xs text-ink-4 mt-0.5">Gap scores + evidence snippets</span>
+                  </button>
+                  <button
+                    onClick={() => exportJSON('full')}
+                    className="w-full text-left px-3.5 py-2.5 text-xs text-ink-2 hover:bg-subtle hover:text-ink transition-colors"
+                  >
+                    <span className="font-medium text-ink">Full export</span>
+                    <span className="block text-2xs text-ink-4 mt-0.5">Everything: opps + clusters + gaps + trends</span>
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+          <button onClick={downloadPDF} disabled={pdfLoading || opportunities.length === 0} className="btn-primary text-xs">
+            {pdfLoading ? <Loader2 className="animate-spin" size={13} /> : <FileDown size={13} />}
+            {pdfLoading ? 'Generating…' : 'PDF report'}
+          </button>
+        </div>
+      </div>
+
+      {/* Charts row */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 mb-5">
+
+        <div className="bg-surface border border-edge rounded-lg p-5">
+          <div className="flex items-center gap-2 mb-5">
+            <TrendingUp size={14} className="text-accent" />
+            <h2 className="text-xs font-medium text-ink uppercase tracking-wider">Top opportunity scores</h2>
+          </div>
+          {scoreData.length === 0 ? (
+            <p className="text-sm text-ink-4 text-center py-12">No data yet</p>
+          ) : (
+            <ResponsiveContainer width="100%" height={260}>
+              <BarChart data={scoreData}>
+                <CartesianGrid strokeDasharray="2 4" stroke="rgb(var(--border-subtle))" vertical={false} />
+                <XAxis dataKey="name" tick={{ fill: 'rgb(var(--text-muted))', fontSize: 10 }} angle={-35} textAnchor="end" height={70} interval={0} axisLine={false} tickLine={false} />
+                <YAxis tick={{ fill: 'rgb(var(--text-muted))', fontSize: 11 }} axisLine={false} tickLine={false} />
+                <Tooltip contentStyle={tooltipStyle} cursor={{ fill: 'rgb(var(--bg-overlay))' }} />
+                <Bar dataKey="score" fill="#5e6ad2" radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          )}
+        </div>
+
+        <div className="bg-surface border border-edge rounded-lg p-5">
+          <div className="flex items-center gap-2 mb-5">
+            <FileText size={14} className="text-success" />
+            <h2 className="text-xs font-medium text-ink uppercase tracking-wider">Trend categories</h2>
+          </div>
+          {pieData.length === 0 ? (
+            <p className="text-sm text-ink-4 text-center py-12">No trends yet</p>
+          ) : (
+            <ResponsiveContainer width="100%" height={260}>
+              <PieChart>
+                <Pie data={pieData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={85}
+                     stroke="rgb(var(--bg-surface))" strokeWidth={2}
+                     label={{ fill: 'rgb(var(--text-secondary))', fontSize: 11 }}>
+                  {pieData.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
+                </Pie>
+                <Tooltip contentStyle={tooltipStyle} />
+                <Legend wrapperStyle={{ color: 'rgb(var(--text-secondary))', fontSize: 11 }} iconType="circle" />
+              </PieChart>
+            </ResponsiveContainer>
+          )}
+        </div>
+      </div>
+
+      {/* Rankings + gaps */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+
+        <div className="bg-surface border border-edge rounded-lg p-5">
+          <div className="flex items-center gap-2 mb-4">
+            <FileText size={14} className="text-accent" />
+            <h2 className="text-xs font-medium text-ink uppercase tracking-wider">Opportunity rankings</h2>
+          </div>
+          <div className="max-h-96 overflow-y-auto -mr-2 pr-2">
+            {opportunities.length === 0 ? (
+              <p className="text-sm text-ink-4 text-center py-8">No data yet</p>
+            ) : (
+              <div className="space-y-0.5">
+                {opportunities.map((o, i) => (
+                  <div key={o.id} className="flex items-center gap-3 py-2 border-b border-edge-subtle last:border-0">
+                    <span className="text-2xs text-ink-4 font-mono tabular-nums w-5 flex-shrink-0">{i + 1}</span>
+                    <span className="text-xs text-ink-2 truncate flex-1">{o.title}</span>
+                    <span className="text-xs font-mono tabular-nums text-accent flex-shrink-0">{o.opportunity_score.toFixed(2)}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="bg-surface border border-edge rounded-lg p-5">
+          <div className="flex items-center gap-2 mb-4">
+            <FileText size={14} className="text-success" />
+            <h2 className="text-xs font-medium text-ink uppercase tracking-wider">Research gaps</h2>
+          </div>
+          <div className="max-h-96 overflow-y-auto -mr-2 pr-2 space-y-3">
+            {gaps.length === 0 ? (
+              <p className="text-sm text-ink-4 text-center py-8">No data yet</p>
+            ) : (
+              gaps.map(g => (
+                <div key={g.id} className="pb-3 border-b border-edge-subtle last:border-0">
+                  <div className="flex items-start justify-between gap-3 mb-1.5">
+                    <p className="text-xs text-ink-2 leading-snug flex-1">{g.title}</p>
+                    <span className="text-xs font-mono tabular-nums text-success flex-shrink-0">{g.gap_score.toFixed(2)}</span>
+                  </div>
+                  <p className="text-2xs text-ink-4 leading-relaxed line-clamp-2">{g.description}</p>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      </div>
+
+    </div>
+  );
+}

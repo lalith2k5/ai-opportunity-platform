@@ -1,0 +1,984 @@
+# ============ CHUNK: _split_1_backend_agents_part2.txt ============
+# Files in this chunk: 6
+
+===== FILE: ./backend/app/agents/problem_discovery.py =====
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.cluster import KMeans
+import numpy as np
+from app.agents import opportunity_intelligence as _oi
+from app.agents.opportunity_intelligence import _clean_keywords, _title_case
+
+
+_EXTRA_NOISE = {
+    # Institutions / brands
+    "mit", "stanford", "berkeley", "cmu", "oxford", "cambridge", "harvard",
+    "caltech", "eth", "epfl", "openai", "anthropic", "deepmind", "gemini",
+    "claude", "chatgpt", "gpt", "copilot",
+    # Corporate / meeting boilerplate
+    "group", "advisory", "committee", "board", "member", "members",
+    "chair", "chairman", "director", "directors", "president",
+    "session", "workshop", "symposium", "seminar", "conference",
+    "meeting", "meetings", "summit", "forum", "panel", "keynote",
+    "strategic", "highlights", "recap", "bulletin", "newsletter",
+    # Academic / publication boilerplate
+    "journal", "volume", "issue", "edition", "editor", "editorial",
+    "proceedings", "transaction", "transactions", "abstract",
+    "introduction", "conclusion", "conclusions", "appendix",
+    "figure", "figures", "table", "tables", "equation", "equations",
+    "copyright", "license", "affiliation", "affiliations", "corresponding",
+    "received", "accepted", "published", "revised", "submitted",
+    "author", "authors", "manuscript", "submission", "preprint",
+    "fellowships", "fellowship", "scholarship", "scholarships",
+    # Numbers-as-words
+    "hundred", "thousand", "million", "billion", "trillion", "zero",
+    "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten",
+    # Generic verbs / connectors that TF-IDF over-weights
+    "wants", "want", "wanted", "wanted", "says", "said", "said",
+    "shows", "showed", "shown", "gives", "gave", "given",
+    "makes", "made", "takes", "took", "taken", "goes", "went",
+    # Over-broad single-word topics (too generic to be a title)
+    "emerging", "standards", "standard", "detector", "detectors",
+    "polygraph", "zipper", "brain", "lie", "lies", "truth", "false",
+    "inspired", "inspiring", "chip", "chips", "objective", "objectives",
+}
+_oi.NOISE_WORDS.update(_EXTRA_NOISE)
+
+# Short words allowed through (real acronyms/tech terms)
+_SHORT_ALLOWED = {
+    "ai", "ml", "iot", "nlp", "llm", "rag", "api", "ui", "ux", "db",
+    "sql", "aws", "gcp", "xai", "ar", "vr", "cnn", "rnn", "lstm",
+    "gan", "vae", "svm", "gpt", "bert", "5g", "6g", "3d",
+}
+
+
+class ProblemDiscoveryAgent:
+    MIN_CLUSTERS = 5
+    MAX_CLUSTERS = 30
+    MIN_KEYWORDS_TO_KEEP = 3   # <- stricter: need 3+ meaningful keywords
+
+    def _clean_topic_keywords(self, raw_keywords: list) -> list:
+        cleaned = _clean_keywords(raw_keywords or [])
+        combined = cleaned["phrases"] + cleaned["singles"]
+        # Reject 3-char words unless they're a known acronym
+        out = []
+        for k in combined:
+            if " " in k or len(k) >= 4 or k.lower() in _SHORT_ALLOWED:
+                out.append(k)
+        return out
+
+    def _build_cluster_title(self, clean_keywords: list) -> str:
+        label = ", ".join(_title_case(k) for k in clean_keywords[:3])
+        return f"Problem Cluster: {label}"
+
+    def discover(self, documents: list, n_clusters: int = None) -> list:
+        # Build texts while preserving original indices so downstream
+        # consumers (sentiment averaging) can map back to the source doc.
+        texts = []
+        orig_indices = []
+        for i, d in enumerate(documents):
+            if not d.get("title"):
+                continue
+            texts.append(d.get("title", "") + " " + (d.get("content", "") or "")[:500])
+            orig_indices.append(i)
+        if len(texts) < 2:
+            return []
+
+        if n_clusters is None:
+            n_clusters = max(self.MIN_CLUSTERS, min(self.MAX_CLUSTERS, len(texts) // 8))
+        n_clusters = min(n_clusters, len(texts))
+
+        try:
+            vectorizer = TfidfVectorizer(
+                max_features=min(500, max(100, len(texts) * 5)),
+                stop_words="english",
+            )
+            X = vectorizer.fit_transform(texts)
+            kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
+            labels = kmeans.fit_predict(X)
+            feature_names = vectorizer.get_feature_names_out()
+            clusters = []
+            for i in range(n_clusters):
+                indices_in_texts = np.where(labels == i)[0]
+                if len(indices_in_texts) == 0:
+                    continue
+                center = kmeans.cluster_centers_[i]
+                top_keywords = [feature_names[j] for j in center.argsort()[-8:][::-1]]
+
+                clean_kws = self._clean_topic_keywords(top_keywords)
+                if len(clean_kws) < self.MIN_KEYWORDS_TO_KEEP:
+                    continue
+
+                # Map cluster membership back to indices in the original
+                # `documents` list (used for per-cluster sentiment aggregation).
+                doc_indices = [orig_indices[j] for j in indices_in_texts]
+
+                clusters.append({
+                    "title": self._build_cluster_title(clean_kws),
+                    "description": f"Recurring issues related to: {', '.join(clean_kws[:8])}",
+                    "keywords": clean_kws,
+                    "source_count": len(indices_in_texts),
+                    "demand_score": min(1.0, len(indices_in_texts) / max(10, len(texts) // 5)),
+                    "_doc_indices": doc_indices,
+                })
+            return clusters
+        except Exception as e:
+            print(f"Clustering error: {e}")
+            return []
+
+===== FILE: ./backend/app/agents/problem_extractor.py =====
+"""LLM-powered extraction of structured Problem Profiles from challenge text.
+
+Turns a raw challenge document (SBIR solicitation, federal challenge, etc)
+into an 11-field structured profile with technology-stage differentiation
+and student-suitability scoring.
+"""
+import json
+import re
+
+from app.logger import logger
+from app.services.llm_service import LLMService
+
+
+_PROMPT = """You are extracting a structured problem profile from a source document.
+
+The source type is: {source_type}
+The document may be a GitHub issue, a research paper abstract, a news article,
+a patent abstract, or a public R&D/industry challenge. Extract the underlying
+real-world problem the document is describing, discussing, or addressing.
+
+Return ONLY valid JSON. No markdown fences, no explanations, no preamble. Use this exact schema:
+
+{
+  "organization": "string",
+  "problem_title": "string — specific, non-generic, under 100 chars",
+  "problem_description": "string — 2-4 sentences describing the actual technical challenge",
+  "industry_domain": "Healthcare|Manufacturing|Education|Finance|Cybersecurity|Transportation|Energy|Agriculture|Software|Robotics|Aerospace|Environment|Defense|Other",
+  "problem_type": "Performance|Accuracy|Security|Scalability|Cost|Automation|Reliability|Resource limitation|Data limitation|User experience|Other",
+  "technology_stage": "used|exploring|potential",
+  "required_technology": ["specific technology names mentioned"],
+  "current_approach": "string — how it is currently being addressed, or '' if not stated",
+  "known_limitations": "string — why current approaches fall short, or '' if not stated",
+  "expected_outcome": "string — what a successful solution achieves",
+  "problem_status": "active|solved|ongoing|unknown",
+  "student_suitability": "high|medium|low",
+  "keywords": ["normalized", "keywords"]
+}
+
+STRICT RULES:
+- Do NOT invent facts. If a field is not in the source, use "" or [].
+- problem_title must be specific (e.g. "Low-data industrial defect detection"), NOT generic (e.g. "AI improvement").
+- required_technology: only technology actually mentioned in the source.
+- technology_stage: "used" if deployed, "exploring" if under investigation, "potential" if only suggested.
+- student_suitability: "high" if a solo student could plausibly deliver a prototype; "low" if it requires specialized hardware/clearance/enterprise data.
+
+SOURCE:
+Title: {title}
+Organization: {org}
+URL: {url}
+Description:
+{description}
+"""
+
+
+_VALID_DOMAINS = {
+    "Healthcare","Manufacturing","Education","Finance","Cybersecurity",
+    "Transportation","Energy","Agriculture","Software","Robotics",
+    "Aerospace","Environment","Defense","Other",
+}
+_VALID_TYPES = {
+    "Performance","Accuracy","Security","Scalability","Cost","Automation",
+    "Reliability","Resource limitation","Data limitation","User experience","Other",
+}
+_VALID_STAGES = {"used", "exploring", "potential"}
+_VALID_STATUSES = {"active", "solved", "ongoing", "unknown"}
+_VALID_SUITABILITY = {"high", "medium", "low"}
+
+
+def _extract_json(text: str) -> dict | None:
+    if not text:
+        return None
+    # Strip markdown fences
+    text = re.sub(r"^```(?:json)?\s*", "", text.strip())
+    text = re.sub(r"\s*```$", "", text)
+    # Find outer braces
+    start = text.find("{")
+    end = text.rfind("}")
+    if start == -1 or end == -1 or end <= start:
+        return None
+    try:
+        return json.loads(text[start:end + 1])
+    except Exception:
+        return None
+
+
+class ProblemExtractorAgent:
+    def __init__(self):
+        self.llm = LLMService()
+
+    def _extract_one(self, item: dict, source_type: str = "unknown") -> dict | None:
+        # Universal content field — sources name content differently:
+        #   challenge_portal: raw_text / description
+        #   github / news / arxiv / patents: summary
+        #   reddit: selftext
+        description = (
+            item.get("raw_text")
+            or item.get("description")
+            or item.get("summary")
+            or item.get("selftext")
+            or ""
+        )
+        # Organization inference for sources that do not supply one
+        org = item.get("organization") or ""
+        if not org:
+            repo_url = item.get("repository_url") or ""
+            if "/repos/" in repo_url:
+                # e.g. "https://api.github.com/repos/owner/name" -> "owner"
+                parts = repo_url.rstrip("/").split("/")
+                if len(parts) >= 2:
+                    org = parts[-2]
+            if not org:
+                org = item.get("source") or item.get("lab") or "Unknown"
+
+        # Use .replace() rather than .format() — the JSON schema example in
+        # _PROMPT contains { } braces that .format() would misinterpret.
+        prompt = (
+            _PROMPT
+            .replace("{source_type}", str(source_type))
+            .replace("{title}", str(item.get("title", "")))
+            .replace("{org}", str(org))
+            .replace("{url}", str(item.get("url") or item.get("html_url") or ""))
+            .replace("{description}", str(description)[:4000])
+        )
+        try:
+            response = self.llm.generate(prompt)
+        except Exception as e:
+            logger.warning(f"[ProblemExtractor] LLM call failed: {e}")
+            return None
+
+        if not response or response.startswith("All LLM providers failed") or response.startswith("AI service not configured"):
+            logger.warning(f"[ProblemExtractor] LLM unavailable: {response[:120]}")
+            return None
+
+        data = _extract_json(response)
+        if not data:
+            logger.warning(f"[ProblemExtractor] JSON parse failed for '{item.get('title','')[:60]}'")
+            return None
+
+        # Normalize + validate
+        title = (data.get("problem_title") or "").strip()
+        if not title or len(title) < 10:
+            return None
+
+        domain = data.get("industry_domain") or "Other"
+        if domain not in _VALID_DOMAINS:
+            domain = "Other"
+
+        ptype = data.get("problem_type") or "Other"
+        if ptype not in _VALID_TYPES:
+            ptype = "Other"
+
+        stage = (data.get("technology_stage") or "potential").lower()
+        if stage not in _VALID_STAGES:
+            stage = "potential"
+
+        status = (data.get("problem_status") or "unknown").lower()
+        if status not in _VALID_STATUSES:
+            status = "unknown"
+
+        suitability = (data.get("student_suitability") or "medium").lower()
+        if suitability not in _VALID_SUITABILITY:
+            suitability = "medium"
+
+        techs = data.get("required_technology") or []
+        if not isinstance(techs, list):
+            techs = [str(techs)]
+        techs = [str(t).strip() for t in techs if t and str(t).strip()][:10]
+
+        kws = data.get("keywords") or []
+        if not isinstance(kws, list):
+            kws = [str(kws)]
+        kws = [str(k).strip().lower() for k in kws if k and str(k).strip()][:15]
+
+        return {
+            "organization": (data.get("organization") or org or "").strip()[:200],
+            "problem_title": title[:300],
+            "problem_description": (data.get("problem_description") or item.get("description") or "").strip()[:5000],
+            "industry_domain": domain,
+            "problem_type": ptype,
+            "technology_stage": stage,
+            "required_technology": techs,
+            "current_approach": (data.get("current_approach") or "").strip()[:3000],
+            "known_limitations": (data.get("known_limitations") or "").strip()[:3000],
+            "expected_outcome": (data.get("expected_outcome") or "").strip()[:3000],
+            "problem_status": status,
+            "student_suitability": suitability,
+            "keywords": kws,
+            "source": item.get("source") or source_type,
+            "source_url": item.get("url") or item.get("html_url") or "",
+            "extracted_by": self.llm.last_used or "unknown",
+        }
+
+    # If this many calls in a row fail, assume the LLM provider is down
+    # (quota exhausted, 429, network) and stop burning the remaining cap.
+    MAX_CONSECUTIVE_FAILURES = 2
+
+    def extract_batch(self, items: list, cap: int = 8, source_type: str = "unknown") -> list:
+        """Extract up to `cap` structured profiles. Skips failures silently.
+
+        Circuit breaker: after MAX_CONSECUTIVE_FAILURES failures in a row
+        for this source, stops trying — avoids hammering a rate-limited or
+        down provider and wasting the remaining extraction budget.
+        """
+        if not items or cap <= 0:
+            return []
+        out = []
+        attempted = 0
+        consecutive_failures = 0
+        for item in items[:cap]:
+            attempted += 1
+            profile = self._extract_one(item, source_type=source_type)
+            if profile:
+                out.append(profile)
+                consecutive_failures = 0
+            else:
+                consecutive_failures += 1
+                if consecutive_failures >= self.MAX_CONSECUTIVE_FAILURES:
+                    remaining = cap - attempted
+                    logger.warning(
+                        f"[ProblemExtractor] Circuit breaker tripped: "
+                        f"{consecutive_failures} consecutive failures for "
+                        f"source={source_type}; abandoning {remaining} remaining candidate(s)"
+                    )
+                    break
+        logger.info(
+            f"[ProblemExtractor] Extracted {len(out)}/{attempted} "
+            f"profiles (source={source_type})"
+        )
+        return out
+
+===== FILE: ./backend/app/agents/research_direction_agent.py =====
+"""ResearchDirectionAgent — LLM-generated research + project directions.
+
+Given an enriched view of an opportunity (problem, technologies, papers,
+trends, evidence sources), generates:
+
+  - suggested_research_direction: one research-oriented sentence
+  - suggested_project_direction:  one concrete student/team project
+
+Both fields are populated per SRS §34 (Opportunity Card).
+Single LLM call per opportunity — low quota cost.
+"""
+import json
+import re
+
+from app.logger import logger
+from app.services.llm_service import LLMService
+
+
+_PROMPT = """You are advising on a problem-technology opportunity.
+
+Given the details below, produce ONLY valid JSON (no markdown, no preamble):
+
+{
+  "suggested_research_direction": "1-2 sentences on the research angle worth pursuing",
+  "suggested_project_direction":  "1-2 sentences on a concrete buildable project"
+}
+
+RULES:
+- Be specific to the technologies and limitations provided.
+- Do NOT invent facts not present in the input.
+- If information is thin, keep both answers short and generic.
+- Max 300 characters each.
+
+OPPORTUNITY:
+Title: {title}
+Description: {description}
+Domain: {domain}
+Related technologies: {technologies}
+Existing research (titles): {papers}
+Known limitations: {limitations}
+Emerging trend: {trend}
+"""
+
+
+def _extract_json(text: str) -> dict | None:
+    if not text:
+        return None
+    text = re.sub(r"^```(?:json)?\s*", "", text.strip())
+    text = re.sub(r"\s*```$", "", text)
+    start = text.find("{"); end = text.rfind("}")
+    if start == -1 or end == -1 or end <= start:
+        return None
+    try:
+        return json.loads(text[start:end + 1])
+    except Exception:
+        return None
+
+
+class ResearchDirectionAgent:
+    MAX_CONSECUTIVE_FAILURES = 2
+
+    def __init__(self):
+        self.llm = LLMService()
+
+    def _generate_one(self, snapshot: dict) -> dict:
+        prompt = (
+            _PROMPT
+            .replace("{title}",        (snapshot.get("title") or "")[:200])
+            .replace("{description}",  (snapshot.get("description") or "")[:800])
+            .replace("{domain}",       (snapshot.get("domain") or "Other")[:60])
+            .replace("{technologies}", ", ".join((snapshot.get("technologies") or [])[:8]))
+            .replace("{papers}",       " | ".join((snapshot.get("papers") or [])[:5]))
+            .replace("{limitations}",  " | ".join((snapshot.get("limitations") or [])[:5])[:500])
+            .replace("{trend}",        (snapshot.get("trend") or "")[:120])
+        )
+        try:
+            response = self.llm.generate(prompt)
+        except Exception as e:
+            logger.warning(f"[ResearchDirection] LLM call failed: {e}")
+            return {}
+        if not response or response.startswith("All LLM providers failed") \
+                or response.startswith("AI service not configured"):
+            logger.warning(f"[ResearchDirection] LLM unavailable: {response[:120]}")
+            return {}
+        data = _extract_json(response)
+        if not data:
+            return {}
+        out = {}
+        for key in ("suggested_research_direction", "suggested_project_direction"):
+            v = data.get(key)
+            if isinstance(v, str):
+                s = v.strip()
+                if s:
+                    out[key] = s[:500]
+        return out
+
+    def generate_batch(self, snapshots: list) -> list:
+        """snapshots: [{"opportunity_row": row, **enrichment_context}, ...]
+        Returns [(row, {directions_dict}), ...] for rows that produced output."""
+        if not snapshots:
+            return []
+        results = []
+        consecutive_failures = 0
+        for snap in snapshots:
+            row = snap["opportunity_row"]
+            out = self._generate_one(snap)
+            if out:
+                results.append((row, out))
+                consecutive_failures = 0
+            else:
+                consecutive_failures += 1
+                if consecutive_failures >= self.MAX_CONSECUTIVE_FAILURES:
+                    logger.warning(
+                        f"[ResearchDirection] Circuit breaker tripped: "
+                        f"{consecutive_failures} consecutive failures; abandoning remaining"
+                    )
+                    break
+        logger.info(
+            f"[ResearchDirection] Generated directions for {len(results)}/{len(snapshots)} opportunities"
+        )
+        return results
+
+===== FILE: ./backend/app/agents/research_discovery_agent.py =====
+"""ResearchDiscoveryAgent — find arXiv papers per problem + extract limitations.
+
+For each ProblemProfile:
+  1. Build a focused arXiv query from the problem title + top keywords.
+  2. Fetch top-N papers via the existing ArxivService.
+  3. ONE LLM call for all N papers: score relevance to the problem and
+     extract limitations each paper's approach has for this problem.
+
+Design notes:
+  - Single LLM call per problem (not per paper) — N abstracts go in, N
+    assessments come out. Cuts token usage and quota burn dramatically.
+  - Circuit breaker stops after 2 consecutive LLM failures, same pattern
+    as ProblemExtractorAgent / TechnologyAgent.
+  - KG wiring (STUDIED_BY / HAS_LIMITATION / HAS_POTENTIAL_GAP) is
+    deferred to Phase 5 (KG schema alignment).
+"""
+import json
+import re
+
+from app.logger import logger
+from app.services.arxiv_service import ArxivService
+from app.services.llm_service import LLMService
+
+
+_PROMPT = """You are analyzing research papers relative to a specific problem.
+
+PROBLEM:
+Title: {title}
+Description: {description}
+Industry: {domain}
+Keywords: {keywords}
+
+For each paper below, return:
+  - relevance_score: 0.0 to 1.0 — how relevant is this paper to the problem?
+  - limitations: array of 1 to 3 short strings describing limitations, gaps,
+    or unaddressed aspects of the paper's approach relative to THIS problem.
+    Only list limitations the paper itself mentions OR that are evident from
+    the abstract. Do NOT invent.
+
+Return ONLY valid JSON, no markdown, no preamble:
+{{
+  "assessments": [
+    {{"paper_index": 0, "relevance_score": 0.0, "limitations": ["..."]}},
+    {{"paper_index": 1, "relevance_score": 0.0, "limitations": ["..."]}}
+  ]
+}}
+
+PAPERS:
+{papers_block}
+"""
+
+_PAPER_BLOCK = """[{idx}] {title}
+     Abstract: {abstract}
+"""
+
+
+def _extract_json(text: str) -> dict | None:
+    if not text:
+        return None
+    text = re.sub(r"^```(?:json)?\s*", "", text.strip())
+    text = re.sub(r"\s*```$", "", text)
+    start = text.find("{"); end = text.rfind("}")
+    if start == -1 or end == -1 or end <= start:
+        return None
+    try:
+        return json.loads(text[start:end + 1])
+    except Exception:
+        return None
+
+
+class ResearchDiscoveryAgent:
+    MAX_PAPERS_PER_PROBLEM = 5
+    MAX_CONSECUTIVE_FAILURES = 2
+
+    def __init__(self):
+        self.arxiv = ArxivService()
+        self.llm = LLMService()
+
+    def _build_query(self, problem_row) -> str:
+        title = (problem_row.problem_title or "").strip()
+        kws = (problem_row.keywords or [])[:3]
+        parts = [title] + [str(k) for k in kws if k]
+        return " ".join(parts)[:300] or "artificial intelligence"
+
+    def _assess_papers(self, problem_row, papers: list) -> dict:
+        """Return {paper_idx: {relevance_score, limitations}} — {} on failure."""
+        papers_block = "".join(
+            _PAPER_BLOCK.format(
+                idx=i,
+                title=(p.get("title") or "")[:200],
+                abstract=(p.get("summary") or "")[:600],
+            )
+            for i, p in enumerate(papers)
+        )
+        prompt = (
+            _PROMPT
+            .replace("{title}", (problem_row.problem_title or "")[:300])
+            .replace("{description}", (problem_row.problem_description or "")[:1500])
+            .replace("{domain}", problem_row.industry_domain or "Other")
+            .replace("{keywords}", ", ".join((problem_row.keywords or [])[:10]))
+            .replace("{papers_block}", papers_block)
+        )
+        try:
+            response = self.llm.generate(prompt)
+        except Exception as e:
+            logger.warning(f"[ResearchDiscovery] LLM call failed: {e}")
+            return {}
+        if not response or response.startswith("All LLM providers failed") \
+                or response.startswith("AI service not configured"):
+            logger.warning(f"[ResearchDiscovery] LLM unavailable: {response[:120]}")
+            return {}
+        data = _extract_json(response)
+        if not data or not isinstance(data.get("assessments"), list):
+            logger.warning(
+                f"[ResearchDiscovery] JSON parse failed for "
+                f"'{problem_row.problem_title[:60]}'"
+            )
+            return {}
+        out = {}
+        for a in data["assessments"]:
+            if not isinstance(a, dict):
+                continue
+            try:
+                idx = int(a.get("paper_index", -1))
+            except Exception:
+                continue
+            if idx < 0 or idx >= len(papers):
+                continue
+            try:
+                score = float(a.get("relevance_score", 0.5))
+            except Exception:
+                score = 0.5
+            score = max(0.0, min(1.0, score))
+            lims_raw = a.get("limitations") or []
+            if not isinstance(lims_raw, list):
+                lims_raw = [str(lims_raw)]
+            lims = []
+            for L in lims_raw[:3]:
+                s = str(L).strip()
+                if s and len(s) <= 400:
+                    lims.append(s)
+            out[idx] = {"relevance_score": round(score, 3), "limitations": lims}
+        return out
+
+    def _process_one(self, problem_row) -> list:
+        """Return list of paper dicts with limitations for one problem. [] on failure."""
+        query = self._build_query(problem_row)
+        papers = self.arxiv.search_papers(query, max_results=self.MAX_PAPERS_PER_PROBLEM)
+        if not papers:
+            logger.info(f"[ResearchDiscovery] No arXiv papers for '{query[:60]}'")
+            return []
+        assessments = self._assess_papers(problem_row, papers)
+        if not assessments:
+            return []
+        out = []
+        for i, p in enumerate(papers):
+            a = assessments.get(i)
+            if not a:
+                continue
+            # Skip clearly irrelevant hits
+            if a["relevance_score"] < 0.3:
+                continue
+            out.append({
+                "arxiv_id": str(p.get("id") or "").strip()[:200],
+                "title": (p.get("title") or "").strip()[:500],
+                "authors": (p.get("authors") or [])[:10],
+                "abstract": (p.get("summary") or "").strip()[:5000],
+                "url": (p.get("url") or "").strip()[:500],
+                "published": "",
+                "relevance_score": a["relevance_score"],
+                "limitations": a["limitations"],
+            })
+        return out
+
+    def extract_batch(self, profiles: list) -> list:
+        """Return [(profile_row, [paper_dict, ...]), ...] for profiles with hits."""
+        if not profiles:
+            return []
+        results = []
+        consecutive_failures = 0
+        for row in profiles:
+            try:
+                papers = self._process_one(row)
+            except Exception as e:
+                logger.warning(f"[ResearchDiscovery] process error for '{row.problem_title[:50]}': {e}")
+                papers = []
+            if papers:
+                results.append((row, papers))
+                consecutive_failures = 0
+            else:
+                consecutive_failures += 1
+                if consecutive_failures >= self.MAX_CONSECUTIVE_FAILURES:
+                    logger.warning(
+                        f"[ResearchDiscovery] Circuit breaker tripped: "
+                        f"{consecutive_failures} consecutive failures; "
+                        f"abandoning remaining profiles"
+                    )
+                    break
+        logger.info(
+            f"[ResearchDiscovery] Found papers for {len(results)}/{len(profiles)} profiles"
+        )
+        return results
+
+===== FILE: ./backend/app/agents/research_gap.py =====
+import re
+import numpy as np
+from app.logger import logger
+from app.agents import opportunity_intelligence as _oi
+from app.agents.problem_discovery import _EXTRA_NOISE  # ensures mutation on import
+from app.agents.opportunity_intelligence import _clean_keywords, _title_case
+
+_oi.NOISE_WORDS.update(_EXTRA_NOISE)
+
+
+class ResearchGapAgent:
+    FUTURE_WORK_PATTERNS = [
+        r"future work (?:will|should|may|could|might|must|is|includes?|involves?)",
+        r"future research (?:will|should|may|could|might|is|includes?|directions?)",
+        r"remains? (?:an? )?open (?:problem|question|challenge|issue)",
+        r"not (?:yet )?(?:been )?(?:addressed|explored|studied|solved)",
+        r"open (?:problem|question|challenge|issue)",
+        r"worth (?:investigating|exploring|studying)",
+        r"calls? for further",
+        r"promising (?:direction|avenue|future)",
+        r"unexplored",
+        r"needs? (?:to be )?(?:further )?(?:studied|explored|investigated|addressed)",
+    ]
+
+    MIN_KEYWORDS_TO_KEEP = 2
+
+    def extract_future_work(self, text: str, max_snippets: int = 3) -> list:
+        if not text:
+            return []
+        sentences = re.split(r'(?<=[.!?])\s+', text.strip())
+        snippets = []
+        for sent in sentences:
+            lower = sent.lower()
+            for pattern in self.FUTURE_WORK_PATTERNS:
+                if re.search(pattern, lower):
+                    clean = sent.strip()
+                    if 20 < len(clean) < 400:
+                        snippets.append(clean)
+                    break
+            if len(snippets) >= max_snippets:
+                break
+        return snippets
+
+    def _semantic_coverage(self, paper_embeddings, embedder, cluster, keywords) -> float:
+        if paper_embeddings is None or embedder is None or len(paper_embeddings) == 0:
+            return None
+        try:
+            cluster_text = ((cluster.get("title") or "") + " " + " ".join(str(k) for k in keywords[:8]))[:1000]
+            cluster_emb = embedder.model.encode([cluster_text], normalize_embeddings=True)[0]
+            sims = paper_embeddings @ cluster_emb
+            top_k = min(5, len(sims))
+            if top_k == 0:
+                return None
+            mean_top = float(np.sort(sims)[::-1][:top_k].mean())
+            return max(0.0, min(1.0, (mean_top - 0.25) / 0.5))
+        except Exception as e:
+            logger.warning(f"[ResearchGap] Semantic coverage failed: {e}")
+            return None
+
+    def _clean_flat(self, raw: list) -> list:
+        cleaned = _clean_keywords(raw or [])
+        return cleaned["phrases"] + cleaned["singles"]
+
+    def detect_gaps(self, problem_clusters: list, arxiv_papers: list) -> list:
+        gaps = []
+
+        paper_texts = [
+            ((p.get("title") or "") + " " + (p.get("summary") or ""))[:2000]
+            for p in arxiv_papers
+        ]
+        paper_embeddings = None
+        embedder = None
+        if paper_texts:
+            try:
+                from app.services.embedding_service import EmbeddingService
+                embedder = EmbeddingService()
+                paper_embeddings = embedder.model.encode(paper_texts, normalize_embeddings=True, batch_size=32)
+                logger.info(f"[ResearchGap] Embedded {len(paper_texts)} papers")
+            except Exception as e:
+                logger.error(f"[ResearchGap] Embedding failed, falling back to keyword-only: {e}")
+                paper_embeddings = None
+
+        paper_text = " ".join(paper_texts).lower()
+
+        all_future_work = []
+        for paper in arxiv_papers:
+            fw = self.extract_future_work(paper.get("summary", ""), max_snippets=2)
+            if fw:
+                all_future_work.append({"paper_title": paper.get("title", ""), "snippets": fw})
+
+        for cluster in problem_clusters:
+            raw_keywords = cluster.get("keywords", [])
+            if not raw_keywords:
+                continue
+            keywords = self._clean_flat(raw_keywords)
+            if len(keywords) < self.MIN_KEYWORDS_TO_KEEP:
+                continue  # skip noise clusters entirely
+
+            kw_matches = sum(1 for kw in keywords if kw.lower() in paper_text)
+            keyword_coverage = kw_matches / max(len(keywords), 1)
+
+            semantic_coverage = self._semantic_coverage(paper_embeddings, embedder, cluster, keywords)
+            if semantic_coverage is None:
+                semantic_coverage = keyword_coverage
+
+            coverage = max(0.0, min(1.0, 0.7 * semantic_coverage + 0.3 * keyword_coverage))
+            gap_score = 1.0 - coverage
+
+            relevant_future_work = []
+            for fw in all_future_work:
+                for snippet in fw["snippets"]:
+                    if any(kw.lower() in snippet.lower() for kw in keywords[:5]):
+                        relevant_future_work.append({"paper": fw["paper_title"], "snippet": snippet})
+                        break
+
+            label = ", ".join(_title_case(k) for k in keywords[:3])
+
+            gaps.append({
+                "title": f"Research Gap: {label}",
+                "description": f"Limited research coverage ({coverage:.0%}) for problems related to: {', '.join(keywords[:5])}",
+                "gap_score": round(gap_score, 2),
+                "evidence": {
+                    "coverage": round(coverage, 3),
+                    "semantic_coverage": round(semantic_coverage, 3),
+                    "keyword_coverage": round(keyword_coverage, 3),
+                    "keywords": keywords,
+                    "future_work_snippets": relevant_future_work[:3],
+                },
+            })
+
+        return gaps
+
+===== FILE: ./backend/app/agents/technology_agent.py =====
+"""TechnologyAgent — extract technologies associated with a problem profile.
+
+For each ProblemProfile, asks the LLM to identify technologies used, proposed,
+emerging, or potentially applicable to that problem. Categories follow SRS
+Module 5 (§12) and roadmap Phase 2.1.
+
+Stage vocabulary (matches SRS):
+  - used                 : already deployed in this problem space
+  - proposed             : under active investigation or planned
+  - emerging             : recent/rising in this domain
+  - potentially_applicable : plausible but not yet applied here
+"""
+import json
+import re
+
+from app.logger import logger
+from app.services.llm_service import LLMService
+
+
+_PROMPT = """You are identifying TECHNOLOGIES associated with a specific problem.
+
+Return ONLY valid JSON. No markdown fences, no explanations, no preamble.
+Use this exact schema:
+
+{
+  "technologies": [
+    {
+      "name": "short technology name (e.g. 'Computer Vision', 'Federated Learning')",
+      "stage": "used|proposed|emerging|potentially_applicable",
+      "confidence": 0.0,
+      "evidence": "one short phrase explaining why, sourced from the text below"
+    }
+  ]
+}
+
+STRICT RULES:
+- Return 2 to 6 technologies. Do NOT pad.
+- Only return technologies that are plausibly connected to THIS problem.
+- "stage" describes how the technology relates to solving this problem:
+    used                     = the text says it is already in use here
+    proposed                 = the text proposes or plans to use it
+    emerging                 = it is gaining traction in this problem domain
+    potentially_applicable   = plausible but not yet mentioned as applied
+- confidence is a float 0.0 to 1.0 reflecting how well the text supports it.
+- If the text mentions no technologies, return {"technologies": []}.
+- Do NOT invent specifics that are not in the text.
+
+PROBLEM:
+Title: {title}
+Description: {description}
+Industry domain: {domain}
+Keywords: {keywords}
+"""
+
+_VALID_STAGES = {"used", "proposed", "emerging", "potentially_applicable"}
+
+
+def _extract_json(text: str) -> dict | None:
+    if not text:
+        return None
+    text = re.sub(r"^```(?:json)?\s*", "", text.strip())
+    text = re.sub(r"\s*```$", "", text)
+    start = text.find("{")
+    end = text.rfind("}")
+    if start == -1 or end == -1 or end <= start:
+        return None
+    try:
+        return json.loads(text[start:end + 1])
+    except Exception:
+        return None
+
+
+class TechnologyAgent:
+    """LLM-based extraction of technologies per problem profile."""
+
+    MAX_PER_PROBLEM = 6
+    MAX_CONSECUTIVE_FAILURES = 2
+
+    def __init__(self):
+        self.llm = LLMService()
+
+    def _extract_one(self, profile_row) -> list:
+        """Return a list of normalized technology dicts for one ProblemProfile."""
+        prompt = (
+            _PROMPT
+            .replace("{title}", (profile_row.problem_title or "")[:300])
+            .replace("{description}", (profile_row.problem_description or "")[:2000])
+            .replace("{domain}", (profile_row.industry_domain or "Other"))
+            .replace("{keywords}", ", ".join((profile_row.keywords or [])[:10]))
+        )
+        try:
+            response = self.llm.generate(prompt)
+        except Exception as e:
+            logger.warning(f"[TechnologyAgent] LLM call failed: {e}")
+            return []
+
+        if not response or response.startswith("All LLM providers failed") \
+                or response.startswith("AI service not configured"):
+            logger.warning(f"[TechnologyAgent] LLM unavailable: {response[:120]}")
+            return []
+
+        data = _extract_json(response)
+        if not data or not isinstance(data.get("technologies"), list):
+            logger.warning(
+                f"[TechnologyAgent] JSON parse failed for "
+                f"'{profile_row.problem_title[:60]}'"
+            )
+            return []
+
+        out = []
+        seen = set()
+        for t in data["technologies"][: self.MAX_PER_PROBLEM]:
+            if not isinstance(t, dict):
+                continue
+            name = (t.get("name") or "").strip()
+            if not name or len(name) < 2 or len(name) > 120:
+                continue
+            key = name.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            stage = (t.get("stage") or "").strip().lower()
+            if stage not in _VALID_STAGES:
+                stage = "potentially_applicable"
+            try:
+                conf = float(t.get("confidence", 0.5))
+            except Exception:
+                conf = 0.5
+            conf = max(0.0, min(1.0, conf))
+            evidence = (t.get("evidence") or "").strip()[:500]
+            out.append({
+                "name": name[:200],
+                "stage": stage,
+                "confidence": round(conf, 3),
+                "evidence": evidence,
+            })
+        return out
+
+    def extract_batch(self, profiles: list) -> list:
+        """For each ProblemProfile row, extract techs. Returns
+        [(profile_row, [tech_dict, ...]), ...] for rows where at least one
+        tech was found. Circuit breaker stops after too many consecutive
+        LLM failures."""
+        if not profiles:
+            return []
+        results = []
+        consecutive_failures = 0
+        for row in profiles:
+            techs = self._extract_one(row)
+            if techs:
+                results.append((row, techs))
+                consecutive_failures = 0
+            else:
+                consecutive_failures += 1
+                if consecutive_failures >= self.MAX_CONSECUTIVE_FAILURES:
+                    logger.warning(
+                        f"[TechnologyAgent] Circuit breaker tripped: "
+                        f"{consecutive_failures} consecutive failures; "
+                        f"abandoning remaining profiles"
+                    )
+                    break
+        logger.info(
+            f"[TechnologyAgent] Extracted techs for {len(results)}/{len(profiles)} profiles"
+        )
+        return results

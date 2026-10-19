@@ -1,0 +1,2036 @@
+# ============ CHUNK: _split_6_infra_part3.txt ============
+# Files in this chunk: 44
+
+===== FILE: ./docker-compose.yml =====
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: aod_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: aod_user
+      POSTGRES_PASSWORD: aod_password
+      POSTGRES_DB: ai_opportunity_db
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U aod_user -d ai_opportunity_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: aod_backend
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: "postgresql+psycopg2://aod_user:aod_password@postgres:5432/ai_opportunity_db"
+      GEMINI_API_KEY: "${GEMINI_API_KEY}"
+      GITHUB_TOKEN: "${GITHUB_TOKEN:-}"
+      REDDIT_CLIENT_ID: "${REDDIT_CLIENT_ID:-}"
+      REDDIT_CLIENT_SECRET: "${REDDIT_CLIENT_SECRET:-}"
+      REDDIT_USER_AGENT: "ai-opportunity-platform/1.0"
+      CHROMA_PERSIST_DIR: "/app/chroma_db"
+    ports:
+      - "8000:8000"
+    volumes:
+      - chroma_data:/app/chroma_db
+      - ./backend/logs:/app/logs
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: aod_frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./frontend/src:/app/src
+      - ./frontend/index.html:/app/index.html
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: aod_caddy
+    restart: unless-stopped
+    depends_on:
+      - backend
+      - frontend
+    ports:
+      - "8443:8443"
+      - "8444:8444"
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  postgres_data:
+  chroma_data:
+  caddy_data:
+  caddy_config:
+
+===== FILE: ./op-logs.sh =====
+#!/bin/bash
+ROOT="$HOME/ai-opportunity-platform"
+LOG_DIR="$ROOT/backend/logs"
+
+which_log="${1:-all}"
+
+case "$which_log" in
+  backend)  tail -f "$LOG_DIR/backend.log" ;;
+  frontend) tail -f "$LOG_DIR/frontend.log" ;;
+  caddy)    tail -f "$LOG_DIR/caddy.log" ;;
+  all)
+    echo "Tailing all logs (Ctrl+C to exit)"
+    tail -f "$LOG_DIR/backend.log" "$LOG_DIR/frontend.log" "$LOG_DIR/caddy.log" 2>/dev/null
+    ;;
+  *)
+    echo "Usage: op-logs [backend|frontend|caddy|all]"
+    exit 1
+    ;;
+esac
+
+===== FILE: ./op-start.sh =====
+#!/bin/bash
+# Start the AI Opportunity Platform: Postgres + backend + frontend + caddy
+
+ROOT="$HOME/ai-opportunity-platform"
+PID_DIR="$ROOT/handoff/pids"
+LOG_DIR="$ROOT/backend/logs"
+mkdir -p "$PID_DIR" "$LOG_DIR"
+
+GREEN="\033[0;32m"; YELLOW="\033[0;33m"; RED="\033[0;31m"; RESET="\033[0m"
+
+is_running() {
+  local pidfile="$1"
+  [ -f "$pidfile" ] && kill -0 "$(cat "$pidfile")" 2>/dev/null
+}
+
+start_service() {
+  local name="$1"
+  local dir="$2"
+  local cmd="$3"
+  local pidfile="$PID_DIR/$name.pid"
+  local logfile="$LOG_DIR/$name.log"
+  if is_running "$pidfile"; then
+    echo -e "${YELLOW}[skip]${RESET} $name already running (pid $(cat "$pidfile"))"
+    return 0
+  fi
+  cd "$dir" || { echo -e "${RED}[fail]${RESET} cannot cd to $dir"; return 1; }
+  nohup bash -c "$cmd" > "$logfile" 2>&1 &
+  local child_pid=$!
+  echo "$child_pid" > "$pidfile"
+  echo -e "${GREEN}[start]${RESET} $name (pid $child_pid) — log: $logfile"
+}
+
+echo "=== Starting AI Opportunity Platform ==="
+echo
+
+# 1. Postgres
+if ! pg_isready -q 2>/dev/null; then
+  echo "[start] PostgreSQL…"
+  brew services start postgresql@17 >/dev/null 2>&1 || true
+  for i in {1..15}; do
+    pg_isready -q 2>/dev/null && break
+    sleep 1
+  done
+fi
+pg_isready -q 2>/dev/null && echo -e "${GREEN}[ok]${RESET} PostgreSQL ready" || echo -e "${RED}[fail]${RESET} PostgreSQL not ready"
+
+# 2. Backend
+start_service "backend" "$ROOT/backend" "source venv/bin/activate && exec uvicorn app.main:app --host 0.0.0.0 --port 8000"
+
+# 3. Frontend
+start_service "frontend" "$ROOT/frontend" "exec npm run dev"
+
+# 4. Caddy
+if command -v caddy >/dev/null 2>&1; then
+  start_service "caddy" "$ROOT/caddy" "exec caddy run --config Caddyfile.local --adapter caddyfile"
+else
+  echo -e "${YELLOW}[skip]${RESET} caddy not installed — HTTPS at :8443 unavailable"
+fi
+
+echo
+echo "Waiting for backend to respond…"
+for i in {1..90}; do
+  if curl -sf http://localhost:8000/api/health >/dev/null 2>&1; then
+    echo -e "${GREEN}[ok]${RESET} Backend healthy after ${i}s"
+    break
+  fi
+  sleep 1
+  [ $i -eq 90 ] && echo -e "${RED}[fail]${RESET} Backend did not become healthy in 90s — check logs"
+done
+
+echo
+echo "=== Ready ==="
+echo "  Frontend:  http://localhost:5173"
+echo "  HTTPS:     https://localhost:8443  (if caddy started)"
+echo "  API docs:  http://localhost:8000/docs"
+echo
+echo "  Stop:      op-stop"
+echo "  Status:    op-status"
+echo "  Logs:      op-logs"
+
+===== FILE: ./op-status.sh =====
+#!/bin/bash
+ROOT="$HOME/ai-opportunity-platform"
+PID_DIR="$ROOT/handoff/pids"
+
+GREEN="\033[0;32m"; RED="\033[0;31m"; YELLOW="\033[0;33m"; RESET="\033[0m"
+
+check_service() {
+  local name="$1" pidfile="$PID_DIR/$1.pid"
+  if [ -f "$pidfile" ] && kill -0 "$(cat "$pidfile")" 2>/dev/null; then
+    echo -e "  ${GREEN}●${RESET} $name — running (pid $(cat "$pidfile"))"
+  else
+    echo -e "  ${RED}○${RESET} $name — stopped"
+  fi
+}
+
+echo "=== AI Opportunity Platform status ==="
+check_service backend
+check_service frontend
+check_service caddy
+
+echo
+echo "Ports:"
+for entry in "8000:backend API" "5173:frontend" "8443:HTTPS (caddy)"; do
+  port="${entry%%:*}"
+  label="${entry#*:}"
+  pid=$(lsof -ti :$port 2>/dev/null || true)
+  if [ -n "$pid" ]; then
+    echo -e "  ${GREEN}●${RESET} $port ($label) — pid $pid"
+  else
+    echo -e "  ${YELLOW}○${RESET} $port ($label) — free"
+  fi
+done
+
+echo
+echo "Backend health:"
+if curl -sf http://localhost:8000/api/health 2>/dev/null | python3 -m json.tool 2>/dev/null; then
+  :
+else
+  echo "  (backend not responding)"
+fi
+
+echo
+echo "Postgres:"
+pg_isready 2>/dev/null && echo -e "  ${GREEN}●${RESET} accepting connections" || echo -e "  ${RED}○${RESET} not running"
+
+===== FILE: ./op-stop.sh =====
+#!/bin/bash
+# Stop backend, frontend, caddy (Postgres keeps running)
+
+ROOT="$HOME/ai-opportunity-platform"
+PID_DIR="$ROOT/handoff/pids"
+
+GREEN="\033[0;32m"; YELLOW="\033[0;33m"; RESET="\033[0m"
+
+stop_service() {
+  local name="$1" pidfile="$PID_DIR/$1.pid"
+  if [ ! -f "$pidfile" ]; then
+    echo -e "${YELLOW}[skip]${RESET} $name — no pidfile"
+    return
+  fi
+  local pid=$(cat "$pidfile")
+  if kill -0 "$pid" 2>/dev/null; then
+    # Kill the process group so child procs die too
+    kill -TERM -"$pid" 2>/dev/null || kill -TERM "$pid" 2>/dev/null
+    sleep 1
+    kill -KILL "$pid" 2>/dev/null || true
+    echo -e "${GREEN}[stop]${RESET} $name (pid $pid)"
+  else
+    echo -e "${YELLOW}[skip]${RESET} $name — not running"
+  fi
+  rm -f "$pidfile"
+}
+
+echo "=== Stopping AI Opportunity Platform ==="
+stop_service "frontend"
+stop_service "caddy"
+stop_service "backend"
+
+# Safety net: kill anything still on the ports
+for port in 8000 5173 8443; do
+  pid=$(lsof -ti :$port 2>/dev/null || true)
+  if [ -n "$pid" ]; then
+    echo -e "${YELLOW}[clean]${RESET} killing stray process on port $port (pid $pid)"
+    kill -KILL "$pid" 2>/dev/null || true
+  fi
+done
+
+echo
+echo "Postgres still running. Stop it with:  brew services stop postgresql@17"
+
+===== FILE: ./setup-https.sh =====
+#!/bin/bash
+# Sets up local HTTPS: starts Docker stack with Caddy and trusts the CA on macOS.
+set -e
+
+echo "=== AI Opportunity Platform — HTTPS Setup ==="
+echo ""
+
+if ! command -v docker &> /dev/null; then
+    echo "Docker is not installed. Install Docker Desktop: https://docker.com/products/docker-desktop"
+    exit 1
+fi
+
+if ! docker info > /dev/null 2>&1; then
+    echo "Docker daemon is not running. Start Docker Desktop first."
+    exit 1
+fi
+
+echo "[1/3] Building + starting containers…"
+docker compose up -d --build postgres backend frontend caddy
+
+echo ""
+echo "[2/3] Waiting for Caddy to generate its local CA…"
+sleep 5
+
+echo ""
+echo "[3/3] Extracting Caddy CA for trust…"
+docker compose exec -T caddy cat /data/caddy/pki/authorities/local/root.crt > /tmp/caddy-root.crt
+
+echo ""
+echo "=========================================================="
+echo " HTTPS is now available at:"
+echo "   Frontend + API:  https://localhost:8443"
+echo "   Backend direct:  https://localhost:8444/docs"
+echo ""
+echo " To trust the certificate in your browser, run:"
+echo "   sudo security add-trusted-cert -d -r trustRoot \\"
+echo "     -k /Library/Keychains/System.keychain /tmp/caddy-root.crt"
+echo ""
+echo " Then open: https://localhost:8443"
+echo "=========================================================="
+
+===== FILE: ./start-all.sh =====
+#!/bin/bash
+osascript -e 'tell application "Terminal" to do script "bash ~/ai-opportunity-platform/start-backend.sh"'
+sleep 3
+osascript -e 'tell application "Terminal" to do script "bash ~/ai-opportunity-platform/start-frontend.sh"'
+echo "Both servers launching in separate Terminal tabs..."
+
+===== FILE: ./start-backend.sh =====
+#!/bin/bash
+cd ~/ai-opportunity-platform/backend
+source venv/bin/activate
+
+# Ensure PostgreSQL is running
+if ! pg_isready -q 2>/dev/null; then
+    echo "Starting PostgreSQL..."
+    brew services start postgresql@17
+    sleep 3
+fi
+
+echo "Starting backend on http://localhost:8000"
+uvicorn app.main:app --reload --port 8000
+
+===== FILE: ./start-frontend.sh =====
+#!/bin/bash
+cd ~/ai-opportunity-platform/frontend
+echo "Starting frontend on http://localhost:5173"
+npm run dev
+
+===== FILE: ./verify_backup.sh =====
+#!/bin/bash
+# Verifies the most recent DB backup can be restored to a scratch database.
+
+set -e
+BACKUP_ROOT="$HOME/ai-opportunity-platform/backups"
+TEST_DB="ai_opportunity_verify_$(date +%s)"
+LATEST=$(ls -t "$BACKUP_ROOT"/db_ai_opportunity_db_*.sql 2>/dev/null | head -1)
+
+if [ -z "$LATEST" ]; then
+    echo "FAIL: No backup found in $BACKUP_ROOT"
+    exit 1
+fi
+
+echo "[$(date)] Verifying: $LATEST"
+echo "[$(date)] Creating scratch DB: $TEST_DB"
+
+createdb "$TEST_DB"
+
+echo "[$(date)] Restoring..."
+if psql -q -d "$TEST_DB" < "$LATEST" > /dev/null 2>&1; then
+    ROWS=$(psql -t -d "$TEST_DB" -c "SELECT COUNT(*) FROM users;" | tr -d ' ')
+    OPPS=$(psql -t -d "$TEST_DB" -c "SELECT COUNT(*) FROM opportunities;" | tr -d ' ')
+    echo "[$(date)] OK: Restored successfully"
+    echo "  Users: $ROWS"
+    echo "  Opportunities: $OPPS"
+    RESULT=0
+else
+    echo "[$(date)] FAIL: Restore failed"
+    RESULT=1
+fi
+
+dropdb "$TEST_DB" 2>/dev/null
+
+if [ $RESULT -eq 0 ]; then
+    echo "[$(date)] Backup is RESTORABLE ✓"
+    echo "$(date): OK — $LATEST" >> "$BACKUP_ROOT/verify.log"
+else
+    echo "[$(date)] Backup is CORRUPT ✗"
+    echo "$(date): FAIL — $LATEST" >> "$BACKUP_ROOT/verify.log"
+    exit 1
+fi
+
+===== FILE: ./.github/workflows/test.yml =====
+name: backend-tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements-dev.txt
+      - name: Run smoke tests
+        # The suite skips itself cleanly when the backend isn't reachable,
+        # so this job serves as a "does the test file at least import and
+        # collect" check. Full end-to-end testing requires the live stack.
+        run: pytest backend/tests -v --collect-only
+
+===== FILE: ./backend/.env.example =====
+# ============================================================
+# AI Opportunity Platform — backend configuration
+# Copy this file to `.env` and fill in your own values.
+# ============================================================
+
+# --- Environment ---
+# DEV_MODE=true  -> forgot-password returns the reset token in the JSON response (local dev)
+# DEV_MODE=false -> token is only logged server-side (production)
+DEV_MODE="true"
+
+# --- Security (REQUIRED) ---
+# Generate with: python -c "import secrets; print(secrets.token_urlsafe(64))"
+SECRET_KEY="change-me-in-production-use-a-long-random-string"
+
+# --- Database ---
+DATABASE_URL="postgresql+psycopg2://localhost/ai_opportunity_db"
+
+# --- LLM providers ---
+LLM_PRIMARY_PROVIDER="gemini"  # gemini | openai | anthropic
+
+GEMINI_API_KEY=""
+GEMINI_MODEL="gemini-3.8-flash"
+
+OPENAI_API_KEY=""
+OPENAI_MODEL="gpt-4o-mini"
+
+ANTHROPIC_API_KEY=""
+ANTHROPIC_MODEL="claude-3-5-haiku-20241022"
+
+# --- Data sources ---
+GITHUB_TOKEN=""
+REDDIT_CLIENT_ID=""
+REDDIT_CLIENT_SECRET=""
+REDDIT_USER_AGENT="ai-opportunity-platform/1.0"
+
+# --- Patents ---
+# Free API key from https://patentsview.org/apis/keyrequest
+# Leave blank to disable the patents source entirely.
+PATENTSVIEW_API_KEY=""
+
+# --- Vector store ---
+CHROMA_PERSIST_DIR="./chroma_db"
+
+===== FILE: ./backend/Dockerfile =====
+FROM python:3.12-slim
+
+RUN apt-get update && apt-get install -y \
+    gcc g++ libpq-dev curl \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt
+
+RUN python -m spacy download en_core_web_sm && \
+    python -c "import nltk; nltk.download('punkt'); nltk.download('punkt_tab'); nltk.download('stopwords'); nltk.download('wordnet'); nltk.download('vader_lexicon')"
+
+COPY . .
+
+EXPOSE 8000
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+
+===== FILE: ./backend/cleanup_dedup.py =====
+"""Dedup opportunities/clusters/gaps/trends by title/name, re-pointing FK refs first."""
+from app.database import SessionLocal
+from app import models
+
+
+def find_keep_map(rows, key_field, score_field):
+    """Return (keep_map, delete_ids). keep_map: dup_id -> keep_id"""
+    seen = {}          # key -> best row (keep candidate)
+    keep_map = {}      # every_id -> its keep_id (identity for kept rows)
+    delete_ids = []
+
+    for r in rows:
+        key = getattr(r, key_field)
+        if not key:
+            keep_map[r.id] = r.id
+            continue
+        if key not in seen:
+            seen[key] = r
+            keep_map[r.id] = r.id
+            continue
+        keep = seen[key]
+        keep_score = getattr(keep, score_field) or 0
+        dup_score = getattr(r, score_field) or 0
+        if dup_score > keep_score:
+            # duplicate is better → it becomes the keeper, old keeper gets deleted
+            keep_map[keep.id] = r.id
+            delete_ids.append(keep.id)
+            keep_map[r.id] = r.id
+            seen[key] = r
+        else:
+            keep_map[r.id] = keep.id
+            delete_ids.append(r.id)
+    return keep_map, delete_ids
+
+
+def remap_fk(db, table_model, fk_column_name, keep_map, delete_ids):
+    """Update fk_column to point to kept row before deleting duplicates."""
+    if not delete_ids:
+        return
+    for dup_id in delete_ids:
+        keep_id = keep_map[dup_id]
+        db.query(table_model).filter(
+            getattr(table_model, fk_column_name) == dup_id
+        ).update({fk_column_name: keep_id})
+    db.flush()
+
+
+def delete_ids(db, Model, ids):
+    if not ids:
+        return
+    db.query(Model).filter(Model.id.in_(ids)).delete(synchronize_session=False)
+    db.flush()
+
+
+def main():
+    db = SessionLocal()
+    try:
+        # --- Opportunities (no incoming FKs) ---
+        opps = db.query(models.Opportunity).order_by(models.Opportunity.id).all()
+        _, opp_del = find_keep_map(opps, "title", "opportunity_score")
+        n_opps = len(opp_del)
+        delete_ids(db, models.Opportunity, opp_del)
+
+        # --- Research gaps (referenced by opportunities.research_gap_id) ---
+        gaps = db.query(models.ResearchGap).order_by(models.ResearchGap.id).all()
+        gap_keep, gap_del = find_keep_map(gaps, "title", "gap_score")
+        remap_fk(db, models.Opportunity, "research_gap_id", gap_keep, gap_del)
+        n_gaps = len(gap_del)
+        delete_ids(db, models.ResearchGap, gap_del)
+
+        # --- Problem clusters (referenced by gaps + opportunities) ---
+        clusters = db.query(models.ProblemCluster).order_by(models.ProblemCluster.id).all()
+        cluster_keep, cluster_del = find_keep_map(clusters, "title", "demand_score")
+        remap_fk(db, models.ResearchGap, "problem_cluster_id", cluster_keep, cluster_del)
+        remap_fk(db, models.Opportunity, "problem_cluster_id", cluster_keep, cluster_del)
+        n_clusters = len(cluster_del)
+        delete_ids(db, models.ProblemCluster, cluster_del)
+
+        # --- Trends (no incoming FKs) ---
+        trends = db.query(models.Trend).order_by(models.Trend.id).all()
+        _, trend_del = find_keep_map(trends, "name", "trend_score")
+        n_trends = len(trend_del)
+        delete_ids(db, models.Trend, trend_del)
+
+        db.commit()
+
+        print(f"Deleted: {n_opps} opps, {n_clusters} clusters, {n_gaps} gaps, {n_trends} trends")
+        print(f"Opportunities: {db.query(models.Opportunity).count()}")
+        print(f"Clusters:      {db.query(models.ProblemCluster).count()}")
+        print(f"Gaps:          {db.query(models.ResearchGap).count()}")
+        print(f"Trends:        {db.query(models.Trend).count()}")
+    except Exception as e:
+        db.rollback()
+        print(f"ERROR: {e}")
+        raise
+    finally:
+        db.close()
+
+
+if __name__ == "__main__":
+    main()
+
+===== FILE: ./backend/fix_titles.py =====
+"""Clean garbage titles in problem_clusters, research_gaps, opportunities.
+
+Rows whose keyword list yields < 2 meaningful keywords after cleaning are
+deleted along with their dependent rows (opportunities reference them by FK).
+"""
+from app.database import SessionLocal
+from app import models
+from app.agents.problem_discovery import _EXTRA_NOISE  # applies NOISE_WORDS mutation
+from app.agents.opportunity_intelligence import (
+    _clean_keywords, _title_case, _is_latin_only, OpportunityIntelligenceAgent,
+)
+
+MIN_KEEP = 2
+
+
+def _clean_flat(raw):
+    cleaned = _clean_keywords(raw or [])
+    return cleaned["phrases"] + cleaned["singles"]
+
+
+def _label(kws):
+    return ", ".join(_title_case(k) for k in kws[:3])
+
+
+def main():
+    db = SessionLocal()
+    try:
+        # ---------- 1. Classify clusters ----------
+        all_clusters = db.query(models.ProblemCluster).all()
+        keep, drop = [], []
+        for c in all_clusters:
+            clean = _clean_flat(c.keywords or [])
+            if len(clean) >= MIN_KEEP:
+                keep.append((c, clean))
+            else:
+                drop.append(c)
+
+        drop_ids = [c.id for c in drop]
+        print(f"Clusters: {len(keep)} kept, {len(drop)} will be deleted")
+
+        # ---------- 2. Delete noise clusters + dependents ----------
+        if drop_ids:
+            opp_to_drop = db.query(models.Opportunity).filter(
+                models.Opportunity.problem_cluster_id.in_(drop_ids)
+            ).all()
+            opp_drop_ids = [o.id for o in opp_to_drop]
+            db.query(models.Opportunity).filter(
+                models.Opportunity.problem_cluster_id.in_(drop_ids)
+            ).delete(synchronize_session=False)
+            db.query(models.ResearchGap).filter(
+                models.ResearchGap.problem_cluster_id.in_(drop_ids)
+            ).delete(synchronize_session=False)
+            db.query(models.ProblemCluster).filter(
+                models.ProblemCluster.id.in_(drop_ids)
+            ).delete(synchronize_session=False)
+            db.flush()
+            print(f"  -> deleted {len(drop_ids)} clusters, {len(opp_drop_ids)} linked opportunities, "
+                  f"and their linked gaps")
+
+        # ---------- 3. Rewrite surviving cluster titles ----------
+        c_updated = 0
+        for c, clean in keep:
+            new_title = f"Problem Cluster: {_label(clean)}"
+            new_desc = f"Recurring issues related to: {', '.join(clean[:8])}"
+            if c.title != new_title or c.keywords != clean:
+                c.title = new_title
+                c.keywords = clean
+                c.description = new_desc
+                c_updated += 1
+        db.flush()
+
+        # ---------- 4. Rewrite gap titles ----------
+        cluster_by_id = {c.id: c for c in db.query(models.ProblemCluster).all()}
+        g_updated = g_dropped = 0
+        for g in db.query(models.ResearchGap).all():
+            c = cluster_by_id.get(g.problem_cluster_id)
+            if not c:
+                db.delete(g)
+                g_dropped += 1
+                continue
+            kws = _clean_flat(c.keywords or [])
+            if len(kws) < MIN_KEEP:
+                db.delete(g)
+                g_dropped += 1
+                continue
+            new_title = f"Research Gap: {_label(kws)}"
+            if g.title != new_title:
+                g.title = new_title
+                g_updated += 1
+        db.flush()
+
+        # ---------- 5. Rewrite opportunity titles ----------
+        agent = OpportunityIntelligenceAgent()
+        cluster_by_id = {c.id: c for c in db.query(models.ProblemCluster).all()}
+        gap_by_id = {g.id: g for g in db.query(models.ResearchGap).all()}
+        o_updated = 0
+        for opp in db.query(models.Opportunity).all():
+            c = cluster_by_id.get(opp.problem_cluster_id)
+            if not c:
+                continue
+            gap = gap_by_id.get(opp.research_gap_id)
+            cluster_dict = {
+                "title": c.title, "description": c.description,
+                "keywords": c.keywords or [], "demand_score": c.demand_score,
+            }
+            gap_dict = {"gap_score": gap.gap_score} if gap else None
+            new_title = agent._generate_title(cluster_dict, gap_dict)
+            new_desc = agent._generate_description(cluster_dict, gap_dict)
+            if c.title and _is_latin_only(c.title):
+                new_desc += f" Source cluster: {c.title[:120]}"
+            if opp.title != new_title:
+                opp.title = new_title
+                o_updated += 1
+            opp.description = new_desc
+
+        db.commit()
+        print("=" * 60)
+        print(f"Clusters kept:     {len(keep)} (updated titles: {c_updated})")
+        print(f"Clusters deleted:  {len(drop)}")
+        print(f"Gaps updated:      {g_updated}")
+        print(f"Gaps deleted:      {g_dropped}")
+        print(f"Opportunities upd: {o_updated}")
+        print("=" * 60)
+    except Exception as e:
+        db.rollback()
+        print(f"ERROR: {e}")
+        raise
+    finally:
+        db.close()
+
+
+if __name__ == "__main__":
+    main()
+
+===== FILE: ./backend/health_scan.py =====
+"""
+Hit every API endpoint with real auth. Print a status table.
+Flags anything that isn't 200 (or expected 4xx for known-bad inputs).
+"""
+import requests
+import json
+
+BASE = "http://127.0.0.1:8000"
+
+def login():
+    r = requests.post(
+        f"{BASE}/api/auth/login",
+        data={"username": "test@example.com", "password": "test1234"},
+    )
+    if r.status_code != 200:
+        print(f"❌ Login failed: {r.status_code} {r.text[:200]}")
+        return None
+    return r.json()["access_token"]
+
+def check(method, path, token, expect=200, **kw):
+    headers = {"Authorization": f"Bearer {token}"} if token else {}
+    try:
+        if method == "GET":
+            r = requests.get(f"{BASE}{path}", headers=headers, timeout=15, **kw)
+        elif method == "POST":
+            r = requests.post(f"{BASE}{path}", headers=headers, timeout=30, **kw)
+        elif method == "DELETE":
+            r = requests.delete(f"{BASE}{path}", headers=headers, timeout=15, **kw)
+        elif method == "PATCH":
+            r = requests.patch(f"{BASE}{path}", headers=headers, timeout=15, **kw)
+        else:
+            return "??", "unknown method"
+
+        marker = "✅" if r.status_code == expect else "❌"
+        snippet = r.text[:80].replace("\n", " ") if r.status_code != expect else ""
+        return marker, f"{r.status_code} {snippet}"
+    except Exception as e:
+        return "💥", str(e)[:80]
+
+def main():
+    token = login()
+    if not token:
+        return
+
+    # Discover a valid opp id, problem id, gap id, trend name, session id
+    r = requests.get(f"{BASE}/api/opportunities", headers={"Authorization": f"Bearer {token}"})
+    opps = r.json() if r.status_code == 200 else []
+    opp_id = opps[0]["id"] if opps else 1
+
+    r = requests.get(f"{BASE}/api/chat-history", headers={"Authorization": f"Bearer {token}"})
+    sessions = r.json() if r.status_code == 200 else []
+    session_id = sessions[0]["id"] if sessions else 1
+
+    tests = [
+        # method, path, expect
+        ("GET",  "/api/health", 200),
+        ("GET",  "/api/opportunities", 200),
+        ("GET",  f"/api/opportunities/{opp_id}", 200),
+        ("GET",  "/api/problems", 200),
+        ("GET",  "/api/research-gaps", 200),
+        ("GET",  "/api/trends", 200),
+        ("GET",  "/api/search-history", 200),
+        ("GET",  "/api/chat-history", 200),
+        ("GET",  f"/api/chat-sessions/{session_id}", 200),
+        ("GET",  "/api/processed-documents", 200),
+        ("GET",  "/api/notifications", 200),
+        ("GET",  "/api/notifications/unread-count", 200),
+        ("GET",  "/api/kg/stats", 200),
+        ("GET",  "/api/kg/nodes?limit=5", 200),
+        ("GET",  "/api/kg/edges?limit=5", 200),
+        ("GET",  "/api/kg/entity-types", 200),
+        ("GET",  "/api/kg/search?q=ai", 200),
+        ("GET",  "/api/scheduler/status", 200),
+        ("GET",  "/api/reports/narrative", 200),
+        ("GET",  "/api/export/opportunities.json", 200),
+        ("GET",  "/api/export/research-gaps.json", 200),
+        ("GET",  "/api/export/full.json", 200),
+        ("GET",  "/api/auth/me", 200),
+        ("GET",  "/api/admin/stats", 200),
+        ("GET",  "/api/admin/users", 200),
+        ("GET",  "/api/admin/agent-logs?limit=5", 200),
+        ("GET",  "/api/admin/scheduler", 200),
+        ("GET",  "/api/admin/settings", 200),
+        ("GET",  "/api/admin/sync/status", 200),
+        ("GET",  "/api/admin/llm/status", 200),
+    ]
+
+    print(f"\n{'Method':<7}{'Endpoint':<52}{'Result'}")
+    print("-" * 100)
+
+    failures = []
+    for method, path, expect in tests:
+        marker, result = check(method, path, token, expect=expect)
+        print(f"{method:<7}{path:<52}{marker} {result}")
+        if marker != "✅":
+            failures.append((method, path, result))
+
+    # POST endpoints tested with safe payloads
+    print()
+    post_tests = [
+        ("POST", "/api/search", {"json": {"query": "machine learning"}}, 200),
+    ]
+    for method, path, kwargs, expect in post_tests:
+        marker, result = check(method, path, token, expect=expect, **kwargs)
+        print(f"{method:<7}{path:<52}{marker} {result}")
+        if marker != "✅":
+            failures.append((method, path, result))
+
+    print()
+    if failures:
+        print(f"\n❌ {len(failures)} endpoint(s) failed:\n")
+        for m, p, r in failures:
+            print(f"  {m} {p}")
+            print(f"    {r}\n")
+    else:
+        print("✅ All endpoints healthy")
+
+if __name__ == "__main__":
+    main()
+
+===== FILE: ./backend/migrate_kg_relations_uppercase.py =====
+"""One-shot migration: uppercase existing kg_edges relations.
+
+Uses the LEGACY_RELATION_MAP from app.kg_schema. Idempotent.
+
+Run with:
+    cd ~/ai-opportunity-platform/backend
+    source venv/bin/activate
+    python3 migrate_kg_relations_uppercase.py
+"""
+from sqlalchemy import text
+from app.database import engine
+from app.kg_schema import LEGACY_RELATION_MAP
+
+
+def main():
+    print("[migrate] uppercase kg_edges.relation values")
+    total = 0
+    with engine.begin() as conn:
+        for old, new in LEGACY_RELATION_MAP.items():
+            if old == new:
+                continue
+            n = conn.execute(text(
+                "UPDATE kg_edges SET relation = :new WHERE relation = :old"
+            ), {"new": new, "old": old}).rowcount
+            if n:
+                print(f"  {old:>22} -> {new:<22} : {n} rows")
+                total += n
+    print(f"[migrate] done ({total} rows updated)")
+
+
+if __name__ == "__main__":
+    main()
+
+===== FILE: ./backend/migrate_opportunity_enrichment.py =====
+"""One-shot migration: add enrichment columns to opportunities.
+
+Idempotent — safe to run multiple times.
+
+Run with:
+    cd ~/ai-opportunity-platform/backend
+    source venv/bin/activate
+    python3 migrate_opportunity_enrichment.py
+"""
+from sqlalchemy import text
+from app.database import engine
+
+
+COLS = [
+    ("domain",                    "VARCHAR(120)"),
+    ("industry",                  "VARCHAR(120)"),
+    ("related_technologies",      "JSONB DEFAULT '[]'::jsonb"),
+    ("existing_research",         "JSONB DEFAULT '[]'::jsonb"),
+    ("existing_approaches",       "TEXT"),
+    ("known_limitations",         "TEXT"),
+    ("suggested_research_direction", "TEXT"),
+    ("suggested_project_direction",  "TEXT"),
+    ("emerging_trend",            "VARCHAR(200)"),
+    ("evidence_sources",          "JSONB DEFAULT '[]'::jsonb"),
+]
+
+
+def main():
+    print("[migrate] adding enrichment columns to opportunities")
+    with engine.begin() as conn:
+        for name, typ in COLS:
+            conn.execute(text(
+                f"ALTER TABLE opportunities ADD COLUMN IF NOT EXISTS {name} {typ}"
+            ))
+            print(f"  + {name:<32} {typ}")
+    print("[migrate] done")
+
+
+if __name__ == "__main__":
+    main()
+
+===== FILE: ./backend/migrate_opportunity_evidence.py =====
+"""One-shot migration: create opportunity_evidence table.
+
+Idempotent — safe to run multiple times.
+
+Run with:
+    cd ~/ai-opportunity-platform/backend
+    source venv/bin/activate
+    python3 migrate_opportunity_evidence.py
+"""
+from sqlalchemy import text
+from app.database import engine
+
+
+def main():
+    print("[migrate] create opportunity_evidence table if missing")
+    with engine.begin() as conn:
+        conn.execute(text(
+            "CREATE TABLE IF NOT EXISTS opportunity_evidence ("
+            "  id SERIAL PRIMARY KEY,"
+            "  opportunity_id INTEGER NOT NULL "
+            "    REFERENCES opportunities(id) ON DELETE CASCADE,"
+            "  source VARCHAR(64) NOT NULL,"
+            "  title VARCHAR(500),"
+            "  url VARCHAR(500),"
+            "  relevance_score DOUBLE PRECISION DEFAULT 0.0,"
+            "  snippet TEXT,"
+            "  created_at TIMESTAMPTZ DEFAULT NOW()"
+            ")"
+        ))
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_opportunity_evidence_opp "
+            "ON opportunity_evidence (opportunity_id)"
+        ))
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_opportunity_evidence_source "
+            "ON opportunity_evidence (source)"
+        ))
+        conn.execute(text(
+            "CREATE UNIQUE INDEX IF NOT EXISTS ux_opportunity_evidence_opp_url "
+            "ON opportunity_evidence (opportunity_id, url)"
+        ))
+    print("[migrate] done")
+
+
+if __name__ == "__main__":
+    main()
+
+===== FILE: ./backend/migrate_opportunity_score_history.py =====
+"""One-shot migration: create opportunity_score_history table.
+
+Idempotent — safe to run multiple times.
+"""
+from sqlalchemy import text
+from app.database import engine
+
+
+def main():
+    print("[migrate] create opportunity_score_history")
+    with engine.begin() as conn:
+        conn.execute(text(
+            "CREATE TABLE IF NOT EXISTS opportunity_score_history ("
+            "  id SERIAL PRIMARY KEY,"
+            "  opportunity_id INTEGER NOT NULL "
+            "    REFERENCES opportunities(id) ON DELETE CASCADE,"
+            "  opportunity_score DOUBLE PRECISION DEFAULT 0.0,"
+            "  rank INTEGER,"
+            "  recorded_at TIMESTAMPTZ DEFAULT NOW()"
+            ")"
+        ))
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_opp_score_hist_opp "
+            "ON opportunity_score_history (opportunity_id)"
+        ))
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_opp_score_hist_time "
+            "ON opportunity_score_history (recorded_at)"
+        ))
+    print("[migrate] done")
+
+
+if __name__ == "__main__":
+    main()
+
+===== FILE: ./backend/migrate_problem_papers.py =====
+"""One-shot migration: create problem_papers table.
+
+Idempotent — safe to run multiple times.
+
+Run with:
+    cd ~/ai-opportunity-platform/backend
+    source venv/bin/activate
+    python3 migrate_problem_papers.py
+"""
+from sqlalchemy import text
+from app.database import engine
+
+
+def main():
+    print("[migrate] create problem_papers table if missing")
+    with engine.begin() as conn:
+        conn.execute(text(
+            "CREATE TABLE IF NOT EXISTS problem_papers ("
+            "  id SERIAL PRIMARY KEY,"
+            "  problem_profile_id INTEGER NOT NULL "
+            "    REFERENCES problem_profiles(id) ON DELETE CASCADE,"
+            "  arxiv_id VARCHAR(200),"
+            "  title VARCHAR(500),"
+            "  authors JSONB DEFAULT '[]'::jsonb,"
+            "  abstract TEXT,"
+            "  url VARCHAR(500),"
+            "  relevance_score DOUBLE PRECISION DEFAULT 0.5,"
+            "  limitations JSONB DEFAULT '[]'::jsonb,"
+            "  published VARCHAR(100),"
+            "  created_at TIMESTAMPTZ DEFAULT NOW()"
+            ")"
+        ))
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_problem_papers_profile "
+            "ON problem_papers (problem_profile_id)"
+        ))
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_problem_papers_arxiv "
+            "ON problem_papers (arxiv_id)"
+        ))
+        conn.execute(text(
+            "CREATE UNIQUE INDEX IF NOT EXISTS ux_problem_papers_profile_arxiv "
+            "ON problem_papers (problem_profile_id, arxiv_id)"
+        ))
+    print("[migrate] done")
+
+
+if __name__ == "__main__":
+    main()
+
+===== FILE: ./backend/migrate_problem_profiles_additional_sources.py =====
+"""One-shot migration: add ProblemProfile.additional_sources JSONB column.
+
+Idempotent — safe to run multiple times.
+
+Run with:
+    cd ~/ai-opportunity-platform/backend
+    source venv/bin/activate
+    python3 migrate_problem_profiles_additional_sources.py
+"""
+from sqlalchemy import text
+from app.database import engine
+
+
+def main():
+    print("[migrate] ensure additional_sources column exists")
+    with engine.begin() as conn:
+        conn.execute(text(
+            "ALTER TABLE problem_profiles "
+            "ADD COLUMN IF NOT EXISTS additional_sources JSONB DEFAULT '[]'::jsonb"
+        ))
+        conn.execute(text(
+            "UPDATE problem_profiles SET additional_sources = '[]'::jsonb "
+            "WHERE additional_sources IS NULL"
+        ))
+    print("[migrate] done")
+
+
+if __name__ == "__main__":
+    main()
+
+===== FILE: ./backend/migrate_problem_profiles_canonical_hash.py =====
+"""One-shot migration: add ProblemProfile.canonical_hash + backfill.
+
+Idempotent — safe to run multiple times. Uses ADD COLUMN IF NOT EXISTS
+(PostgreSQL) then backfills hashes for existing rows.
+
+Run with:
+    cd ~/ai-opportunity-platform/backend
+    source venv/bin/activate
+    python3 migrate_problem_profiles_canonical_hash.py
+"""
+from sqlalchemy import text
+
+from app.database import engine, SessionLocal
+from app import models
+from app.agents.problem_agent import ProblemAgent
+
+
+def main():
+    print("[migrate] step 1: ensure column exists")
+    with engine.begin() as conn:
+        conn.execute(text(
+            "ALTER TABLE problem_profiles "
+            "ADD COLUMN IF NOT EXISTS canonical_hash VARCHAR(16)"
+        ))
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_problem_profiles_canonical_hash "
+            "ON problem_profiles (canonical_hash)"
+        ))
+    print("[migrate] step 1: OK")
+
+    print("[migrate] step 2: backfill hashes for existing rows")
+    db = SessionLocal()
+    try:
+        agent = ProblemAgent()
+        rows = db.query(models.ProblemProfile).all()
+        updated = 0
+        for r in rows:
+            h = agent.compute_hash(r.problem_title or "")
+            if h and r.canonical_hash != h:
+                r.canonical_hash = h
+                updated += 1
+        db.commit()
+        print(f"[migrate] step 2: backfilled {updated} of {len(rows)} rows")
+
+        # Report any dup collisions the backfill revealed
+        from sqlalchemy import func
+        dups = (
+            db.query(models.ProblemProfile.canonical_hash, func.count(models.ProblemProfile.id))
+            .filter(models.ProblemProfile.canonical_hash.isnot(None))
+            .group_by(models.ProblemProfile.canonical_hash)
+            .having(func.count(models.ProblemProfile.id) > 1)
+            .all()
+        )
+        if dups:
+            print(f"[migrate] NOTE: {len(dups)} canonical_hash collision(s) found in existing rows.")
+            print("[migrate]       These pre-date Phase 1.2 and are left in place.")
+            print("[migrate]       Future saves will dedup against them automatically.")
+    finally:
+        db.close()
+    print("[migrate] done")
+
+
+if __name__ == "__main__":
+    main()
+
+===== FILE: ./backend/migrate_problem_technologies.py =====
+"""One-shot migration: create problem_technologies table.
+
+Idempotent — safe to run multiple times.
+
+Run with:
+    cd ~/ai-opportunity-platform/backend
+    source venv/bin/activate
+    python3 migrate_problem_technologies.py
+"""
+from sqlalchemy import text
+from app.database import engine
+
+
+def main():
+    print("[migrate] create problem_technologies table if missing")
+    with engine.begin() as conn:
+        conn.execute(text(
+            "CREATE TABLE IF NOT EXISTS problem_technologies ("
+            "  id SERIAL PRIMARY KEY,"
+            "  problem_profile_id INTEGER NOT NULL REFERENCES problem_profiles(id) ON DELETE CASCADE,"
+            "  technology_name VARCHAR(200) NOT NULL,"
+            "  stage VARCHAR(32) NOT NULL DEFAULT 'potentially_applicable',"
+            "  confidence DOUBLE PRECISION DEFAULT 0.5,"
+            "  evidence TEXT,"
+            "  created_at TIMESTAMPTZ DEFAULT NOW()"
+            ")"
+        ))
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_problem_technologies_profile "
+            "ON problem_technologies (problem_profile_id)"
+        ))
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_problem_technologies_name "
+            "ON problem_technologies (technology_name)"
+        ))
+        # Prevent exact dup rows for the same profile + tech name (case-insensitive)
+        conn.execute(text(
+            "CREATE UNIQUE INDEX IF NOT EXISTS ux_problem_technologies_profile_name "
+            "ON problem_technologies (problem_profile_id, LOWER(technology_name))"
+        ))
+    print("[migrate] done")
+
+
+if __name__ == "__main__":
+    main()
+
+===== FILE: ./backend/purge_derived.py =====
+"""Purge all pipeline-derived data so we can start with a clean slate.
+
+Keeps: users, raw_documents, refresh_tokens, password_reset_tokens, agent_logs.
+Wipes: problem_clusters, research_gaps, opportunities, trends, trend_snapshots,
+       notifications, processed_documents, search_history, chat_sessions,
+       chat_messages, kg_nodes, kg_edges.
+"""
+from app.database import SessionLocal
+from app import models
+from app.services.embedding_service import EmbeddingService
+
+
+def main():
+    db = SessionLocal()
+    try:
+        counts = {}
+        for model in [
+            models.ChatMessage, models.ChatSession,
+            models.SearchHistory,
+            models.Notification,
+            models.KnowledgeGraphEdge, models.KnowledgeGraphNode,
+            models.TrendSnapshot, models.Trend,
+            models.Opportunity, models.ResearchGap, models.ProblemCluster,
+            models.ProcessedDocument,
+        ]:
+            n = db.query(model).delete(synchronize_session=False)
+            counts[model.__tablename__] = n
+        db.commit()
+        for k, v in counts.items():
+            print(f"  wiped {v:>5} rows from {k}")
+    except Exception as e:
+        db.rollback()
+        raise
+    finally:
+        db.close()
+
+    # Also wipe the vector store
+    try:
+        emb = EmbeddingService()
+        existing = emb.collection.get()
+        ids = existing.get("ids", [])
+        if ids:
+            emb.collection.delete(ids=ids)
+            print(f"  wiped {len(ids)} vectors from Chroma")
+        else:
+            print("  vector store was already empty")
+    except Exception as e:
+        print(f"  Chroma wipe skipped: {e}")
+
+
+if __name__ == "__main__":
+    main()
+
+===== FILE: ./backend/regen_all.py =====
+"""Regenerate all opportunity + gap titles using current logic."""
+from app.database import SessionLocal
+from app import models
+from app.agents.opportunity_intelligence import OpportunityIntelligenceAgent
+from app.agents.research_gap import ResearchGapAgent
+import re
+
+
+def main():
+    opp_agent = OpportunityIntelligenceAgent()
+    gap_agent = ResearchGapAgent()
+    db = SessionLocal()
+    try:
+        # Opportunities
+        opps = db.query(models.Opportunity).all()
+        for opp in opps:
+            cluster = None
+            if opp.problem_cluster_id:
+                cluster = db.query(models.ProblemCluster).filter(
+                    models.ProblemCluster.id == opp.problem_cluster_id
+                ).first()
+            if not cluster:
+                continue
+            gap = None
+            if opp.research_gap_id:
+                gap = db.query(models.ResearchGap).filter(
+                    models.ResearchGap.id == opp.research_gap_id
+                ).first()
+
+            cluster_dict = {
+                "title": cluster.title,
+                "description": cluster.description,
+                "keywords": cluster.keywords or [],
+                "demand_score": cluster.demand_score,
+            }
+            gap_dict = {"gap_score": gap.gap_score} if gap else None
+
+            opp.title = opp_agent._generate_title(cluster_dict, gap_dict)
+            new_desc = opp_agent._generate_description(cluster_dict, gap_dict)
+            if cluster.title:
+                from app.agents.opportunity_intelligence import _is_latin_only
+                if _is_latin_only(cluster.title):
+                    new_desc += f" Source cluster: {cluster.title[:120]}"
+            opp.description = new_desc
+
+        # Research gaps
+        gaps = db.query(models.ResearchGap).all()
+        for gap in gaps:
+            cluster = None
+            if gap.problem_cluster_id:
+                cluster = db.query(models.ProblemCluster).filter(
+                    models.ProblemCluster.id == gap.problem_cluster_id
+                ).first()
+            if not cluster:
+                continue
+            raw_title = cluster.title or "Unknown"
+            clean = raw_title.replace("Problem Cluster:", "").strip()
+            clean = re.sub(r"[^\x00-\x7F]+", "", clean).strip()
+            if not clean:
+                clean = "Unknown Domain"
+            gap.title = f"Research Gap: {clean}"
+
+        db.commit()
+        print(f"Regenerated {len(opps)} opportunities, {len(gaps)} gaps")
+    finally:
+        db.close()
+
+
+if __name__ == "__main__":
+    main()
+
+===== FILE: ./backend/regen_titles.py =====
+"""Regenerate titles for existing opportunities using current logic."""
+from app.database import SessionLocal
+from app import models
+from app.agents.opportunity_intelligence import OpportunityIntelligenceAgent
+
+
+def main():
+    agent = OpportunityIntelligenceAgent()
+    db = SessionLocal()
+    try:
+        opps = db.query(models.Opportunity).all()
+        updated = 0
+        for opp in opps:
+            cluster = None
+            if opp.problem_cluster_id:
+                cluster = db.query(models.ProblemCluster).filter(
+                    models.ProblemCluster.id == opp.problem_cluster_id
+                ).first()
+            if not cluster:
+                continue
+
+            gap = None
+            if opp.research_gap_id:
+                gap = db.query(models.ResearchGap).filter(
+                    models.ResearchGap.id == opp.research_gap_id
+                ).first()
+
+            cluster_dict = {
+                "title": cluster.title,
+                "description": cluster.description,
+                "keywords": cluster.keywords or [],
+                "demand_score": cluster.demand_score,
+            }
+            gap_dict = {"gap_score": gap.gap_score} if gap else None
+
+            opp.title = agent._generate_title(cluster_dict, gap_dict)
+            new_desc = agent._generate_description(cluster_dict, gap_dict)
+            if cluster.title:
+                new_desc += f" Source cluster: {cluster.title[:120]}"
+            opp.description = new_desc
+            updated += 1
+
+        db.commit()
+        print(f"Regenerated {updated} opportunities")
+    finally:
+        db.close()
+
+
+if __name__ == "__main__":
+    main()
+
+===== FILE: ./backend/requirements-dev.txt =====
+pytest==8.3.3
+pytest-asyncio==0.24.0
+httpx==0.28.1
+
+===== FILE: ./backend/requirements.txt =====
+aiohappyeyeballs==2.7.1
+aiohttp==3.14.3
+aiosignal==1.4.0
+annotated-doc==0.0.5
+annotated-types==0.8.0
+anyio==4.15.1
+APScheduler==3.11.3
+attrs==26.1.0
+bcrypt==5.0.0
+beautifulsoup4==4.15.0
+blis==1.3.3
+build==1.6.1
+catalogue==2.0.10
+certifi==2026.7.22
+cffi==2.1.1
+charset-normalizer==3.5.1
+chromadb==1.5.9
+click==8.5.0
+cloudpathlib==0.25.0
+cloudpickle==3.1.2
+confection==1.3.3
+cryptography==50.0.1
+cymem==2.0.13
+defusedxml==0.7.1
+distro==1.9.0
+durationpy==0.11
+ecdsa==0.19.2
+en_core_web_sm @ https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl#sha256=1932429db727d4bff3deed6b34cfc05df17794f4a52eeb26cf8928f7c1a0fb85
+fastapi==0.141.1
+feedparser==6.0.14
+feedparser-sgmllib==2.1.0
+filelock==4.0.4
+flatbuffers==25.12.19
+frozenlist==1.8.0
+fsspec==2026.9.0
+google-auth==2.58.1
+google-genai==2.25.0
+googleapis-common-protos==1.75.4
+grpcio==1.84.0
+h11==0.16.0
+hf-xet==1.6.0
+httpcore==1.0.9
+httptools==0.8.0
+httpx==0.28.1
+huggingface_hub==1.33.0
+idna==3.20
+importlib_resources==7.1.0
+Jinja2==3.1.6
+joblib==1.6.0
+jsonschema==4.26.0
+jsonschema-specifications==2025.9.1
+kubernetes==36.0.3
+loguru==0.7.3
+markdown-it-py==4.2.0
+MarkupSafe==3.0.3
+mdurl==0.1.2
+mmh3==5.3.0
+mpmath==1.3.0
+multidict==6.9.1
+murmurhash==1.0.15
+narwhals==2.26.0
+networkx==3.7
+nltk==3.10.3
+numpy==2.5.3
+oauthlib==3.3.1
+onnxruntime==1.30.0
+opentelemetry-api==1.45.0
+opentelemetry-exporter-otlp-common==0.66b0
+opentelemetry-exporter-otlp-proto-common==1.45.0
+opentelemetry-exporter-otlp-proto-grpc==1.45.0
+opentelemetry-proto==1.45.0
+opentelemetry-sdk==1.45.0
+opentelemetry-semantic-conventions==0.66b0
+orjson==3.12.0
+overrides==7.7.0
+packaging==26.3
+pandas==3.0.6
+passlib==1.7.4
+pillow==12.3.0
+praw==8.0.3
+prawcore==4.0.0
+preshed==3.0.13
+propcache==0.5.4
+protobuf==7.36.2
+psycopg2-binary==2.9.13
+pyasn1==0.6.4
+pyasn1_modules==0.4.2
+pybase64==1.5.0
+pycparser==3.0
+pydantic==2.13.5
+pydantic-settings==2.15.0
+pydantic_core==2.46.5
+Pygments==2.21.0
+PyPika==0.51.1
+pyproject_hooks==1.3.3
+python-dateutil==2.9.0.post0
+python-dotenv==1.2.3
+python-jose==3.5.0
+python-multipart==0.0.32
+PyYAML==6.0.3
+referencing==0.37.0
+regex==2026.9.10
+reportlab==5.0.1
+requests==2.34.2
+requests-oauthlib==2.0.0
+rich==15.0.0
+rpds-py==2026.6.3
+rsa==4.9.1
+safetensors==0.8.0
+scikit-learn==1.9.1
+scipy==1.18.1
+sentence-transformers==6.1.0
+setuptools==84.0.0
+shellingham==1.5.4
+six==1.17.0
+smart_open==8.0.1
+sniffio==1.3.1
+soupsieve==2.10
+spacy==3.8.16
+spacy-legacy==3.0.12
+spacy-loggers==1.0.5
+SQLAlchemy==2.1.1
+srsly==2.5.3
+starlette==1.7.0
+sympy==1.14.0
+tenacity==9.1.4
+thinc==8.3.13
+threadpoolctl==3.7.0
+tokenizers==0.23.2
+torch==2.14.0
+tqdm==4.70.1
+transformers==5.17.0
+typer==0.27.2
+typing-inspection==0.4.4
+typing_extensions==4.16.0
+tzlocal==5.4.4
+update_checker==1.0.0
+urllib3==2.8.0
+uvicorn==0.54.0
+uvloop==0.22.1
+wasabi==1.1.3
+watchfiles==1.3.0
+weasel==1.0.0
+websocket-client==1.9.2
+websockets==16.1.1
+wheel==0.48.0
+wrapt==2.5.0
+yarl==1.25.1
+openai==3.19.2
+anthropic==1.8.0
+
+===== FILE: ./backend/run.py =====
+import uvicorn
+
+if __name__ == "__main__":
+    uvicorn.run("app.main:app", host="0.0.0.0", port=8000, reload=True)
+
+===== FILE: ./backend/scale_test.py =====
+"""Simple load test: measure endpoint latency under concurrent requests."""
+import time
+import requests
+from concurrent.futures import ThreadPoolExecutor
+from statistics import mean, median
+
+BASE = "http://localhost:8000"
+
+def get_token():
+    r = requests.post(f"{BASE}/api/auth/login", data={
+        "username": "test@example.com",
+        "password": "test1234",
+    })
+    return r.json()["access_token"]
+
+def timed_get(url, headers):
+    start = time.time()
+    r = requests.get(url, headers=headers)
+    return (time.time() - start) * 1000, r.status_code
+
+def run_test(endpoint, n_requests=50, concurrency=10, token=None):
+    headers = {"Authorization": f"Bearer {token}"} if token else {}
+    url = f"{BASE}{endpoint}"
+    print(f"\n=== Testing {endpoint} ({n_requests} requests, concurrency={concurrency}) ===")
+
+    # Warm up
+    for _ in range(3):
+        requests.get(url, headers=headers)
+
+    with ThreadPoolExecutor(max_workers=concurrency) as ex:
+        results = list(ex.map(lambda _: timed_get(url, headers), range(n_requests)))
+
+    latencies = [r[0] for r in results]
+    statuses = [r[1] for r in results]
+    ok = sum(1 for s in statuses if 200 <= s < 300)
+
+    print(f"  Success rate: {ok}/{n_requests} ({100*ok/n_requests:.1f}%)")
+    print(f"  Min latency:  {min(latencies):.1f} ms")
+    print(f"  Median:       {median(latencies):.1f} ms")
+    print(f"  Mean:         {mean(latencies):.1f} ms")
+    print(f"  Max latency:  {max(latencies):.1f} ms")
+    print(f"  P95:          {sorted(latencies)[int(0.95 * len(latencies))]:.1f} ms")
+
+def main():
+    token = get_token()
+    print("Token acquired")
+    run_test("/api/health", n_requests=50, concurrency=10)
+    run_test("/api/opportunities", n_requests=50, concurrency=10, token=token)
+    run_test("/api/problems", n_requests=50, concurrency=10, token=token)
+    run_test("/api/trends", n_requests=50, concurrency=10, token=token)
+    run_test("/api/notifications", n_requests=50, concurrency=10, token=token)
+
+if __name__ == "__main__":
+    main()
+
+===== FILE: ./backend/static_scan.py =====
+"""Static analysis: unused imports, undefined names, syntax errors."""
+import ast
+from pathlib import Path
+
+issues = []
+
+def scan_file(path: Path):
+    try:
+        src = path.read_text()
+        tree = ast.parse(src)
+    except SyntaxError as e:
+        issues.append(f"❌ SYNTAX ERROR in {path}: {e}")
+        return
+
+    # Collect imported names
+    imported = {}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                name = alias.asname or alias.name.split(".")[0]
+                imported[name] = node.lineno
+        elif isinstance(node, ast.ImportFrom):
+            for alias in node.names:
+                if alias.name == "*":
+                    continue
+                name = alias.asname or alias.name
+                imported[name] = node.lineno
+
+    # Collect used names
+    used = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Name):
+            used.add(node.id)
+        elif isinstance(node, ast.Attribute):
+            # capture head of dotted name
+            n = node
+            while isinstance(n, ast.Attribute):
+                n = n.value
+            if isinstance(n, ast.Name):
+                used.add(n.id)
+
+    # Report unused imports
+    for name, line in imported.items():
+        if name not in used and name != "*":
+            issues.append(f"⚠️  {path}:{line} — unused import '{name}'")
+
+for f in Path("app").rglob("*.py"):
+    scan_file(f)
+
+scan_file(Path("scale_test.py"))
+scan_file(Path("run.py"))
+
+if issues:
+    for i in issues:
+        print(i)
+    print(f"\n{len(issues)} issue(s) found")
+else:
+    print("✅ No static issues found")
+
+# Also check for common anti-patterns
+import subprocess
+print()
+print("--- Checking for bare excepts ---")
+result = subprocess.run(
+    ["grep", "-rn", "except:", "app/"],
+    capture_output=True, text=True,
+)
+if result.stdout.strip():
+    print(result.stdout)
+else:
+    print("✅ No bare excepts")
+
+print()
+print("--- Checking for TODO/FIXME/placeholder ---")
+result = subprocess.run(
+    ["grep", "-rn", "-E", "TODO|FIXME|XXX|noop|placeholder", "app/"],
+    capture_output=True, text=True,
+)
+if result.stdout.strip():
+    print(result.stdout)
+else:
+    print("✅ No TODOs/placeholders")
+
+===== FILE: ./backend/tests/__init__.py =====
+
+
+===== FILE: ./backend/tests/conftest.py =====
+"""Shared pytest fixtures.
+
+Tests run against the live backend on localhost:8000, using the seeded
+test account (test@example.com / test1234). No LLM calls are made — the
+suite is intentionally cheap and read-heavy so it can run any time.
+"""
+import os
+import pytest
+import requests
+
+
+API_BASE = os.environ.get("AOD_API_BASE", "http://localhost:8000")
+TEST_EMAIL = "test@example.com"
+TEST_PASSWORD = "test1234"
+
+
+@pytest.fixture(scope="session")
+def api_base():
+    return API_BASE
+
+
+@pytest.fixture(scope="session")
+def token(api_base):
+    """Login as the seeded test admin. Skips the whole session if the
+    backend is not reachable, rather than reporting 30 failures."""
+    try:
+        r = requests.post(
+            f"{api_base}/api/auth/login",
+            data={"username": TEST_EMAIL, "password": TEST_PASSWORD},
+            timeout=10,
+        )
+    except requests.exceptions.ConnectionError:
+        pytest.skip("backend not reachable — run `op-start` first")
+    if r.status_code != 200:
+        pytest.skip(f"login failed ({r.status_code}) — is test@example.com seeded?")
+    return r.json()["access_token"]
+
+
+@pytest.fixture
+def auth(token):
+    return {"Authorization": f"Bearer {token}"}
+
+===== FILE: ./backend/tests/test_auth.py =====
+import requests
+
+
+def test_login_returns_token(api_base):
+    r = requests.post(
+        f"{api_base}/api/auth/login",
+        data={"username": "test@example.com", "password": "test1234"},
+        timeout=10,
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert "access_token" in body
+    assert body["token_type"] == "bearer"
+    assert body["user"]["email"] == "test@example.com"
+    assert body["user"]["role"] in ("admin", "student", "researcher", "entrepreneur", "investor")
+
+
+def test_login_rejects_bad_password(api_base):
+    r = requests.post(
+        f"{api_base}/api/auth/login",
+        data={"username": "test@example.com", "password": "wrong-password"},
+        timeout=10,
+    )
+    assert r.status_code == 401
+
+
+def test_me_requires_auth(api_base):
+    r = requests.get(f"{api_base}/api/auth/me", timeout=5)
+    assert r.status_code == 401
+
+
+def test_me_with_token(api_base, auth):
+    r = requests.get(f"{api_base}/api/auth/me", headers=auth, timeout=5)
+    assert r.status_code == 200
+    assert r.json()["email"] == "test@example.com"
+
+===== FILE: ./backend/tests/test_flows.py =====
+import requests
+
+
+def test_researcher_flow(api_base, auth):
+    r = requests.get(f"{api_base}/api/researcher/flow?limit=3",
+                     headers=auth, timeout=20)
+    assert r.status_code == 200
+    body = r.json()
+    assert "chains" in body
+    assert isinstance(body["chains"], list)
+    for chain in body["chains"]:
+        assert "cluster" in chain
+        assert "technologies" in chain
+        assert "papers" in chain
+        assert "gaps" in chain
+        assert "opportunities" in chain
+
+
+def test_researcher_flow_with_topic(api_base, auth):
+    r = requests.get(f"{api_base}/api/researcher/flow?topic=machine&limit=2",
+                     headers=auth, timeout=20)
+    assert r.status_code == 200
+    assert "chains" in r.json()
+
+
+def test_rd_flow(api_base, auth):
+    r = requests.get(f"{api_base}/api/rd/flow?limit=5",
+                     headers=auth, timeout=20)
+    assert r.status_code == 200
+    body = r.json()
+    for key in ("profile_count", "technologies", "research", "trends", "opportunities"):
+        assert key in body, f"missing key: {key}"
+    assert isinstance(body["technologies"], list)
+    assert isinstance(body["research"], list)
+    assert isinstance(body["trends"], list)
+    assert isinstance(body["opportunities"], list)
+
+
+def test_flows_require_auth(api_base):
+    for path in ("/api/researcher/flow", "/api/rd/flow"):
+        r = requests.get(f"{api_base}{path}", timeout=5)
+        assert r.status_code == 401, f"{path} should require auth"
+
+===== FILE: ./backend/tests/test_health.py =====
+def test_health_ok(api_base):
+    import requests
+    r = requests.get(f"{api_base}/api/health", timeout=5)
+    assert r.status_code == 200
+    body = r.json()
+    assert body.get("status") == "healthy"
+    assert "vectors_stored" in body
+    assert isinstance(body["vectors_stored"], int)
+
+
+def test_root_endpoint(api_base):
+    import requests
+    r = requests.get(f"{api_base}/", timeout=5)
+    assert r.status_code == 200
+    body = r.json()
+    assert "docs" in body
+    assert body.get("health") == "/api/health"
+
+===== FILE: ./backend/tests/test_opportunities.py =====
+import requests
+
+
+def test_list_opportunities(api_base, auth):
+    r = requests.get(f"{api_base}/api/opportunities", headers=auth, timeout=15)
+    assert r.status_code == 200
+    rows = r.json()
+    assert isinstance(rows, list)
+    if rows:
+        top = rows[0]
+        for key in ("id", "title", "opportunity_score", "confidence_score",
+                    "demand_score", "research_gap_score", "trend_score"):
+            assert key in top, f"missing key: {key}"
+        # Should be sorted by score desc
+        scores = [x["opportunity_score"] for x in rows if "opportunity_score" in x]
+        assert scores == sorted(scores, reverse=True)
+
+
+def test_opportunity_detail(api_base, auth):
+    rows = requests.get(f"{api_base}/api/opportunities", headers=auth, timeout=15).json()
+    if not rows:
+        import pytest
+        pytest.skip("no opportunities in DB — run a pipeline first")
+    opp_id = rows[0]["id"]
+    r = requests.get(f"{api_base}/api/opportunities/{opp_id}", headers=auth, timeout=10)
+    assert r.status_code == 200
+    body = r.json()
+    assert "opportunity" in body
+    assert body["opportunity"]["id"] == opp_id
+    for key in ("domain", "industry", "related_technologies",
+                "existing_research", "suggested_research_direction",
+                "suggested_project_direction", "emerging_trend",
+                "evidence_sources"):
+        assert key in body["opportunity"], f"missing enrichment key: {key}"
+
+
+def test_opportunity_detail_404(api_base, auth):
+    r = requests.get(f"{api_base}/api/opportunities/999999999", headers=auth, timeout=10)
+    assert r.status_code == 404
+
+
+def test_opportunity_history_endpoint(api_base, auth):
+    rows = requests.get(f"{api_base}/api/opportunities", headers=auth, timeout=15).json()
+    if not rows:
+        import pytest
+        pytest.skip("no opportunities in DB")
+    opp_id = rows[0]["id"]
+    r = requests.get(f"{api_base}/api/opportunities/{opp_id}/history?days=30",
+                     headers=auth, timeout=10)
+    assert r.status_code == 200
+    body = r.json()
+    assert body["opportunity_id"] == opp_id
+    assert "history" in body and isinstance(body["history"], list)
+    for row in body["history"]:
+        assert "score" in row
+        assert "rank" in row
+        assert "recorded_at" in row
+
+===== FILE: ./caddy/Caddyfile =====
+{
+    # Local HTTPS uses Caddy's internal CA (self-signed, trusted on this machine)
+    local_certs
+    admin off
+}
+
+# Frontend → served over HTTPS on :8443
+:8443 {
+    tls internal
+
+    # Proxy API calls to the backend service
+    handle /api/* {
+        reverse_proxy backend:8000
+    }
+
+    # Everything else → Vite dev server
+    handle {
+        reverse_proxy frontend:5173
+    }
+
+    # Security headers
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains"
+        X-Content-Type-Options "nosniff"
+        X-Frame-Options "DENY"
+        Referrer-Policy "strict-origin-when-cross-origin"
+    }
+}
+
+# Backend API directly over HTTPS on :8443 (Swagger, direct calls)
+:8444 {
+    tls internal
+
+    reverse_proxy backend:8000
+
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains"
+        X-Content-Type-Options "nosniff"
+    }
+}
+
+===== FILE: ./caddy/Caddyfile.local =====
+{
+    local_certs
+}
+
+localhost:8443 {
+    tls internal
+
+    handle /api/* {
+        reverse_proxy localhost:8000
+    }
+
+    handle {
+        reverse_proxy localhost:5173
+    }
+
+    header {
+        Strict-Transport-Security "max-age=31536000"
+        X-Content-Type-Options "nosniff"
+    }
+
+    log {
+        output file /tmp/caddy-aod.log
+        format console
+    }
+}
+
+===== FILE: ./frontend/.oxlintrc.json =====
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["react", "typescript", "oxc"],
+  "rules": {
+    "react/rules-of-hooks": "error",
+    "react/only-export-components": ["warn", { "allowConstantExport": true }]
+  }
+}
+
+===== FILE: ./frontend/Dockerfile =====
+FROM node:20-alpine
+
+WORKDIR /app
+
+COPY package*.json ./
+RUN npm install
+
+COPY . .
+
+EXPOSE 5173
+CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0"]
+
+===== FILE: ./frontend/README.md =====
+# React + TypeScript + Vite
+
+This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+
+Currently, two official plugins are available:
+
+- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
+- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+
+## React Compiler
+
+The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+
+## Expanding the Oxlint configuration
+
+If you are developing a production application, we recommend enabling type-aware lint rules by installing `oxlint-tsgolint` and editing `.oxlintrc.json`:
+
+```json
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["react", "typescript", "oxc"],
+  "options": {
+    "typeAware": true
+  },
+  "rules": {
+    "react/rules-of-hooks": "error",
+    "react/only-export-components": ["warn", { "allowConstantExport": true }]
+  }
+}
+```
+
+See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
+
+===== FILE: ./frontend/index.html =====
+<!doctype html>
+<html lang="en" class="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AI Opportunity Platform</title>
+
+    <script>
+      (function () {
+        try {
+          var saved = localStorage.getItem('aod_theme');
+          var theme = (saved === 'light' || saved === 'dark')
+            ? saved
+            : (window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+          document.documentElement.classList.remove('light', 'dark');
+          document.documentElement.classList.add(theme);
+        } catch (e) {}
+      })();
+    </script>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

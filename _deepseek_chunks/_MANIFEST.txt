@@ -1,0 +1,17 @@
+# DeepSeek split manifest
+
+_split_0_backend_core_part1.txt                           11 files      33.7 KB
+_split_1_backend_agents_part1.txt                         11 files     109.7 KB
+_split_1_backend_agents_part2.txt                          6 files      38.2 KB
+_split_2_backend_services_part1.txt                       13 files      52.6 KB
+_split_3_backend_api_part1.txt                            13 files      70.4 KB
+_split_4_frontend_part1.txt                               28 files     111.4 KB
+_split_4_frontend_part2.txt                               12 files     109.0 KB
+_split_4_frontend_part3.txt                                6 files      33.5 KB
+_split_6_infra_part1.txt                                   5 files      14.4 KB
+_split_6_infra_part2.txt                                   1 files     455.4 KB
+_split_6_infra_part3.txt                                  44 files      62.1 KB
+_split_6_infra_part4.txt                                   1 files     116.4 KB
+_split_6_infra_part5.txt                                   7 files       7.1 KB
+
+TOTAL: 13 chunks, 1213.9 KB

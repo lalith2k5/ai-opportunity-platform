@@ -559,9 +559,9 @@ class OrchestratorAgent:
                     _ev_items = [
                         {
                             "polarity": getattr(_ev, "polarity", "SUPPORTS") or "SUPPORTS",
-                            "source_type": _ev.source or "unknown",
-                            "credibility_weight": float(_ev.relevance_score or 0.5),
-                            "doc_id": str(_ev.id),
+                            "source_type": getattr(_ev, "source_type", None) or _ev.source or "unknown",
+                            "credibility_weight": float(getattr(_ev, "credibility_weight", None) or _ev.relevance_score or 0.5),
+                            "doc_id": str(getattr(_ev, "doc_id", None) or _ev.id),
                         }
                         for _ev in evs
                     ]

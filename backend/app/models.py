@@ -413,6 +413,9 @@ class OpportunityEvidence(Base):
     polarity = Column(String(16), default="SUPPORTS")
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+    doc_id = Column(Integer, nullable=True, index=True)
+    source_type = Column(String(32), nullable=True, index=True)
+    credibility_weight = Column(Float, nullable=True)
 
 
 class WeightConfig(Base):

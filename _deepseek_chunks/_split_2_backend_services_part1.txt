@@ -1,0 +1,1418 @@
+# ============ CHUNK: _split_2_backend_services_part1.txt ============
+# Files in this chunk: 13
+
+===== FILE: ./backend/app/services/__init__.py =====
+
+
+===== FILE: ./backend/app/services/arxiv_service.py =====
+import requests
+import xml.etree.ElementTree as ET
+from app.logger import logger
+from app.services.retry_helper import api_retry
+
+
+class ArxivService:
+    BASE_URL = "http://export.arxiv.org/api/query"
+    HARD_CAP = 200
+
+    @api_retry(max_attempts=3)
+    def _get(self, params):
+        return requests.get(self.BASE_URL, params=params, timeout=30)
+
+    def search_papers(self, query: str, max_results: int = 10):
+        max_results = min(max_results, self.HARD_CAP)
+        params = {
+            "search_query": f"all:{query}",
+            "start": 0,
+            "max_results": max_results,
+            "sortBy": "relevance",
+            "sortOrder": "descending",
+        }
+        try:
+            response = self._get(params)
+            if response.status_code != 200:
+                logger.warning(f"arXiv status {response.status_code}")
+                return []
+            papers = self._parse_response(response.text)
+            logger.info(f"arXiv: fetched {len(papers)} papers for '{query}'")
+            return papers
+        except Exception as e:
+            logger.error(f"arXiv error: {e}")
+            return []
+
+    def _parse_response(self, xml_text):
+        ns = {"atom": "http://www.w3.org/2005/Atom"}
+        try:
+            root = ET.fromstring(xml_text)
+        except ET.ParseError:
+            return []
+        papers = []
+        for entry in root.findall("atom:entry", ns):
+            title_el = entry.find("atom:title", ns)
+            summary_el = entry.find("atom:summary", ns)
+            id_el = entry.find("atom:id", ns)
+            papers.append({
+                "id": id_el.text if id_el is not None else "",
+                "title": title_el.text.strip() if title_el is not None else "",
+                "summary": summary_el.text.strip() if summary_el is not None else "",
+                "authors": [a.find("atom:name", ns).text for a in entry.findall("atom:author", ns) if a.find("atom:name", ns) is not None],
+                "url": id_el.text if id_el is not None else "",
+            })
+        return papers
+
+===== FILE: ./backend/app/services/challenge_portal_service.py =====
+"""Fetch public R&D/industry problem statements from challenge portals.
+
+Sources:
+  - SBIR.gov solicitations (via public web API)
+  - Challenge.gov RSS feed
+  - NASA + NSF + NIST public RSS feeds as fallback sources
+
+Each result is normalized into:
+    id, title, organization, description, url, published, source, raw_text
+"""
+import re
+import html
+
+import feedparser
+import requests
+
+from app.logger import logger
+from app.services.retry_helper import api_retry
+
+
+_TAG_RE = re.compile(r"<[^>]+>")
+_WS_RE = re.compile(r"\s+")
+
+_UA = (
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36"
+)
+_HEADERS = {
+    "User-Agent": _UA,
+    "Accept": "application/json, application/rss+xml, text/xml, application/xml, */*",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Referer": "https://www.sbir.gov/",
+    "Origin": "https://www.sbir.gov",
+}
+
+
+def _clean_html(text: str) -> str:
+    if not text:
+        return ""
+    text = html.unescape(text)
+    text = _TAG_RE.sub(" ", text)
+    text = _WS_RE.sub(" ", text).strip()
+    return text
+
+
+class ChallengePortalService:
+    # Multiple endpoints tried in order — SBIR has moved this around
+    SBIR_ENDPOINTS = [
+        "https://api.www.sbir.gov/public/api/solicitations",
+        "https://www.sbir.gov/api/solicitations",
+    ]
+
+    RSS_FEEDS = [
+        ("challenge_gov", "US Federal Agency (Challenge.gov)",
+         "https://www.challenge.gov/?post_type=challenge&feed=rss2"),
+        ("nasa", "NASA", "https://www.nasa.gov/rss/dyn/breaking_news.rss"),
+        ("nsf", "National Science Foundation",
+         "https://www.nsf.gov/rss/rss_www_news.xml"),
+        ("nist", "NIST", "https://www.nist.gov/news-events/news/rss.xml"),
+        ("darpa", "DARPA", "https://www.darpa.mil/rss/news"),
+        ("nih", "NIH", "https://www.nih.gov/news-events/news-releases/rss.xml"),
+        ("nsf_awards", "NSF Awards",
+         "https://www.nsf.gov/rss/rss_www_awards.xml"),
+        ("energy_gov", "Department of Energy",
+         "https://www.energy.gov/rss/news"),
+        ("cdc", "CDC", "https://tools.cdc.gov/api/v2/resources/media/403372.rss"),
+    ]
+
+    HARD_CAP = 40
+
+    @api_retry(max_attempts=2)
+    def _get_json(self, url, params=None):
+        return requests.get(url, params=params, headers=_HEADERS, timeout=30)
+
+    @api_retry(max_attempts=2)
+    def _fetch_rss(self, url):
+        # feedparser accepts a custom agent argument
+        return feedparser.parse(url, agent=_UA)
+
+    # ---------- SBIR ----------
+    def _fetch_sbir(self, query: str, limit: int) -> list:
+        items = []
+        for endpoint in self.SBIR_ENDPOINTS:
+            try:
+                resp = self._get_json(endpoint, params={"rows": min(limit, 40), "start": 0})
+                if resp.status_code == 200:
+                    data = resp.json()
+                    items = data if isinstance(data, list) else data.get("data", [])
+                    if items:
+                        break
+                else:
+                    logger.debug(f"SBIR {endpoint} status {resp.status_code}")
+            except Exception as e:
+                logger.debug(f"SBIR {endpoint} failed: {e}")
+                continue
+        if not items:
+            logger.info("SBIR endpoints all unavailable — relying on agency RSS feeds")
+            return []
+
+        results = []
+        for raw in items[: limit * 2]:
+            title = _clean_html(raw.get("solicitation_title") or "")
+            if not title:
+                continue
+            parts = [
+                title,
+                _clean_html(raw.get("solicitation_agency") or ""),
+                _clean_html(raw.get("agency") or ""),
+                _clean_html(raw.get("branch") or ""),
+                _clean_html(raw.get("program") or ""),
+                _clean_html(raw.get("topic_description") or ""),
+                _clean_html(raw.get("solicitation_description") or ""),
+            ]
+            raw_text = " ".join(p for p in parts if p).strip()
+            results.append({
+                "id": f"sbir:{raw.get('solicitation_id') or raw.get('id') or title[:60]}",
+                "title": title,
+                "organization": _clean_html(raw.get("agency") or raw.get("branch") or "SBIR"),
+                "description": raw_text[:4000],
+                "url": raw.get("solicitation_url") or raw.get("url") or "",
+                "published": raw.get("open_date") or raw.get("close_date") or "",
+                "source": "sbir",
+                "raw_text": raw_text[:4000],
+            })
+            if len(results) >= limit:
+                break
+        return results
+
+    # ---------- RSS feeds (challenge.gov + agencies) ----------
+    def _fetch_rss_source(self, source_name: str, org_label: str, url: str,
+                          query: str, limit: int) -> list:
+        try:
+            feed = self._fetch_rss(url)
+        except Exception as e:
+            logger.warning(f"{source_name} RSS failed: {e}")
+            return []
+
+        results = []
+        q_lower = query.lower()
+        for entry in feed.entries[: limit * 4]:
+            title = _clean_html(entry.get("title") or "")
+            summary = _clean_html(entry.get("summary") or entry.get("description") or "")
+            if not title:
+                continue
+            full = (title + " " + summary).lower()
+            # Loose matching: allow 3+ char tokens OR prefix match on stems.
+            # Accept acronyms separately (ai, ml, nlp).
+            if q_lower:
+                q_tokens = [t for t in re.split(r"\W+", q_lower) if len(t) >= 3]
+                acronyms = [t for t in re.split(r"\W+", q_lower) if 2 <= len(t) < 3]
+                if q_tokens or acronyms:
+                    matched = any(
+                        (t in full) or (t[:5] in full and len(t) >= 6)
+                        for t in q_tokens
+                    ) or any(f" {a} " in f" {full} " for a in acronyms)
+                    if not matched:
+                        continue
+            results.append({
+                "id": f"{source_name}:{entry.get('id') or entry.get('link') or title[:60]}",
+                "title": title,
+                "organization": org_label,
+                "description": summary[:4000],
+                "url": entry.get("link", ""),
+                "published": entry.get("published", ""),
+                "source": source_name,
+                "raw_text": (title + " " + summary)[:4000],
+            })
+            if len(results) >= limit:
+                break
+        return results
+
+    def fetch_all(self, query: str, limit: int = 20) -> list:
+        limit = min(limit, self.HARD_CAP)
+        per_source = max(3, limit // 3)
+
+        results = []
+        results.extend(self._fetch_sbir(query, per_source))
+        for name, org, url in self.RSS_FEEDS:
+            results.extend(self._fetch_rss_source(name, org, url, query, per_source))
+
+        # Dedup by normalized title
+        seen = set()
+        deduped = []
+        for r in results:
+            key = r["title"].lower().strip()[:120]
+            if key in seen:
+                continue
+            seen.add(key)
+            deduped.append(r)
+
+        deduped = deduped[:limit]
+        by_src = {}
+        for r in deduped:
+            by_src[r["source"]] = by_src.get(r["source"], 0) + 1
+        logger.info(f"Challenge portals: {len(deduped)} items by source {by_src} for '{query}'")
+        return deduped
+
+===== FILE: ./backend/app/services/embedding_service.py =====
+import chromadb
+from sentence_transformers import SentenceTransformer
+from app.config import settings
+import uuid
+
+class EmbeddingService:
+    _instance = None
+
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+            cls._instance._initialize()
+        return cls._instance
+
+    def _initialize(self):
+        print("Loading embedding model (first run may take a minute)...")
+        self.model = SentenceTransformer(settings.EMBEDDING_MODEL)
+        self.client = chromadb.PersistentClient(path=settings.CHROMA_PERSIST_DIR)
+        self.collection = self.client.get_or_create_collection(name="documents")
+        print("Embedding service ready")
+
+    def add_documents(self, documents: list, metadatas: list = None, ids: list = None):
+        if not documents:
+            return []
+        if ids is None:
+            ids = [str(uuid.uuid4()) for _ in documents]
+        if metadatas is None:
+            metadatas = [{"source": "unknown"} for _ in documents]
+        embeddings = self.model.encode(documents).tolist()
+        self.collection.add(
+            documents=documents,
+            embeddings=embeddings,
+            metadatas=metadatas,
+            ids=ids
+        )
+        return ids
+
+    def search(self, query: str, n_results: int = 5):
+        query_embedding = self.model.encode([query]).tolist()
+        results = self.collection.query(
+            query_embeddings=query_embedding,
+            n_results=n_results
+        )
+        return results
+
+    def count(self):
+        return self.collection.count()
+
+===== FILE: ./backend/app/services/github_service.py =====
+import requests
+from app.config import settings
+from app.logger import logger
+from app.services.retry_helper import api_retry
+
+
+class GitHubService:
+    BASE_URL = "https://api.github.com"
+    MAX_PER_PAGE = 100
+
+    def __init__(self):
+        self.headers = {"Accept": "application/vnd.github.v3+json"}
+        if settings.GITHUB_TOKEN:
+            self.headers["Authorization"] = f"token {settings.GITHUB_TOKEN}"
+
+    @api_retry(max_attempts=3)
+    def _get(self, url, params):
+        return requests.get(url, headers=self.headers, params=params, timeout=20)
+
+    def search_repositories(self, query: str, per_page: int = 10):
+        """Fetch up to `per_page` repos, paging if needed."""
+        url = f"{self.BASE_URL}/search/repositories"
+        collected = []
+        page = 1
+        while len(collected) < per_page:
+            chunk = min(self.MAX_PER_PAGE, per_page - len(collected))
+            params = {
+                "q": query,
+                "sort": "stars",
+                "order": "desc",
+                "per_page": chunk,
+                "page": page,
+            }
+            try:
+                response = self._get(url, params)
+                if response.status_code != 200:
+                    logger.warning(f"GitHub repos status {response.status_code}")
+                    break
+                items = response.json().get("items", [])
+                if not items:
+                    break
+                collected.extend(items)
+                if len(items) < chunk:
+                    break
+                page += 1
+                if page > 10:  # cap at 10 pages = 1000 results
+                    break
+            except Exception as e:
+                logger.error(f"GitHub repos error: {e}")
+                break
+        logger.info(f"GitHub: fetched {len(collected)} repos for '{query}'")
+        return collected
+
+    @staticmethod
+    def _normalize_issue(item: dict) -> dict:
+        """Reshape a GitHub search/issues result to the pipeline's shared shape.
+
+        GitHub uses `body` for content and `html_url` for the link; every other
+        source in this codebase uses `summary` and `url`. Aliasing here lets the
+        orchestrator's documents loop treat issues identically to news and arxiv
+        items, and lets _save_to_db dedupe them via a stable prefixed id.
+        """
+        raw_id = item.get("id")
+        ext_id = f"github_issue:{raw_id}" if raw_id is not None else ""
+        repo_url = item.get("repository_url", "") or ""
+        repo_name = repo_url.rsplit("/", 1)[-1] if "/" in repo_url else ""
+        return {
+            "id": ext_id,
+            "title": (item.get("title") or "").strip(),
+            "summary": (item.get("body") or "").strip(),
+            "url": item.get("html_url") or "",
+            "published": item.get("created_at") or "",
+            "state": item.get("state") or "",
+            "comments": item.get("comments") or 0,
+            "labels": [
+                l.get("name") for l in (item.get("labels") or [])
+                if isinstance(l, dict) and l.get("name")
+            ],
+            "repo": repo_name,
+            "number": item.get("number"),
+            "user": (item.get("user") or {}).get("login") or "",
+        }
+
+    def search_issues(self, query: str, per_page: int = 10):
+        url = f"{self.BASE_URL}/search/issues"
+        params = {"q": f"{query} is:issue", "sort": "comments", "order": "desc", "per_page": min(per_page, 100)}
+        try:
+            response = self._get(url, params)
+            if response.status_code == 200:
+                items = response.json().get("items", [])
+                normalized = [self._normalize_issue(it) for it in items if it.get("title")]
+                logger.info(f"GitHub: fetched {len(items)} issues ({len(normalized)} with title)")
+                return normalized
+        except Exception as e:
+            logger.error(f"GitHub issues error: {e}")
+        return []
+
+===== FILE: ./backend/app/services/llm_service.py =====
+"""Multi-provider LLM service with automatic fallback.
+
+Providers (in priority order when set as primary):
+  - Gemini (Google)
+  - OpenAI (GPT)
+  - Anthropic (Claude)
+
+Any provider that raises is skipped, and the next configured one is used.
+"""
+from app.config import settings
+from app.logger import logger
+
+
+class BaseProvider:
+    name = "base"
+
+    def is_configured(self) -> bool:
+        return False
+
+    def generate(self, prompt: str, context: str = "") -> str:
+        raise NotImplementedError
+
+
+class GeminiProvider(BaseProvider):
+    name = "gemini"
+
+    def __init__(self):
+        self.client = None
+        if settings.GEMINI_API_KEY:
+            try:
+                from google import genai
+                self.client = genai.Client(api_key=settings.GEMINI_API_KEY)
+            except Exception as e:
+                logger.warning(f"Gemini init failed: {e}")
+                self.client = None
+
+    def is_configured(self) -> bool:
+        return self.client is not None
+
+    def generate(self, prompt: str, context: str = "") -> str:
+        import time
+        full = prompt if not context else (
+            f"You are an innovation intelligence analyst with access to live platform data.\n\n"
+            f"{context}\n\n"
+            f"User question: {prompt}\n\n"
+            "Instructions:\n"
+            "- If the STRUCTURED DATA section contains the answer, use those exact numbers and titles.\n"
+            "- If the DOCUMENT EXCERPTS section is relevant, cite them.\n"
+            "- If neither section answers the question, say so clearly instead of guessing.\n"
+            "- Be concise. Use bullet points for lists."
+        )
+        # Retry up to 3 times on 5xx / UNAVAILABLE — Google's Gemini commonly
+        # returns transient 503 during traffic spikes.
+        last_err = None
+        for attempt in range(3):
+            try:
+                response = self.client.models.generate_content(
+                    model=settings.GEMINI_MODEL,
+                    contents=full,
+                )
+                return response.text
+            except Exception as e:
+                last_err = e
+                msg = str(e)
+                if "503" in msg or "UNAVAILABLE" in msg or "429" in msg or "RESOURCE_EXHAUSTED" in msg:
+                    if attempt < 2:
+                        time.sleep(2 ** attempt)   # 1s, 2s
+                        continue
+                raise
+        raise last_err
+
+
+class OpenAIProvider(BaseProvider):
+    name = "openai"
+
+    def __init__(self):
+        self.client = None
+        if settings.OPENAI_API_KEY:
+            try:
+                from openai import OpenAI
+                self.client = OpenAI(api_key=settings.OPENAI_API_KEY)
+            except ImportError:
+                logger.warning("openai package not installed — skipping OpenAI provider")
+                self.client = None
+            except Exception as e:
+                logger.warning(f"OpenAI init failed: {e}")
+                self.client = None
+
+    def is_configured(self) -> bool:
+        return self.client is not None
+
+    def generate(self, prompt: str, context: str = "") -> str:
+        messages = []
+        if context:
+            messages.append({
+                "role": "system",
+                "content": (
+                    "You are an innovation intelligence analyst with access to live platform data. "
+                    "If the context has a STRUCTURED DATA section, use those exact numbers/titles. "
+                    "If it has DOCUMENT EXCERPTS, cite them. If neither answers the question, say so."
+                ),
+            })
+            messages.append({"role": "user", "content": f"Context:\n{context}\n\nQuestion: {prompt}"})
+        else:
+            messages.append({"role": "user", "content": prompt})
+
+        response = self.client.chat.completions.create(
+            model=settings.OPENAI_MODEL,
+            messages=messages,
+        )
+        return response.choices[0].message.content
+
+
+class AnthropicProvider(BaseProvider):
+    name = "anthropic"
+
+    def __init__(self):
+        self.client = None
+        if settings.ANTHROPIC_API_KEY:
+            try:
+                from anthropic import Anthropic
+                self.client = Anthropic(api_key=settings.ANTHROPIC_API_KEY)
+            except ImportError:
+                logger.warning("anthropic package not installed — skipping Anthropic provider")
+                self.client = None
+            except Exception as e:
+                logger.warning(f"Anthropic init failed: {e}")
+                self.client = None
+
+    def is_configured(self) -> bool:
+        return self.client is not None
+
+    def generate(self, prompt: str, context: str = "") -> str:
+        system = (
+            "You are an innovation intelligence analyst with access to live platform data. "
+            "Use STRUCTURED DATA for exact numbers, DOCUMENT EXCERPTS for context. "
+            "If neither answers the question, say so."
+        )
+        user_msg = prompt if not context else (
+            f"Context information:\n{context}\n\nUser question: {prompt}\n\n"
+            "Answer based on the context above. If the context is insufficient, say so."
+        )
+        response = self.client.messages.create(
+            model=settings.ANTHROPIC_MODEL,
+            max_tokens=1024,
+            system=system,
+            messages=[{"role": "user", "content": user_msg}],
+        )
+        return response.content[0].text
+
+
+class LLMService:
+    """Multi-provider wrapper with fallback + status reporting.
+
+    Singleton — one instance per process so that `last_used` accumulates
+    across requests. Every caller gets the same object.
+    """
+
+    PROVIDER_ORDER = ["gemini", "openai", "anthropic"]
+    _instance = None
+
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+            cls._instance._initialized = False
+        return cls._instance
+
+    def __init__(self):
+        if getattr(self, "_initialized", False):
+            return
+        self.providers = {
+            "gemini":    GeminiProvider(),
+            "openai":    OpenAIProvider(),
+            "anthropic": AnthropicProvider(),
+        }
+        self._last_used: str | None = None
+        self._initialized = True
+
+    @property
+    def enabled(self) -> bool:
+        return any(p.is_configured() for p in self.providers.values())
+
+    @property
+    def last_used(self) -> str | None:
+        return self._last_used
+
+    def available_providers(self) -> list[str]:
+        return [name for name, p in self.providers.items() if p.is_configured()]
+
+    def _chain(self) -> list[BaseProvider]:
+        """Primary first, then remaining configured providers."""
+        primary = (settings.LLM_PRIMARY_PROVIDER or "gemini").lower()
+        ordered_names = [primary] + [n for n in self.PROVIDER_ORDER if n != primary]
+        chain = []
+        for name in ordered_names:
+            p = self.providers.get(name)
+            if p and p.is_configured():
+                chain.append(p)
+        return chain
+
+    def generate(self, prompt: str, context: str = "") -> str:
+        chain = self._chain()
+        if not chain:
+            return (
+                "AI service not configured. Add at least one API key in Admin → Config "
+                "(GEMINI_API_KEY, OPENAI_API_KEY, or ANTHROPIC_API_KEY)."
+            )
+
+        errors = []
+        for provider in chain:
+            try:
+                result = provider.generate(prompt, context)
+                self._last_used = provider.name
+                if provider is not chain[0]:
+                    logger.info(f"[LLM] Fallback to {provider.name} succeeded")
+                return result
+            except Exception as e:
+                logger.warning(f"[LLM] {provider.name} failed: {e}")
+                errors.append(f"{provider.name}: {e}")
+                continue
+
+        return f"All LLM providers failed. Errors: {'; '.join(errors)}"
+
+    def explain_opportunity(self, opportunity_data: dict) -> str:
+        prompt = f"""You are an innovation analyst. Explain why this opportunity scored the way it did.
+Title: {opportunity_data.get('title')}
+Demand: {opportunity_data.get('demand_score')}
+Research Gap: {opportunity_data.get('research_gap_score')}
+Trend: {opportunity_data.get('trend_score')}
+Final Score: {opportunity_data.get('opportunity_score')}
+Provide a concise 3-4 sentence explanation."""
+        return self.generate(prompt)
+
+    def generate_narrative(self, opportunities, gaps, trends, query: str = "") -> str:
+        """
+        Produce an executive-summary paragraph for a report.
+        `opportunities`, `gaps`, `trends` are ORM rows or dicts.
+        """
+        def _o(o, key, default=0):
+            return getattr(o, key, None) if hasattr(o, key) else o.get(key, default)
+
+        # Build a compact factual brief
+        lines = []
+        if query:
+            lines.append(f"Report scope: {query}")
+        lines.append(f"Total opportunities analyzed: {len(opportunities)}")
+        lines.append(f"Total research gaps: {len(gaps)}")
+        lines.append(f"Total trends: {len(trends)}")
+        lines.append("")
+
+        if opportunities:
+            lines.append("Top 5 opportunities by score:")
+            for o in opportunities[:5]:
+                lines.append(
+                    f"  - {_o(o,'title','?')} | score={_o(o,'opportunity_score',0):.2f} | "
+                    f"demand={_o(o,'demand_score',0):.2f} | "
+                    f"gap={_o(o,'research_gap_score',0):.2f} | "
+                    f"feasibility={_o(o,'feasibility_score',0):.2f}"
+                )
+            lines.append("")
+
+        if gaps:
+            lines.append("Top 3 research gaps:")
+            for g in gaps[:3]:
+                lines.append(f"  - {_o(g,'title','?')} (gap {_o(g,'gap_score',0):.2f})")
+            lines.append("")
+
+        if trends:
+            seen = set()
+            lines.append("Top 5 trends:")
+            for t in trends:
+                name = _o(t, "name", "?")
+                if name in seen:
+                    continue
+                seen.add(name)
+                lines.append(f"  - {name} (score {_o(t,'trend_score',0):.2f})")
+                if len(seen) >= 5:
+                    break
+            lines.append("")
+
+        brief = "\n".join(lines)
+
+        prompt = (
+            "Write a 4-6 sentence executive summary for an innovation intelligence report. "
+            "Use ONLY the facts in the brief below. Do NOT invent names or numbers. "
+            "Open with the strongest signal, then mention one research gap and one trend. "
+            "End with a one-sentence recommendation. Do not use bullet points or headings, "
+            "just one flowing paragraph.\n\n"
+            f"FACTUAL BRIEF:\n{brief}"
+        )
+
+        try:
+            result = self.generate(prompt)
+            # LLMService.generate() returns an error string instead of raising.
+            # Detect that and fall back to a graceful message.
+            if result.startswith("All LLM providers failed") or result.startswith("AI service not configured"):
+                logger.warning(f"[LLM] Narrative fallback triggered: {result[:100]}")
+                return (
+                    f"This report covers {len(opportunities)} opportunities, "
+                    f"{len(gaps)} research gaps, and {len(trends)} trends discovered by the platform. "
+                    f"The AI summary could not be generated right now (LLM provider unavailable). "
+                    f"See the tables below for the full data breakdown."
+                )
+            return result
+        except Exception as e:
+            logger.error(f"[LLM] Narrative generation failed: {e}")
+            return (
+                f"This report covers {len(opportunities)} opportunities, "
+                f"{len(gaps)} research gaps, and {len(trends)} trends discovered by the platform. "
+                f"Narrative generation is currently unavailable."
+            )
+
+    def status(self) -> dict:
+        return {
+            "enabled": self.enabled,
+            "primary": settings.LLM_PRIMARY_PROVIDER,
+            "available": self.available_providers(),
+            "last_used": self._last_used,
+            "models": {
+                "gemini": settings.GEMINI_MODEL,
+                "openai": settings.OPENAI_MODEL,
+                "anthropic": settings.ANTHROPIC_MODEL,
+            },
+        }
+
+===== FILE: ./backend/app/services/news_service.py =====
+import feedparser
+from app.logger import logger
+from app.services.retry_helper import api_retry
+
+
+class NewsService:
+    RSS_FEEDS = [
+        "https://techcrunch.com/feed/",
+        "https://www.wired.com/feed/rss",
+        "https://feeds.arstechnica.com/arstechnica/index",
+        "https://venturebeat.com/feed/",
+        "https://www.theverge.com/rss/index.xml",
+        "https://www.technologyreview.com/feed/",
+        "https://syncedreview.com/feed/",
+        "https://openai.com/blog/rss.xml",
+        "https://www.sciencedaily.com/rss/computers_math/artificial_intelligence.xml",
+        "https://phys.org/rss-feed/technology-news/computer-sciences/",
+        "https://www.forbes.com/innovation/feed2/",
+        "https://news.crunchbase.com/feed/",
+        "https://feeds.feedburner.com/TheHackersNews",
+        "https://www.healthcareitnews.com/rss.xml",
+        "https://www.nature.com/nature.rss",
+        "https://www.science.org/rss/news_current.xml",
+    ]
+
+    @api_retry(max_attempts=2)
+    def _fetch_feed(self, feed_url):
+        return feedparser.parse(feed_url)
+
+    def search_news(self, query: str, limit: int = 10):
+        results = []
+        query_lower = query.lower()
+        seen_titles = set()
+
+        for feed_url in self.RSS_FEEDS:
+            try:
+                feed = self._fetch_feed(feed_url)
+                for entry in feed.entries[:60]:
+                    title = entry.get("title", "")
+                    summary = entry.get("summary", "")
+
+                    if title.lower() in seen_titles:
+                        continue
+
+                    if query_lower in title.lower() or query_lower in summary.lower():
+                        seen_titles.add(title.lower())
+                        results.append({
+                            "title": title,
+                            "summary": summary,
+                            "url": entry.get("link", ""),
+                            "published": entry.get("published", ""),
+                            "source": feed.feed.get("title", feed_url),
+                        })
+                        if len(results) >= limit:
+                            logger.info(f"News: {len(results)} articles from {len(self.RSS_FEEDS)} feeds")
+                            return results
+            except Exception as e:
+                logger.warning(f"RSS error for {feed_url}: {e}")
+
+        logger.info(f"News: {len(results)} articles from {len(self.RSS_FEEDS)} feeds")
+        return results
+
+===== FILE: ./backend/app/services/notification_service.py =====
+from app.database import SessionLocal
+from app import models
+from app.logger import logger
+
+
+def create_notification(
+    type_: str,
+    title: str,
+    message: str = "",
+    link: str = "",
+    severity: str = "info",
+    user_id: int = None,
+):
+    """Create a single notification."""
+    db = SessionLocal()
+    try:
+        n = models.Notification(
+            user_id=user_id,
+            type=type_,
+            title=title[:200],
+            message=message[:1000],
+            link=link,
+            severity=severity,
+        )
+        db.add(n)
+        db.commit()
+        return n.id
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Notification error: {e}")
+        return None
+    finally:
+        db.close()
+
+
+def generate_pipeline_notifications(opportunities, gaps, trends, query: str):
+    """Generate all 5 SRS-mandated notification types after a pipeline run."""
+    created = 0
+
+    # 1. New Research Opportunity
+    if opportunities:
+        top = max(opportunities, key=lambda o: o.get("opportunity_score", 0))
+        create_notification(
+            "research_opportunity",
+            f"New research opportunity: {top.get('title', '')[:80]}",
+            f"Score {top.get('opportunity_score', 0):.2f} from '{query}' pipeline",
+            link=f"/opportunities",
+            severity="success",
+        )
+        created += 1
+
+    # 2. Emerging Technology
+    if trends:
+        top_trend = trends[0]
+        create_notification(
+            "emerging_tech",
+            f"Emerging technology: {top_trend.get('name', '')}",
+            f"Trend score {top_trend.get('trend_score', 0):.2f}",
+            link="/reports",
+            severity="info",
+        )
+        created += 1
+
+    # 3. New Startup Opportunity
+    if opportunities:
+        top = max(opportunities, key=lambda o: o.get("feasibility_score", 0))
+        create_notification(
+            "startup_opportunity",
+            f"Startup idea: {top.get('title', '')[:80]}",
+            f"Feasibility {top.get('feasibility_score', 0):.2f}",
+            link="/opportunities",
+            severity="success",
+        )
+        created += 1
+
+    # 4. Innovation Alert
+    create_notification(
+        "innovation_alert",
+        f"Pipeline completed for '{query}'",
+        f"{len(opportunities)} opportunities · {len(trends)} trends detected",
+        link="/",
+        severity="info",
+    )
+    created += 1
+
+    # 5. Research Gap Alert
+    if gaps:
+        high_gaps = [g for g in gaps if g.get("gap_score", 0) > 0.5]
+        if high_gaps:
+            create_notification(
+                "research_gap_alert",
+                f"{len(high_gaps)} high-priority research gaps detected",
+                f"Coverage gaps in '{query}' domain",
+                link="/reports",
+                severity="warning",
+            )
+            created += 1
+
+    logger.info(f"Generated {created} notifications")
+    return created
+
+===== FILE: ./backend/app/services/patents_service.py =====
+"""Fetch patent data from PatentsView API.
+
+PatentsView requires a free API key (as of 2024). Set PATENTSVIEW_API_KEY in
+backend/.env. If unset, the service logs a warning once at construction and
+returns [] on every search — the pipeline continues unaffected.
+
+Request a key: https://patentsview.org/apis/keyrequest
+API base:      https://search.patentsview.org/api/v1/patent/
+"""
+import requests
+
+from app.config import settings
+from app.logger import logger
+from app.services.retry_helper import api_retry
+
+
+class PatentsService:
+    BASE_URL = "https://search.patentsview.org/api/v1/patent/"
+    HARD_CAP = 100
+
+    # Fields requested from PatentsView. Keep in sync with _normalize().
+    FIELDS = [
+        "patent_id",
+        "patent_title",
+        "patent_abstract",
+        "patent_date",
+        "assignees.assignee_organization",
+        "inventors.inventor_name_first",
+        "inventors.inventor_name_last",
+        "cpc_current.cpc_group_id",
+    ]
+
+    def __init__(self):
+        self.api_key = (settings.PATENTSVIEW_API_KEY or "").strip()
+        if not self.api_key:
+            logger.warning(
+                "[Patents] PATENTSVIEW_API_KEY not configured — patents source disabled. "
+                "Request a key at https://patentsview.org/apis/keyrequest"
+            )
+        else:
+            logger.info("[Patents] PatentsView API configured")
+
+    # ------------------------------------------------------------------
+    # HTTP
+    # ------------------------------------------------------------------
+    @api_retry(max_attempts=3)
+    def _post(self, payload: dict) -> requests.Response:
+        headers = {
+            "X-Api-Key": self.api_key,
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+        }
+        return requests.post(self.BASE_URL, headers=headers, json=payload, timeout=30)
+
+    # ------------------------------------------------------------------
+    # Normalization
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _extract_orgs(assignees: list) -> list:
+        out = []
+        for a in assignees or []:
+            org = (a or {}).get("assignee_organization")
+            if org and org not in out:
+                out.append(org)
+        return out
+
+    @staticmethod
+    def _extract_inventors(inventors: list) -> list:
+        out = []
+        for i in inventors or []:
+            first = (i or {}).get("inventor_name_first") or ""
+            last = (i or {}).get("inventor_name_last") or ""
+            name = (first + " " + last).strip()
+            if name and name not in out:
+                out.append(name)
+        return out
+
+    @staticmethod
+    def _extract_cpc(cpc_list: list) -> list:
+        out = []
+        for c in cpc_list or []:
+            code = (c or {}).get("cpc_group_id")
+            if code and code not in out:
+                out.append(code)
+        return out
+
+    def _normalize(self, raw: dict) -> dict:
+        pid = str(raw.get("patent_id") or "").strip()
+        title = (raw.get("patent_title") or "").strip()
+        abstract = (raw.get("patent_abstract") or "").strip()
+        date = (raw.get("patent_date") or "").strip()
+
+        return {
+            "id": f"patentsview:{pid}" if pid else "",
+            "title": title,
+            "summary": abstract,
+            "url": f"https://patents.google.com/patent/US{pid}" if pid else "",
+            "published": date,
+            "source": "patents",
+            "assignees": self._extract_orgs(raw.get("assignees") or []),
+            "inventors": self._extract_inventors(raw.get("inventors") or []),
+            "cpc_codes": self._extract_cpc(raw.get("cpc_current") or []),
+        }
+
+    # ------------------------------------------------------------------
+    # Public
+    # ------------------------------------------------------------------
+    def search_patents(self, query: str, limit: int = 10) -> list:
+        """Return patents matching the query. [] if no API key is configured."""
+        if not self.api_key:
+            return []
+        if not query or not query.strip():
+            return []
+
+        limit = max(1, min(limit, self.HARD_CAP))
+        payload = {
+            "q": {
+                "_text_any": {
+                    "patent_title": query,
+                    "patent_abstract": query,
+                }
+            },
+            "f": self.FIELDS,
+            "s": [{"patent_date": "desc"}],
+            "o": {"per_page": limit},
+        }
+
+        try:
+            response = self._post(payload)
+            if response.status_code != 200:
+                logger.warning(
+                    f"[Patents] PatentsView status {response.status_code}: "
+                    f"{response.text[:200]}"
+                )
+                return []
+            data = response.json()
+        except Exception as e:
+            logger.error(f"[Patents] request failed: {e}")
+            return []
+
+        rows = data.get("patents") or []
+        results = []
+        for raw in rows:
+            if not isinstance(raw, dict):
+                continue
+            norm = self._normalize(raw)
+            if not norm["title"]:
+                continue
+            results.append(norm)
+            if len(results) >= limit:
+                break
+
+        logger.info(f"[Patents] Fetched {len(results)} patents for '{query}'")
+        return results
+
+
+# TODO: EPO OPS fallback (phase-N) — OAuth2 client-credentials flow.
+# Requires EPO_OPS_KEY + EPO_OPS_SECRET in settings; out of scope for Phase 0.1.
+
+===== FILE: ./backend/app/services/pdf_service.py =====
+from io import BytesIO
+from datetime import datetime
+from reportlab.lib import colors
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.units import cm
+from reportlab.platypus import (
+    SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak
+)
+
+
+class PDFReportService:
+    def __init__(self):
+        self.styles = getSampleStyleSheet()
+        self.styles.add(ParagraphStyle(
+            name='CustomTitle', fontSize=22, textColor=colors.HexColor("#1a1a2e"),
+            spaceAfter=20, fontName='Helvetica-Bold',
+        ))
+        self.styles.add(ParagraphStyle(
+            name='SectionHeading', fontSize=14, textColor=colors.HexColor("#4338ca"),
+            spaceBefore=15, spaceAfter=8, fontName='Helvetica-Bold',
+        ))
+        self.styles.add(ParagraphStyle(
+            name='BodyText2', fontSize=10, textColor=colors.HexColor("#333333"),
+            spaceAfter=6, leading=14,
+        ))
+
+    def generate_report(self, opportunities, problems, gaps, trends, username="User", narrative=""):
+        buf = BytesIO()
+        doc = SimpleDocTemplate(
+            buf, pagesize=A4,
+            rightMargin=2*cm, leftMargin=2*cm,
+            topMargin=2*cm, bottomMargin=2*cm,
+            title="AI Opportunity Discovery Report",
+        )
+        elements = []
+
+        # Header
+        elements.append(Paragraph("AI Opportunity Discovery Report", self.styles['CustomTitle']))
+        elements.append(Paragraph(
+            f"Generated for: <b>{username}</b><br/>"
+            f"Date: {datetime.now().strftime('%Y-%m-%d %H:%M')}",
+            self.styles['BodyText2'],
+        ))
+        elements.append(Spacer(1, 0.5*cm))
+
+        # AI narrative
+        if narrative:
+            elements.append(Paragraph("AI Executive Summary", self.styles['SectionHeading']))
+            elements.append(Paragraph(narrative, self.styles['BodyText2']))
+            elements.append(Spacer(1, 0.4*cm))
+
+        # Summary
+        elements.append(Paragraph("Executive Summary", self.styles['SectionHeading']))
+        summary_data = [
+            ["Metric", "Count"],
+            ["Total Opportunities", str(len(opportunities))],
+            ["Problem Clusters", str(len(problems))],
+            ["Research Gaps", str(len(gaps))],
+            ["Active Trends", str(len(trends))],
+        ]
+        t = Table(summary_data, colWidths=[8*cm, 4*cm])
+        t.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#4338ca")),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, -1), 10),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+            ('TOPPADDING', (0, 0), (-1, -1), 8),
+            ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor("#cccccc")),
+            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor("#f3f4f6")]),
+        ]))
+        elements.append(t)
+        elements.append(Spacer(1, 0.5*cm))
+
+        # Opportunities
+        elements.append(Paragraph("Top Opportunities", self.styles['SectionHeading']))
+        if opportunities:
+            rows = [["#", "Title", "Score", "Demand", "Gap", "Trend"]]
+            for i, o in enumerate(opportunities[:15], 1):
+                rows.append([
+                    str(i),
+                    Paragraph(o.title[:60], self.styles['BodyText2']),
+                    f"{o.opportunity_score:.2f}",
+                    f"{o.demand_score:.2f}",
+                    f"{o.research_gap_score:.2f}",
+                    f"{o.trend_score:.2f}",
+                ])
+            t = Table(rows, colWidths=[1*cm, 8*cm, 2*cm, 2*cm, 2*cm, 2*cm])
+            t.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#4338ca")),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 0), (-1, -1), 9),
+                ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor("#cccccc")),
+                ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+                ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor("#f3f4f6")]),
+            ]))
+            elements.append(t)
+        else:
+            elements.append(Paragraph("No opportunities available.", self.styles['BodyText2']))
+
+        elements.append(PageBreak())
+
+        # Research Gaps
+        elements.append(Paragraph("Research Gaps", self.styles['SectionHeading']))
+        if gaps:
+            for g in gaps[:12]:
+                elements.append(Paragraph(
+                    f"<b>{g.title}</b> — gap score: {g.gap_score:.2f}",
+                    self.styles['BodyText2'],
+                ))
+                elements.append(Paragraph(g.description[:250], self.styles['BodyText2']))
+                elements.append(Spacer(1, 0.2*cm))
+        else:
+            elements.append(Paragraph("No research gaps identified.", self.styles['BodyText2']))
+
+        elements.append(Spacer(1, 0.5*cm))
+
+        # Trends
+        elements.append(Paragraph("Emerging Trends", self.styles['SectionHeading']))
+        if trends:
+            rows = [["Trend", "Category", "Score"]]
+            for tr in trends[:15]:
+                rows.append([tr.name[:40], tr.category, f"{tr.trend_score:.2f}"])
+            t = Table(rows, colWidths=[10*cm, 4*cm, 2*cm])
+            t.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#059669")),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 0), (-1, -1), 10),
+                ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor("#cccccc")),
+                ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor("#ecfdf5")]),
+            ]))
+            elements.append(t)
+
+        doc.build(elements)
+        buf.seek(0)
+        return buf
+
+===== FILE: ./backend/app/services/rd_cells_service.py =====
+"""
+R&D Cells service — fetches research blog posts from corporate,
+academic, and government research labs.
+
+Feeds are RSS/Atom. Output shape matches NewsService so the rest
+of the pipeline treats it identically.
+"""
+import feedparser
+from app.logger import logger
+from app.services.retry_helper import api_retry
+
+
+class RDCellsService:
+    # Corporate labs — verified working feeds
+    CORPORATE_FEEDS = [
+        ("Google Research",       "https://research.google/blog/rss/"),
+        ("Microsoft Research",    "https://www.microsoft.com/en-us/research/feed/"),
+        ("DeepMind",              "https://deepmind.google/blog/feed/basic/"),
+        ("NVIDIA Research",       "https://blogs.nvidia.com/feed/"),
+        ("Apple ML Research",     "https://machinelearning.apple.com/rss.xml"),
+        ("OpenAI Research",       "https://openai.com/news/rss.xml"),
+        ("Meta Engineering",      "https://engineering.fb.com/feed/"),
+        ("AWS Science",           "https://www.amazon.science/index.rss"),
+    ]
+
+    # Academic / non-profit labs
+    ACADEMIC_FEEDS = [
+        ("MIT CSAIL",             "https://news.mit.edu/topic/mitcomputer-science-and-artificial-intelligence-laboratory-csail-rss.xml"),
+        ("MIT News AI",           "https://news.mit.edu/rss/topic/artificial-intelligence2"),
+        ("Berkeley AI Research",  "https://bair.berkeley.edu/blog/feed.xml"),
+        ("Allen Institute AI",    "https://allenai.org/rss.xml"),
+        ("CMU ML",                "https://blog.ml.cmu.edu/feed/"),
+    ]
+
+    # Government / defense labs
+    GOVERNMENT_FEEDS = [
+        ("DARPA",                 "https://www.darpa.mil/rss/news.xml"),
+        ("NASA",                  "https://www.nasa.gov/rss/dyn/breaking_news.rss"),
+    ]
+
+    ALL_FEEDS = CORPORATE_FEEDS + ACADEMIC_FEEDS + GOVERNMENT_FEEDS
+
+    STOPWORDS = {
+        "the", "a", "an", "of", "and", "or", "to", "in", "for", "on",
+        "with", "at", "by", "is", "are", "be", "was", "were", "as",
+        "it", "its", "this", "that", "these", "those", "from", "into",
+    }
+
+    @api_retry(max_attempts=2)
+    def _fetch_feed(self, url):
+        return feedparser.parse(url)
+
+    def _query_tokens(self, query: str) -> list:
+        """Split query into meaningful tokens (stopwords + shorts removed)."""
+        words = [w.strip(".,!?;:'\"()[]{}") for w in query.lower().split()]
+        tokens = [w for w in words if len(w) >= 3 and w not in self.STOPWORDS]
+        return tokens or [w for w in words if w]  # fallback to raw if all filtered
+
+    def _matches(self, text: str, tokens: list) -> int:
+        """Return number of matching tokens (0 = no match)."""
+        text_lower = text.lower()
+        return sum(1 for tok in tokens if tok in text_lower)
+
+    def search_rd_cells(self, query: str, limit: int = 20):
+        """Fetch posts from R&D lab feeds matching the query. Returns normalized list."""
+        results = []
+        tokens = self._query_tokens(query)
+        seen_titles = set()
+
+        for lab_name, feed_url in self.ALL_FEEDS:
+            try:
+                feed = self._fetch_feed(feed_url)
+                for entry in feed.entries[:40]:
+                    title = entry.get("title", "")
+                    summary = entry.get("summary", "") or entry.get("description", "")
+
+                    # Dedup by title across all feeds
+                    title_key = title.lower().strip()
+                    if not title_key or title_key in seen_titles:
+                        continue
+
+                    # Match: require at least one query token in title or summary
+                    haystack = title + " " + summary
+                    score = self._matches(haystack, tokens)
+                    if score > 0:
+                        seen_titles.add(title_key)
+                        results.append({
+                            "id": f"rdcell:{lab_name}:{entry.get('id', title[:60])}",
+                            "title": title,
+                            "summary": summary,
+                            "url": entry.get("link", ""),
+                            "published": entry.get("published", ""),
+                            "source": "rd_cells",
+                            "lab": lab_name,
+                            "score": score,
+                        })
+                        if len(results) >= limit * 4:
+                            # Collect extra candidates, sort by score, return top N
+                            results.sort(key=lambda r: r.get("score", 0), reverse=True)
+                            top = results[:limit]
+                            logger.info(
+                                f"R&D Cells: {len(top)} posts (from {len(results)} "
+                                f"candidates across {len(self.ALL_FEEDS)} lab feeds)"
+                            )
+                            return top
+            except Exception as e:
+                logger.warning(f"R&D Cells feed error [{lab_name}]: {e}")
+
+        results.sort(key=lambda r: r.get("score", 0), reverse=True)
+        top = results[:limit]
+        logger.info(
+            f"R&D Cells: {len(top)} posts (from {len(results)} "
+            f"candidates across {len(self.ALL_FEEDS)} lab feeds)"
+        )
+        return top
+
+===== FILE: ./backend/app/services/reddit_service.py =====
+import praw
+from app.config import settings
+from app.logger import logger
+
+
+class RedditService:
+    HARD_CAP = 200
+
+    def __init__(self):
+        if settings.REDDIT_CLIENT_ID and settings.REDDIT_CLIENT_SECRET:
+            try:
+                self.reddit = praw.Reddit(
+                    client_id=settings.REDDIT_CLIENT_ID,
+                    client_secret=settings.REDDIT_CLIENT_SECRET,
+                    user_agent=settings.REDDIT_USER_AGENT,
+                )
+                logger.info("Reddit service initialized")
+            except Exception as e:
+                logger.warning(f"Reddit init failed: {e}")
+                self.reddit = None
+        else:
+            logger.info("Reddit credentials not configured — skipping")
+            self.reddit = None
+
+    def search_posts(self, query: str, limit: int = 10):
+        if not self.reddit:
+            return []
+        limit = min(limit, self.HARD_CAP)
+        results = []
+        try:
+            for submission in self.reddit.subreddit("all").search(query, limit=limit, sort="relevance"):
+                results.append({
+                    "id": submission.id,
+                    "title": submission.title,
+                    "selftext": submission.selftext,
+                    "url": submission.url,
+                    "score": submission.score,
+                    "num_comments": submission.num_comments,
+                    "subreddit": str(submission.subreddit),
+                })
+            logger.info(f"Reddit: fetched {len(results)} posts")
+        except Exception as e:
+            logger.error(f"Reddit search error: {e}")
+        return results
+
+===== FILE: ./backend/app/services/retry_helper.py =====
+"""Retry helpers for external API calls.
+
+Retries on:
+  - Network-level errors (ConnectionError, TimeoutError, OSError, RequestException)
+  - HTTP 5xx responses (server-side failures)
+  - HTTP 429 responses (rate limit)
+
+Uses exponential backoff via tenacity.
+"""
+import logging
+
+import requests
+from tenacity import (
+    before_sleep_log,
+    retry,
+    retry_if_exception_type,
+    retry_if_result,
+    stop_after_attempt,
+    wait_exponential,
+)
+
+_log = logging.getLogger("tenacity")
+
+
+def _is_retryable_response(result) -> bool:
+    """Return True if `result` is a retryable HTTP response.
+
+    Only `requests.Response` objects are inspected. Anything else
+    (e.g. feedparser FeedParserDict) is treated as non-retryable.
+    """
+    if result is None:
+        return False
+    status = getattr(result, "status_code", None)
+    if status is None:
+        return False
+    return status >= 500 or status == 429
+
+
+def api_retry(max_attempts: int = 3, initial_wait: float = 1.0):
+    """Decorator: retry API calls with exponential backoff.
+
+    Covers network errors AND retryable HTTP responses (5xx, 429).
+    """
+    return retry(
+        stop=stop_after_attempt(max_attempts),
+        wait=wait_exponential(multiplier=initial_wait, min=1, max=15),
+        retry=(
+            retry_if_exception_type(
+                (ConnectionError, TimeoutError, OSError, requests.exceptions.RequestException)
+            )
+            | retry_if_result(_is_retryable_response)
+        ),
+        before_sleep=before_sleep_log(_log, logging.WARNING),
+        reraise=True,
+    )

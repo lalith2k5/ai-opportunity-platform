@@ -1,0 +1,2644 @@
+# ============ CHUNK: _split_1_backend_agents_part1.txt ============
+# Files in this chunk: 11
+
+===== FILE: ./backend/app/agents/__init__.py =====
+
+
+===== FILE: ./backend/app/agents/ai_chat.py =====
+from app.services.embedding_service import EmbeddingService
+from app.services.llm_service import LLMService
+from app.database import SessionLocal
+from app import models
+from app.logger import logger
+
+
+class AIChatAgent:
+    def __init__(self):
+        self.embedding = EmbeddingService()
+        self.llm = LLMService()
+
+    def _build_data_summary(self, question: str) -> str:
+        """Query top opportunities / gaps / trends / totals from the DB."""
+        db = SessionLocal()
+        try:
+            lines = []
+
+            opps = (
+                db.query(models.Opportunity)
+                .order_by(models.Opportunity.opportunity_score.desc())
+                .limit(8)
+                .all()
+            )
+            if opps:
+                lines.append("TOP OPPORTUNITIES (highest opportunity_score):")
+                for o in opps:
+                    lines.append(
+                        f"  - id={o.id} | {o.title} | "
+                        f"score={o.opportunity_score:.2f} | "
+                        f"demand={o.demand_score:.2f} | "
+                        f"gap={o.research_gap_score:.2f} | "
+                        f"feasibility={o.feasibility_score:.2f}"
+                    )
+
+            gaps = (
+                db.query(models.ResearchGap)
+                .order_by(models.ResearchGap.gap_score.desc())
+                .limit(5)
+                .all()
+            )
+            if gaps:
+                lines.append("")
+                lines.append("TOP RESEARCH GAPS (highest gap_score):")
+                for g in gaps:
+                    lines.append(f"  - {g.title} (gap {g.gap_score:.2f})")
+
+            trends = (
+                db.query(models.Trend)
+                .order_by(models.Trend.trend_score.desc())
+                .limit(10)
+                .all()
+            )
+            if trends:
+                seen = set()
+                lines.append("")
+                lines.append("TOP TRENDS:")
+                for t in trends:
+                    if t.name in seen:
+                        continue
+                    seen.add(t.name)
+                    lines.append(f"  - {t.name} (score {t.trend_score:.2f}, category {t.category})")
+                    if len(seen) >= 5:
+                        break
+
+            lines.append("")
+            lines.append("PLATFORM TOTALS:")
+            lines.append(f"  - Opportunities: {db.query(models.Opportunity).count()}")
+            lines.append(f"  - Problem clusters: {db.query(models.ProblemCluster).count()}")
+            lines.append(f"  - Research gaps: {db.query(models.ResearchGap).count()}")
+            lines.append(f"  - Trends: {db.query(models.Trend).count()}")
+            lines.append(f"  - Raw documents: {db.query(models.RawDocument).count()}")
+            lines.append(f"  - KG nodes: {db.query(models.KnowledgeGraphNode).count()}")
+            lines.append(f"  - KG edges: {db.query(models.KnowledgeGraphEdge).count()}")
+
+            return "\n".join(lines)
+        except Exception as e:
+            logger.error(f"[AIChat] Data summary failed: {e}")
+            return ""
+        finally:
+            db.close()
+
+    def answer(self, question: str) -> dict:
+        # Tier 1: structured DB summary
+        data_summary = self._build_data_summary(question)
+
+        # Tier 2: semantic document snippets
+        context_docs = []
+        try:
+            if self.embedding.count() > 0:
+                results = self.embedding.search(question, n_results=5)
+                context_docs = results.get("documents", [[]])[0]
+        except Exception as e:
+            logger.warning(f"[AIChat] Vector search error: {e}")
+
+        # Combine
+        parts = []
+        if data_summary:
+            parts.append(
+                "=== STRUCTURED DATA (from the platform database) ===\n"
+                + data_summary
+            )
+        if context_docs:
+            parts.append(
+                "=== RELEVANT DOCUMENT EXCERPTS (semantic search) ===\n"
+                + "\n\n---\n\n".join(context_docs)
+            )
+        context = "\n\n".join(parts)
+
+        response = self.llm.generate(question, context)
+        return {"response": response, "sources": context_docs}
+
+===== FILE: ./backend/app/agents/data_collection.py =====
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from app.services.github_service import GitHubService
+from app.services.reddit_service import RedditService
+from app.services.arxiv_service import ArxivService
+from app.services.news_service import NewsService
+from app.services.rd_cells_service import RDCellsService
+from app.services.patents_service import PatentsService
+from app.logger import logger
+
+# Mode → per-source caps
+MODES = {
+    "quick": {"github": 8,   "arxiv": 8,   "news": 8,   "reddit": 8,   "rd_cells": 8,   "patents": 8,   "github_issues": 8},
+    "deep":  {"github": 100, "arxiv": 100, "news": 100, "reddit": 50,  "rd_cells": 60,  "patents": 50,  "github_issues": 50},
+}
+
+
+class DataCollectionAgent:
+    def __init__(self):
+        self.github = GitHubService()
+        self.reddit = RedditService()
+        self.arxiv = ArxivService()
+        self.news = NewsService()
+        self.rd_cells = RDCellsService()
+        self.patents = PatentsService()
+
+    def collect_all(self, query: str, mode: str = "quick") -> dict:
+        caps = MODES.get(mode, MODES["quick"])
+        logger.info(f"[DataCollection] Fetching for '{query}' (mode={mode}, caps={caps})")
+
+        tasks = {
+            "github":        lambda: self.github.search_repositories(query, per_page=caps["github"]),
+            "github_issues": lambda: self.github.search_issues(query, per_page=caps["github_issues"]),
+            "arxiv":    lambda: self.arxiv.search_papers(query, max_results=caps["arxiv"]),
+            "news":     lambda: self.news.search_news(query, limit=caps["news"]),
+            "reddit":   lambda: self.reddit.search_posts(query, limit=caps["reddit"]),
+            "rd_cells": lambda: self.rd_cells.search_rd_cells(query, limit=caps["rd_cells"]),
+            "patents":  lambda: self.patents.search_patents(query, limit=caps["patents"]),
+        }
+
+        results = {"github": [], "github_issues": [], "arxiv": [], "news": [], "reddit": [], "rd_cells": [], "patents": []}
+        with ThreadPoolExecutor(max_workers=4) as ex:
+            futures = {ex.submit(fn): name for name, fn in tasks.items()}
+            for fut in as_completed(futures):
+                name = futures[fut]
+                try:
+                    results[name] = fut.result()
+                except Exception as e:
+                    logger.error(f"[DataCollection] {name} failed: {e}")
+                    results[name] = []
+
+        logger.info(
+            f"[DataCollection] Result: "
+            f"{len(results['github'])} repos, "
+            f"{len(results['github_issues'])} issues, "
+            f"{len(results['arxiv'])} papers, "
+            f"{len(results['news'])} news, "
+            f"{len(results['reddit'])} reddit, "
+            f"{len(results['patents'])} patents"
+        )
+        return results
+
+===== FILE: ./backend/app/agents/evidence_agent.py =====
+"""EvidenceAgent — aggregate supporting evidence per opportunity.
+
+For each Opportunity, looks at its linked ProblemCluster keywords and
+retrieves top matching RawDocument rows from each source category.
+Produces transparent "Opportunity —SUPPORTED_BY→ Evidence" records
+(SRS Module 11 / §18).
+
+Design notes:
+  - CPU-only: keyword matching against the raw_documents table. No LLM
+    calls, no external APIs — safe to run on every pipeline, zero quota.
+  - SQL-level filtering via ILIKE keeps memory bounded even with tens of
+    thousands of raw docs.
+  - Caps: MAX_PER_SOURCE items per source, MAX_TOTAL per opportunity, so
+    a single noisy source cannot flood the UI.
+  - KG edges (Opportunity -SUPPORTED_BY-> Evidence per SRS §31) are
+    deferred to Phase 5 (KG schema alignment).
+"""
+from sqlalchemy import or_, inspect as _sa_inspect
+
+from app.database import SessionLocal
+from app import models
+from app.logger import logger
+
+
+class EvidenceAgent:
+    # Source categories queried in order. Include every pipeline source
+    # we currently collect from, so any evidence row is attributable.
+    SOURCES = [
+        "github",
+        "github_issues",
+        "arxiv",
+        "news",
+        "rd_cells",
+        "patents",
+        "challenge_portal",
+    ]
+    MAX_PER_SOURCE = 3
+    MAX_TOTAL = 12
+    MIN_KEYWORD_LEN = 3
+
+    @staticmethod
+    def _row_id(obj):
+        """Return PK of a possibly-detached ORM instance without refresh."""
+        ident = _sa_inspect(obj).identity
+        if ident:
+            return ident[0]
+        return obj.__dict__.get("id")
+
+    def _keywords_for(self, cluster) -> list:
+        if not cluster or not cluster.keywords:
+            return []
+        out = []
+        for k in cluster.keywords[:8]:
+            s = str(k or "").strip().lower()
+            if len(s) >= self.MIN_KEYWORD_LEN:
+                out.append(s)
+        return out
+
+    def _aggregate_one(self, opp_row, db) -> list:
+        """Return list of evidence dicts for one opportunity."""
+        cluster_id = opp_row.problem_cluster_id
+        if not cluster_id:
+            return []
+        cluster = db.query(models.ProblemCluster).filter(
+            models.ProblemCluster.id == cluster_id
+        ).first()
+        keywords = self._keywords_for(cluster)
+        if not keywords:
+            return []
+
+        # SQL clause: any keyword matches title OR content
+        clauses = []
+        for kw in keywords:
+            pat = "%" + kw + "%"
+            clauses.append(models.RawDocument.title.ilike(pat))
+            clauses.append(models.RawDocument.content.ilike(pat))
+        clause = or_(*clauses)
+
+        out = []
+        for src in self.SOURCES:
+            if len(out) >= self.MAX_TOTAL:
+                break
+            try:
+                rows = (
+                    db.query(models.RawDocument)
+                    .filter(models.RawDocument.source == src)
+                    .filter(clause)
+                    .filter(models.RawDocument.url.isnot(None))
+                    .order_by(models.RawDocument.collected_at.desc())
+                    .limit(self.MAX_PER_SOURCE * 3)
+                    .all()
+                )
+            except Exception as e:
+                logger.warning(f"[Evidence] query failed for source={src}: {e}")
+                continue
+
+            # Rank by keyword hit count within the fetched window
+            scored = []
+            for d in rows:
+                hay = ((d.title or "") + " " + (d.content or "")).lower()
+                hits = sum(1 for kw in keywords if kw in hay)
+                if hits > 0:
+                    scored.append((hits, d))
+            scored.sort(key=lambda x: -x[0])
+
+            for hits, d in scored[: self.MAX_PER_SOURCE]:
+                rel = round(min(1.0, hits / max(len(keywords), 1)), 3)
+                out.append({
+                    "source": src,
+                    "title": (d.title or "")[:300],
+                    "url": (d.url or "")[:500],
+                    "relevance_score": rel,
+                    "snippet": (d.content or "")[:500],
+                })
+        return out
+
+    def aggregate_batch(self, opportunities: list) -> list:
+        """Return [(opportunity_row, [evidence_dict, ...]), ...] for opps
+        that had at least one matching document."""
+        if not opportunities:
+            return []
+        results = []
+        db = SessionLocal()
+        try:
+            for opp in opportunities:
+                try:
+                    ev = self._aggregate_one(opp, db)
+                except Exception as e:
+                    logger.warning(f"[Evidence] aggregate failed: {e}")
+                    ev = []
+                if ev:
+                    results.append((opp, ev))
+        finally:
+            db.close()
+        total_rows = sum(len(ev) for _o, ev in results)
+        logger.info(
+            f"[Evidence] Aggregated {total_rows} evidence rows "
+            f"across {len(results)}/{len(opportunities)} opportunities"
+        )
+        return results
+
+===== FILE: ./backend/app/agents/explainable_ai.py =====
+class ExplainableAIAgent:
+    def explain(self, opportunity: dict) -> str:
+        factors = []
+        if opportunity.get("demand_score", 0) > 0.6:
+            factors.append(f"High market demand ({opportunity['demand_score']:.2f})")
+        if opportunity.get("research_gap_score", 0) > 0.5:
+            factors.append(f"Significant research gap ({opportunity['research_gap_score']:.2f})")
+        if opportunity.get("trend_score", 0) > 0.5:
+            factors.append(f"Strong technology trend ({opportunity['trend_score']:.2f})")
+        if opportunity.get("feasibility_score", 0) > 0.6:
+            factors.append(f"Good technical feasibility ({opportunity['feasibility_score']:.2f})")
+
+        return (
+            f"This opportunity scored {opportunity.get('opportunity_score', 0):.2f}. "
+            f"Contributing factors: {'; '.join(factors) if factors else 'Multiple moderate signals'}. "
+            f"Confidence: {opportunity.get('confidence_score', 0):.2f}."
+        )
+
+===== FILE: ./backend/app/agents/innovation_monitor.py =====
+from collections import Counter
+
+from app.agents.opportunity_intelligence import _clean_keywords
+
+
+# Generic words that make sense only inside a phrase (e.g. "artificial intelligence"),
+# not as a trend on their own. Applied to singles only — phrases pass through untouched.
+# Standalone single words that are too generic to be a trend on their own.
+_TREND_SINGLE_BLOCKLIST = {
+    "intelligence", "learning", "computing", "science", "technology",
+    "machine", "computer", "computers", "algorithms", "algorithm",
+    "run", "running", "runs", "use", "using", "used", "make", "making",
+    "study", "studies", "work", "works", "show", "shows",
+    "python", "javascript", "typescript", "golang", "rust", "java",
+    "exercises", "exercise", "programming", "tutorial", "course",
+    "site", "online", "spanish", "hackathon", "university",
+    "chapter", "lecture", "homework", "assignment",
+    "quantum", "cyber", "computing", "advanced", "basics",
+}
+
+# Multi-word items are ONLY kept if they appear here. This is stricter than a
+# blocklist but prevents TF-IDF-generated bigrams like "exercises learning"
+# from ever reaching the UI.
+_VALID_TREND_PHRASES = {
+    # AI / ML
+    "machine learning", "deep learning", "artificial intelligence",
+    "neural network", "neural networks", "computer vision",
+    "natural language", "natural language processing",
+    "reinforcement learning", "federated learning", "transfer learning",
+    "generative ai", "large language", "large language model",
+    "large language models", "explainable ai",
+    # Quantum
+    "quantum computing", "quantum computer", "quantum computers",
+    "quantum algorithms", "quantum machine", "quantum cryptography",
+    "quantum information", "quantum simulation",
+    # Security
+    "cyber security", "cybersecurity", "intrusion detection",
+    "anomaly detection", "reverse engineering",
+    # Data
+    "data science", "big data", "data analysis", "data mining",
+    # Other technologies
+    "blockchain", "supply chain", "public health", "edge computing",
+    "cloud computing", "image segmentation", "image classification",
+    "image processing", "medical imaging", "object detection",
+    "autonomous vehicles", "self driving", "open source",
+}
+
+
+def _is_valid_item(item: str) -> bool:
+    """A trend is valid if it's a meaningful single word, or a whitelisted phrase."""
+    low = item.lower().strip()
+    if not low:
+        return False
+    words = low.split()
+    if len(words) == 1:
+        if low in _TREND_SINGLE_BLOCKLIST:
+            return False
+        if len(low) < 4:
+            return False
+        return True
+    # Multi-word: only whitelist passes
+    return low in _VALID_TREND_PHRASES
+
+
+def _clean_list(raw: list) -> list:
+    """Filter every extracted keyword through the trend validity check."""
+    cleaned = _clean_keywords(raw or [])
+    items = cleaned["phrases"] + cleaned["singles"]
+    seen = set()
+    out = []
+    for item in items:
+        low = item.lower().strip()
+        if low in seen:
+            continue
+        seen.add(low)
+        if _is_valid_item(item):
+            out.append(item)
+    return out
+
+
+class InnovationMonitorAgent:
+    """Count how often cleaned keywords appear across all documents.
+
+    Uses the same noise filter as the title/scoring pipeline, plus a
+    trend-specific blocklist, so generic words (run, software, research,
+    intelligence) don't appear as standalone trends.
+    """
+
+    MAX_TRENDS = 10
+
+    def monitor(self, documents: list) -> list:
+        keyword_counter = Counter()
+        source_counter = Counter()
+
+        for doc in documents:
+            source_counter[doc.get("source", "unknown")] += 1
+            for kw in _clean_list(doc.get("keywords") or []):
+                keyword_counter[kw.lower()] += 1
+
+        trends = []
+        for keyword, count in keyword_counter.most_common(self.MAX_TRENDS):
+            trends.append({
+                "name": keyword,
+                "category": "emerging_technology",
+                "trend_score": min(1.0, count / 10.0),
+                "source_data": {
+                    "mentions": count,
+                    "sources": dict(source_counter),
+                },
+            })
+        return trends
+
+===== FILE: ./backend/app/agents/knowledge_graph.py =====
+import networkx as nx
+from app.database import SessionLocal
+from app import models
+from app.logger import logger
+from app.kg_schema import normalize_relation, CANONICAL_RELATIONS
+
+
+# Type specificity ranking — higher number = more specific.
+# Used to decide when a generic node (Keyword, Document) should be
+# promoted to a specific type (Technology, Article, ResearchPaper).
+_TYPE_RANK = {
+    "unknown": 0,
+    "Keyword": 1,
+    "Document": 2,
+    "Article": 3,
+    "ResearchPaper": 3,
+    "Repository": 3,
+    "Industry": 3,
+    "Author": 3,
+    "Technology": 3,
+    "Problem": 3,
+    "RDLab": 3,
+    "ResearchGap": 3,
+    "StartupOpportunity": 3,
+}
+
+
+def _is_more_specific(new_type: str, old_type: str) -> bool:
+    return _TYPE_RANK.get(new_type, 0) > _TYPE_RANK.get(old_type, 0)
+
+
+class KnowledgeGraphAgent:
+    def __init__(self):
+        self.graph = nx.DiGraph()
+
+    def add_entity(self, entity_type: str, name: str, metadata: dict = None):
+        if not name:
+            return
+        name = str(name).strip()[:500]
+        if not name:
+            return
+        if self.graph.has_node(name):
+            self.graph.nodes[name]["metadata"].update(metadata or {})
+            old_type = self.graph.nodes[name].get("type", "unknown")
+            if _is_more_specific(entity_type, old_type):
+                self.graph.nodes[name]["type"] = entity_type
+        else:
+            self.graph.add_node(name, type=entity_type, metadata=metadata or {})
+
+    def add_relationship(self, source: str, relation: str, target: str):
+        if not source or not target:
+            return
+        source = str(source).strip()[:500]
+        target = str(target).strip()[:500]
+        if not source or not target or source == target:
+            return
+        # Normalize legacy lowercase names to canonical uppercase (SRS §31).
+        relation = normalize_relation(relation)
+        if self.graph.has_edge(source, target):
+            self.graph[source][target]["weight"] = self.graph[source][target].get("weight", 1) + 1
+        else:
+            self.graph.add_edge(source, target, relation=relation, weight=1)
+
+    # Map spaCy NER labels -> KG entity types. Only useful categories kept.
+    _NER_LABEL_MAP = {
+        "PERSON":  "Author",
+        "ORG":     "Industry",
+        "PRODUCT": "Technology",
+    }
+
+    # Generic single words spaCy sometimes mislabels as entities.
+    _NER_STOPLIST = {
+        "api", "cli", "sdk", "ui", "ux", "http", "https", "json",
+        "html", "css", "sql", "url", "uri", "xml", "csv",
+        "library", "libraries", "framework", "frameworks",
+        "platform", "platforms", "tutorials", "tutorial",
+        "guide", "guides", "docs", "documentation",
+        "project", "projects", "code", "codes", "tool", "tools",
+        "quantum", "learning", "computing", "intelligence",
+        "data", "cloud", "open", "source", "free", "new",
+        "modern", "moderns", "honors", "honor", "internship",
+        "curriculum", "summerschool", "summer", "school",
+        "technology", "technologies", "science", "sciences",
+        "medicine", "medical", "healthcare", "statistics",
+        "artificial", "machine", "deep", "data", "big",
+        "online", "offline", "minima", "maxima", "pipeline",
+        "showcase", "graduate", "course", "courses", "class",
+        "paper", "papers", "survey", "surveys", "review", "reviews",
+        "the", "a", "an", "of", "for", "and", "or", "in", "on", "with",
+        "software", "hardware", "kernel", "kernels", "framework",
+        "center", "centre", "college", "director", "showcase",
+        "email", "blurb", "figure", "figures", "photo", "image",
+        "images", "congratulations", "thanks", "author", "authors",
+        "researcher", "researchers", "student", "students",
+        "university", "universities", "institute", "institutes",
+        "department", "departments", "newsletter", "brief",
+    }
+
+    def _link_nlp_entities(self, doc_title: str, entities: list):
+        """Turn NLP-extracted named entities into KG nodes/edges.
+
+        Entities have already been shape-validated in NLPAgent.extract_entities.
+        This layer only enforces a few KG-specific guards:
+          - skip entities equal to the doc title
+          - skip entities contained in the doc title (title fragments)
+          - dedupe within this doc
+        """
+        if not entities:
+            return
+        tl = (doc_title or "").lower()
+        seen = set()
+        for ent in entities:
+            text = str(ent.get("text") or "").strip()
+            label = str(ent.get("label") or "").strip().upper()
+            if not text:
+                continue
+            mapped = self._NER_LABEL_MAP.get(label)
+            if not mapped:
+                continue
+            key = text.lower()
+            if key in seen:
+                continue
+            # Skip self-mention or title fragment
+            if tl:
+                if key == tl or key in tl or tl in key:
+                    continue
+            seen.add(key)
+            self.add_entity(mapped, text, {"from_ner": True, "ner_label": label})
+            self.add_relationship(doc_title, "mentions", text)
+
+
+    def build_from_documents(self, documents: list):
+        """Document + Keyword + NER + Topic layer."""
+        for doc in documents:
+            source = doc.get("source", "unknown")
+            title = doc.get("title", "")
+            if not title:
+                continue
+            self.add_entity("Document", title, {"source": source})
+            for keyword in (doc.get("keywords") or [])[:5]:
+                self.add_entity("Keyword", keyword)
+                self.add_relationship(title, "has_keyword", keyword)
+            # NER entities from the NLP pipeline -> KG nodes + "mentions" edges
+            self._link_nlp_entities(title, doc.get("entities") or [])
+            # Primary topic (assigned by orchestrator from global NMF model)
+            primary_topic = doc.get("primary_topic")
+            if primary_topic:
+                self.add_entity("Technology", primary_topic, {"from_topic": True})
+                self.add_relationship(title, "belongs_to_topic", primary_topic)
+        return {"nodes": self.graph.number_of_nodes(), "edges": self.graph.number_of_edges()}
+
+    def build_semantic_graph(self, raw, clusters, gaps, opportunities, global_topics=None):
+        """Build the full semantic chain across entity types."""
+        global_topics = global_topics or []
+
+        # 1. Technology nodes (topics + opportunity/cluster keywords)
+        for topic in global_topics:
+            label = topic.get("label") or ", ".join(topic.get("keywords", [])[:2])
+            if not label:
+                continue
+            self.add_entity("Technology", label, {
+                "keywords": topic.get("keywords", []),
+                "topic_id": topic.get("topic_id"),
+            })
+
+        # 2. Problem nodes (from clusters)
+        cluster_titles = []
+        for c in clusters:
+            clean = (c.get("title") or "").replace("Problem Cluster:", "").strip()
+            if not clean:
+                continue
+            cluster_titles.append(clean)
+            self.add_entity("Problem", clean, {
+                "demand_score": c.get("demand_score", 0),
+                "source_count": c.get("source_count", 0),
+                "keywords": c.get("keywords", []),
+            })
+            for kw in (c.get("keywords") or [])[:5]:
+                self.add_entity("Technology", kw, {})
+                self.add_relationship(clean, "related_to", kw)
+
+        # 3. ResearchPaper nodes (arXiv)
+        paper_titles = set()
+        for paper in raw.get("arxiv", []):
+            title = (paper.get("title") or "").strip()
+            if not title or len(title) < 5:
+                continue
+            paper_titles.add(title)
+            self.add_entity("ResearchPaper", title, {
+                "url": paper.get("url", ""),
+                "source": "arxiv",
+            })
+            for author in (paper.get("authors") or [])[:3]:
+                if not author:
+                    continue
+                self.add_entity("Author", author, {})
+                self.add_relationship(title, "authored_by", author)
+            for kw in (paper.get("keywords") or [])[:3]:
+                self.add_entity("Technology", kw, {})
+                self.add_relationship(title, "studies", kw)
+
+        # 4. Repository nodes (GitHub) → link to problems
+        for repo in raw.get("github", []):
+            name = (repo.get("name") or repo.get("full_name") or "").strip()
+            if not name:
+                continue
+            self.add_entity("Repository", name, {
+                "url": repo.get("html_url", ""),
+                "stars": repo.get("stargazers_count", 0),
+                "language": repo.get("language", ""),
+            })
+            lang = repo.get("language")
+            if lang:
+                self.add_entity("Technology", lang, {})
+                self.add_relationship(name, "written_in", lang)
+            repo_text = (name + " " + (repo.get("description") or "")).lower()
+            for c in clusters:
+                clean = (c.get("title") or "").replace("Problem Cluster:", "").strip()
+                if not clean:
+                    continue
+                for kw in (c.get("keywords") or [])[:5]:
+                    if kw.lower() in repo_text:
+                        self.add_relationship(name, "solves", clean)
+                        break
+
+        # 5. Industry nodes (News sources)
+        for article in raw.get("news", []):
+            src = article.get("source") or "News"
+            self.add_entity("Industry", src, {"type": "news_source"})
+            title = (article.get("title") or "").strip()
+            if title:
+                self.add_entity("Article", title, {
+                    "url": article.get("url", ""),
+                    "source": src,
+                })
+                self.add_relationship(src, "published", title)
+
+        # 5b. R&D Lab nodes (from rd_cells source) → link to their published articles
+        for post in raw.get("rd_cells", []):
+            lab = (post.get("lab") or "Unknown Lab").strip()
+            title = (post.get("title") or "").strip()
+            if not lab or not title:
+                continue
+            self.add_entity("RDLab", lab, {"type": "research_organization"})
+            self.add_entity("Article", title, {
+                "url": post.get("url", ""),
+                "source": "rd_cells",
+                "lab": lab,
+            })
+            self.add_relationship(lab, "published", title)
+            # Link lab to keywords found in the post
+            post_text = (title + " " + (post.get("summary") or "")).lower()
+            for cluster in clusters:
+                for kw in (cluster.get("keywords") or [])[:5]:
+                    if kw.lower() in post_text:
+                        self.add_relationship(lab, "researches", kw)
+                        break
+
+        # 6. Research Gap nodes → link to papers + problems
+        for gap in gaps:
+            gap_title = (gap.get("title") or "").strip()
+            if not gap_title:
+                continue
+            self.add_entity("ResearchGap", gap_title, {
+                "gap_score": gap.get("gap_score", 0),
+            })
+            ev = gap.get("evidence", {})
+            for kw in (ev.get("keywords") or [])[:5]:
+                self.add_relationship(gap_title, "addresses", kw)
+            for fws in (ev.get("future_work_snippets") or [])[:3]:
+                paper = (fws.get("paper") or "").strip()
+                if paper and paper in paper_titles:
+                    self.add_relationship(gap_title, "highlighted_in", paper)
+
+        # 7. StartupOpportunity nodes → link to Problem, Gap, Industry
+        for opp in opportunities:
+            opp_title = (opp.get("title") or "").strip()
+            if not opp_title:
+                continue
+            self.add_entity("StartupOpportunity", opp_title, {
+                "score": opp.get("opportunity_score", 0),
+                "feasibility": opp.get("feasibility_score", 0),
+                "market_readiness": opp.get("market_readiness_score", 0),
+            })
+            cluster = opp.get("_cluster_title")
+            if cluster:
+                self.add_relationship(opp_title, "addresses", cluster)
+            gap_title = opp.get("_gap_title")
+            if gap_title:
+                self.add_relationship(opp_title, "informed_by", gap_title)
+            news_items = raw.get("news", [])
+            if news_items:
+                src = news_items[0].get("source") or ""
+                if src:
+                    self.add_relationship(opp_title, "targets_industry", src)
+
+        return {
+            "nodes": self.graph.number_of_nodes(),
+            "edges": self.graph.number_of_edges(),
+        }
+
+    def build_enriched_graph(self):
+        """Add canonical SRS §31 edges derived from Phase 2/3/4 tables.
+
+        Reads problem_profiles, problem_technologies, problem_papers, and
+        opportunity_evidence and emits edges that the in-memory pipeline
+        couldn't build (those tables are only populated after the earlier
+        KG layers have already been persisted). Merges into the existing
+        self.graph — call persist() after this to flush to DB.
+        """
+        db = SessionLocal()
+        try:
+            # ---------------- ProblemProfile backbone ----------------
+            profiles = db.query(models.ProblemProfile).all()
+            if not profiles:
+                return {"new_nodes": 0, "new_edges": 0}
+
+            profile_by_id = {p.id: p for p in profiles}
+
+            # Problem nodes (from ProblemProfile titles)
+            for p in profiles:
+                title = (p.problem_title or "").strip()
+                if not title:
+                    continue
+                self.add_entity("Problem", title, {
+                    "canonical_hash": p.canonical_hash,
+                    "industry_domain": p.industry_domain,
+                    "source": p.source,
+                })
+
+                # Problem —REPORTED_BY-> Organization
+                org = (p.organization or "").strip()
+                if org and org.lower() != "unknown":
+                    self.add_entity("Organization", org, {})
+                    self.add_relationship(title, "REPORTED_BY", org)
+
+                # Problem —FOUND_IN-> Source
+                src = (p.source or "").strip()
+                if src and src.lower() != "unknown":
+                    self.add_entity("Source", src, {"type": "source"})
+                    self.add_relationship(title, "FOUND_IN", src)
+
+            # ---------------- Problem —RELATED_TO-> Technology ----------------
+            tech_rows = db.query(models.ProblemTechnology).all()
+            for t in tech_rows:
+                parent = profile_by_id.get(t.problem_profile_id)
+                if not parent or not parent.problem_title:
+                    continue
+                tname = (t.technology_name or "").strip()
+                if not tname:
+                    continue
+                self.add_entity("Technology", tname, {
+                    "stage": t.stage,
+                    "confidence": t.confidence,
+                })
+                self.add_relationship(parent.problem_title, "RELATED_TO", tname)
+
+            # ---------------- Problem —STUDIED_BY-> ResearchPaper ----------------
+            paper_rows = db.query(models.ProblemPaper).all()
+            paper_nodes = []      # (title, limitations, arxiv_id)
+            for p in paper_rows:
+                parent = profile_by_id.get(p.problem_profile_id)
+                if not parent or not parent.problem_title:
+                    continue
+                ptitle = (p.title or "").strip()
+                if not ptitle:
+                    continue
+                self.add_entity("ResearchPaper", ptitle, {
+                    "arxiv_id": p.arxiv_id,
+                    "url": p.url,
+                    "relevance_score": p.relevance_score,
+                })
+                self.add_relationship(parent.problem_title, "STUDIED_BY", ptitle)
+                paper_nodes.append((ptitle, p.limitations or []))
+
+            # ---------------- ResearchPaper —HAS_LIMITATION-> Limitation ----------------
+            for ptitle, lims in paper_nodes:
+                for lim in lims:
+                    s = str(lim or "").strip()[:300]
+                    if not s:
+                        continue
+                    self.add_entity("Limitation", s, {})
+                    self.add_relationship(ptitle, "HAS_LIMITATION", s)
+
+            # ---------------- Opportunity —SUPPORTED_BY-> Evidence ----------------
+            ev_rows = db.query(models.OpportunityEvidence).all()
+            opp_by_id = {o.id: o for o in db.query(models.Opportunity).all()}
+            for e in ev_rows:
+                opp = opp_by_id.get(e.opportunity_id)
+                if not opp or not opp.title:
+                    continue
+                ev_label = (e.title or e.url or "").strip()[:300]
+                if not ev_label:
+                    continue
+                self.add_entity("Evidence", ev_label, {
+                    "source": e.source,
+                    "url": e.url,
+                    "relevance_score": e.relevance_score,
+                })
+                self.add_relationship(opp.title, "SUPPORTED_BY", ev_label)
+
+            # ---------------- Opportunity —USES-> Technology ----------------
+            # Approximation: match opportunity's problem_cluster keywords to
+            # each profile's keywords, then attach that profile's technologies.
+            clusters = {c.id: c for c in db.query(models.ProblemCluster).all()}
+            for opp in opp_by_id.values():
+                cluster = clusters.get(opp.problem_cluster_id)
+                if not cluster or not cluster.keywords:
+                    continue
+                opp_kws = {str(k).lower() for k in cluster.keywords[:10] if k}
+                if not opp_kws:
+                    continue
+                # Find profiles whose keywords overlap strongly
+                for p in profiles:
+                    p_kws = {str(k).lower() for k in (p.keywords or [])[:10] if k}
+                    if not p_kws:
+                        continue
+                    overlap = len(opp_kws & p_kws)
+                    if overlap < 2:
+                        continue
+                    for t in tech_rows:
+                        if t.problem_profile_id != p.id:
+                            continue
+                        tname = (t.technology_name or "").strip()
+                        if tname:
+                            self.add_relationship(opp.title, "USES", tname)
+
+            # ---------------- Technology —HAS_TREND-> Trend ----------------
+            trends = db.query(models.Trend).all()
+            for tech in db.query(models.ProblemTechnology).all():
+                tname = (tech.technology_name or "").strip()
+                if not tname:
+                    continue
+                tlow = tname.lower()
+                for tr in trends:
+                    trn = (tr.name or "").strip()
+                    if not trn:
+                        continue
+                    # exact (case-insensitive) OR tech name is substring of trend name
+                    if tlow == trn.lower() or tlow in trn.lower() or trn.lower() in tlow:
+                        self.add_entity("Trend", trn, {"trend_score": tr.trend_score})
+                        self.add_relationship(tname, "HAS_TREND", trn)
+
+            # ---------------- Problem —HAS_POTENTIAL_GAP-> ResearchGap ----------------
+            gaps = db.query(models.ResearchGap).all()
+            for gap in gaps:
+                g_title = (gap.title or "").strip()
+                if not g_title:
+                    continue
+                ev = gap.evidence or {}
+                g_kws = {str(k).lower() for k in (ev.get("keywords") or [])[:8] if k}
+                if not g_kws:
+                    continue
+                for p in profiles:
+                    p_kws = {str(k).lower() for k in (p.keywords or [])[:8] if k}
+                    if not p_kws:
+                        continue
+                    overlap = len(g_kws & p_kws)
+                    if overlap < 2:
+                        continue
+                    self.add_relationship(p.problem_title, "HAS_POTENTIAL_GAP", g_title)
+
+            return {
+                "nodes": self.graph.number_of_nodes(),
+                "edges": self.graph.number_of_edges(),
+            }
+        except Exception as e:
+            logger.error(f"build_enriched_graph error: {e}")
+            return {"new_nodes": 0, "new_edges": 0}
+        finally:
+            db.close()
+
+    def persist(self):
+        db = SessionLocal()
+        try:
+            existing_nodes = {n.name for n in db.query(models.KnowledgeGraphNode.name).all()}
+            existing_edges = {
+                (e.source, e.target, e.relation)
+                for e in db.query(models.KnowledgeGraphEdge).all()
+            }
+
+            new_nodes = 0
+            for node, attrs in self.graph.nodes(data=True):
+                if node in existing_nodes:
+                    existing = db.query(models.KnowledgeGraphNode).filter_by(name=node).first()
+                    new_type = attrs.get("type", "unknown")
+                    if existing and _is_more_specific(new_type, existing.entity_type or "unknown"):
+                        existing.entity_type = new_type
+                    continue
+                db.add(models.KnowledgeGraphNode(
+                    name=node,
+                    entity_type=attrs.get("type", "unknown"),
+                    metadata_json=attrs.get("metadata", {}),
+                ))
+                new_nodes += 1
+
+            new_edges = 0
+            for src, tgt, attrs in self.graph.edges(data=True):
+                key = (src, tgt, attrs.get("relation", ""))
+                if key in existing_edges:
+                    continue
+                db.add(models.KnowledgeGraphEdge(
+                    source=src,
+                    target=tgt,
+                    relation=attrs.get("relation", "related_to"),
+                ))
+                new_edges += 1
+
+            db.commit()
+            logger.info(f"KG persisted: +{new_nodes} nodes, +{new_edges} edges "
+                        f"(graph: {self.graph.number_of_nodes()}/{self.graph.number_of_edges()})")
+            return {"new_nodes": new_nodes, "new_edges": new_edges}
+        except Exception as e:
+            db.rollback()
+            logger.error(f"KG persist error: {e}")
+            return {"new_nodes": 0, "new_edges": 0}
+        finally:
+            db.close()
+
+===== FILE: ./backend/app/agents/nlp_agent.py =====
+import re
+import spacy
+from nltk.corpus import stopwords
+from nltk.sentiment import SentimentIntensityAnalyzer
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.decomposition import NMF
+
+class NLPAgent:
+    def __init__(self):
+        try:
+            self.nlp = spacy.load("en_core_web_sm")
+        except Exception:
+            self.nlp = None
+        self.stop_words = set(stopwords.words("english"))
+        self.sia = SentimentIntensityAnalyzer()
+
+    def clean_text(self, text: str) -> str:
+        if not text:
+            return ""
+        text = re.sub(r"http\S+", "", text)
+        text = re.sub(r"[^a-zA-Z\s]", " ", text)
+        text = re.sub(r"\s+", " ", text).strip()
+        return text
+
+    def extract_keywords(self, text: str, top_n: int = 10) -> list:
+        cleaned = self.clean_text(text)
+        if not cleaned or len(cleaned) < 20:
+            return []
+        try:
+            vectorizer = TfidfVectorizer(max_features=top_n, stop_words="english", ngram_range=(1, 2))
+            vectorizer.fit_transform([cleaned])
+            return list(vectorizer.get_feature_names_out())
+        except Exception:
+            return []
+
+    # Words that signal the end of a real entity — RSS artifacts.
+    _ENTITY_TAIL_BLOCKLIST = {
+        "email", "blurb", "figure", "figures", "photo", "image", "images",
+        "author", "authors", "researcher", "researchers", "student", "students",
+        "university", "universities", "institute", "institutes",
+        "department", "departments", "newsletter", "brief", "congratulations",
+        "thanks", "acknowledgments", "acknowledgements", "abstract",
+        "introduction", "conclusion", "references", "appendix",
+        "january", "february", "march", "april", "may", "june", "july",
+        "august", "september", "october", "november", "december",
+        "monday", "tuesday", "wednesday", "thursday", "friday",
+        "saturday", "sunday", "today", "tomorrow", "yesterday",
+        "page", "pages", "figure", "table", "section", "chapter",
+        "software", "hardware", "framework", "kernel", "kernels",
+        "center", "centre", "college", "director", "showcase",
+        "artificial", "machine", "learning", "deep", "data", "science",
+        "intelligence", "computing", "quantum", "cloud", "healthcare",
+        "medical", "medicine", "statistics", "modern", "honors", "internship",
+    }
+
+    _ENTITY_ACRONYMS = {"ai", "ml", "nlp", "llm", "iot", "api", "sdk", "cli", "gpu", "cpu"}
+
+    def _is_valid_entity(self, text: str, label: str) -> bool:
+        """Shape-based validation. Reject anything that doesn't look like a
+        real named entity — proper noun casing, reasonable length, no markup."""
+        if not text:
+            return False
+
+        text = text.strip().rstrip(".,;:!?()[]{}")
+
+        # Reject HTML / URL / punctuation soup
+        if any(ch in text for ch in "<>\"={}"):
+            return False
+        if "://" in text or text.startswith("http"):
+            return False
+
+        # Reject if contains ':' (RSS "Name: Role" fragments)
+        if ":" in text:
+            return False
+
+        # Reject if too short or too long
+        if len(text) < 3 or len(text) > 40:
+            return False
+
+        # Alpha ratio must be reasonable
+        alpha = sum(c.isalpha() for c in text)
+        if alpha < 3 or alpha / max(len(text), 1) < 0.5:
+            return False
+
+        words = text.split()
+        if not words:
+            return False
+
+        # Title-case check for multi-word: at least one word must start uppercase
+        # (proper noun signal). But allow single-word acronyms.
+        if len(words) > 1:
+            # Last word must not be a stoplist word
+            if words[-1].lower().rstrip(".,;:!?") in self._ENTITY_TAIL_BLOCKLIST:
+                return False
+            # At least half the words must be title-cased or known acronyms
+            proper = sum(
+                1 for w in words
+                if w[:1].isupper() or w.lower() in self._ENTITY_ACRONYMS
+            )
+            if proper < len(words) / 2:
+                return False
+
+        # Label-specific rules
+        if label == "PERSON":
+            # Real person names: 2-3 words, or single word if clearly title-cased
+            if len(words) == 1:
+                return False  # single-word PERSON almost always noise
+            if len(words) > 4:
+                return False
+        elif label == "ORG":
+            if len(words) > 5:
+                return False
+        elif label == "PRODUCT":
+            if len(words) > 4:
+                return False
+
+        # Reject if the entire entity is just stoplist words
+        lowered = [w.lower().rstrip(".,;:!?") for w in words]
+        if all(w in self._ENTITY_TAIL_BLOCKLIST for w in lowered):
+            return False
+
+        return True
+
+    def extract_entities(self, text: str) -> list:
+        if not self.nlp or not text:
+            return []
+        # Strip HTML tags/attributes BEFORE passing to spaCy
+        cleaned = re.sub(r"<[^>]+>", " ", text)
+        cleaned = re.sub(r"&[a-zA-Z#0-9]+;", " ", cleaned)
+        cleaned = re.sub(r"\s+", " ", cleaned).strip()
+        doc = self.nlp(cleaned[:10000])
+        out = []
+        seen = set()
+        for ent in doc.ents:
+            label = ent.label_
+            if label not in ("PERSON", "ORG", "PRODUCT"):
+                continue
+            txt = ent.text.strip()
+            if not self._is_valid_entity(txt, label):
+                continue
+            key = txt.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append({"text": txt, "label": label})
+            if len(out) >= 20:
+                break
+        return out
+
+    def analyze_sentiment(self, text: str) -> float:
+        if not text:
+            return 0.0
+        return self.sia.polarity_scores(text)["compound"]
+
+
+    def extract_topics_nmf(self, texts: list, n_topics: int = 5) -> list:
+        """Proper topic modeling using NMF on TF-IDF matrix."""
+        if not texts or len(texts) < 2:
+            return []
+        try:
+            vectorizer = TfidfVectorizer(max_features=200, stop_words="english", ngram_range=(1, 2))
+            X = vectorizer.fit_transform(texts)
+            n_topics = min(n_topics, max(2, len(texts) // 2))
+            nmf = NMF(n_components=n_topics, random_state=42, init='nndsvda', max_iter=1000)
+            nmf.fit(X)
+            feature_names = vectorizer.get_feature_names_out()
+            topics = []
+            for topic_idx, topic in enumerate(nmf.components_):
+                top_indices = topic.argsort()[-6:][::-1]
+                top_words = [feature_names[i] for i in top_indices]
+                topics.append({
+                    "topic_id": topic_idx,
+                    "keywords": top_words,
+                    "label": ", ".join(top_words[:3]),
+                })
+            return topics
+        except Exception as e:
+            print(f"NMF topic modeling error: {e}")
+            return []
+
+
+    def tokenize(self, text: str) -> list:
+        """Tokenize into lowercase word tokens."""
+        if not text:
+            return []
+        if self.nlp:
+            doc = self.nlp(text[:5000])
+            return [t.text.lower() for t in doc if t.is_alpha]
+        # fallback: simple split
+        import re
+        return re.findall(r"\b[a-zA-Z]+\b", text.lower())
+
+    def remove_stopwords(self, tokens: list) -> list:
+        """Filter out English stopwords."""
+        return [t for t in tokens if t not in self.stop_words and len(t) > 2]
+
+    def process(self, text: str) -> dict:
+        tokens = self.tokenize(text)
+        return {
+            "cleaned_text": self.clean_text(text),
+            "tokens": tokens[:50],
+            "filtered_tokens": self.remove_stopwords(tokens)[:30],
+            "keywords": self.extract_keywords(text),
+            "entities": self.extract_entities(text),
+            # `topics` is intentionally empty at the per-doc level; the real
+            # topic label is assigned later from the corpus-wide NMF model
+            # in OrchestratorAgent._run_full_pipeline_inner.
+            "topics": [],
+            "sentiment_score": self.analyze_sentiment(text)
+        }
+
+===== FILE: ./backend/app/agents/opportunity_intelligence.py =====
+import re
+
+_LATIN_ONLY = re.compile(r'^[a-zA-Z0-9\s\-&,.\']+$')
+
+
+def _is_latin_only(s: str) -> bool:
+    return bool(s and _LATIN_ONLY.match(s))
+
+
+# Additional noise words (things that show up in titles but aren't meaningful)
+NOISE_WORDS = {
+    "awesome", "papers", "paper", "need", "needs", "needed", "needing",
+    "repository", "repositories", "repo", "repos", "projects", "project",
+    "github", "list", "lists", "curated", "collection", "collections",
+    "code", "source", "open", "software", "library", "libraries",
+    "problem", "problems", "cluster", "clusters", "issue", "issues",
+    "topic", "topics", "related", "general", "based", "using", "used",
+    "new", "good", "great", "best", "better", "well", "like", "make",
+    "getting", "started", "guide", "tutorial", "tutorials", "book", "books",
+    "research", "study", "studies", "review", "reviews", "example",
+    "examples", "data", "dataset", "datasets", "framework", "frameworks",
+    "system", "systems", "tool", "tools", "app", "apps", "application",
+    "applications", "web", "mobile", "cloud", "github.io", "https",
+    "readme", "documentation", "docs", "star", "stars", "fork", "forks",
+    "contribution", "contributions", "pull", "request", "python",
+    "javascript", "typescript", "java", "golang", "rust", "node",
+    "react", "vue", "angular", "django", "flask", "fastapi",
+    "model", "models", "approach", "approaches", "method", "methods",
+    "methodology", "results", "result", "findings", "finding",
+    "analysis", "analyses", "training", "test", "testing",
+    "version", "type", "types", "case", "cases", "work", "works",
+    "publication", "publications", "article", "articles",
+    "information", "knowledge", "process", "processes", "task", "tasks",
+    "solution", "solutions", "feature", "features",
+    "value", "values", "level", "levels", "high", "low", "large",
+    "small", "old", "recent", "current", "future", "called", "call",
+    "coin", "w3c", "2019", "2020", "2021", "2022", "2023", "2024",
+    "january", "february", "march", "april", "may", "june", "july",
+    "august", "september", "october", "november", "december",
+    "shannon", "videos", "video", "resources", "resource", "blog",
+    "series", "chapter", "chapters", "part", "parts", "introduction",
+    "overview", "summary", "note", "notes", "week", "month", "year",
+    "page", "pages", "posts", "post", "thread", "comment", "comments",
+    "discussion", "discussions", "question", "questions", "answer",
+    "answers", "here", "there", "this", "that", "these", "those",
+    "first", "second", "third", "next", "last", "also", "even", "still",
+    "just", "only", "much", "many", "more", "most", "some", "other",
+}
+
+BRAND_NAMES = {
+    "azure", "aws", "gcp", "google", "microsoft", "amazon", "apple",
+    "facebook", "meta", "twitter", "linkedin", "oracle", "ibm",
+    "tesla", "nvidia", "intel", "amd", "docker", "kubernetes",
+    "tensorflow", "pytorch", "keras", "opencv", "matlab", "jupyter",
+    "thingsboard", "classiq",
+}
+
+# Known multi-word phrases to merge (single + single → bigram)
+PHRASE_MERGES = {
+    ("machine", "learning"): "machine learning",
+    ("deep", "learning"): "deep learning",
+    ("artificial", "intelligence"): "artificial intelligence",
+    ("quantum", "computing"): "quantum computing",
+    ("edge", "computing"): "edge computing",
+    ("cloud", "computing"): "cloud computing",
+    ("neural", "network"): "neural network",
+    ("neural", "networks"): "neural networks",
+    ("computer", "vision"): "computer vision",
+    ("natural", "language"): "natural language",
+    ("language", "processing"): "language processing",
+    ("reinforcement", "learning"): "reinforcement learning",
+    ("federated", "learning"): "federated learning",
+    ("transfer", "learning"): "transfer learning",
+    ("image", "segmentation"): "image segmentation",
+    ("image", "classification"): "image classification",
+    ("image", "processing"): "image processing",
+    ("medical", "imaging"): "medical imaging",
+    ("intrusion", "detection"): "intrusion detection",
+    ("anomaly", "detection"): "anomaly detection",
+    ("object", "detection"): "object detection",
+    ("cyber", "security"): "cyber security",
+    ("data", "science"): "data science",
+    ("big", "data"): "big data",
+    ("block", "chain"): "blockchain",
+    ("supply", "chain"): "supply chain",
+    ("public", "health"): "public health",
+    ("reverse", "engineering"): "reverse engineering",
+    ("generative", "ai"): "generative AI",
+    ("large", "language"): "large language",
+    ("explainable", "ai"): "explainable AI",
+}
+
+ACRONYMS = {
+    "ai", "ml", "iot", "llm", "nlp", "rag", "api", "ui", "ux",
+    "db", "sql", "aws", "gcp", "cnn", "rnn", "lstm", "gan", "vae",
+    "knn", "svm", "gpt", "bert", "xai", "ar", "vr",
+}
+
+
+def _title_case(s: str) -> str:
+    parts = []
+    for word in s.split():
+        if word.lower() in ACRONYMS:
+            parts.append(word.upper())
+        else:
+            parts.append(word.capitalize())
+    return " ".join(parts)
+
+
+def _singularize(word: str) -> str:
+    if len(word) > 4 and word.endswith("ies"):
+        return word[:-3] + "y"
+    if len(word) > 3 and word.endswith("es") and word[-3] not in "aeiou":
+        return word[:-2]
+    if len(word) > 3 and word.endswith("s") and not word.endswith("ss"):
+        return word[:-1]
+    return word
+
+
+def _is_meaningful(token: str) -> bool:
+    """A token is meaningful if it's not noise/brand/short/numeric."""
+    if len(token) < 3:
+        return False
+    if token.isdigit():
+        return False
+    if token in NOISE_WORDS or token in BRAND_NAMES:
+        return False
+    return True
+
+
+def _clean_keywords(keywords: list) -> dict:
+    """
+    1. Extract clean tokens.
+    2. Merge known bigrams (machine learning → 'machine learning').
+    3. Return phrases + singles.
+    """
+    # Step 1: clean individual keywords into tokens
+    cleaned_singles = []
+    seen_singles = set()
+
+    for kw in keywords:
+        if not kw:
+            continue
+        if not _is_latin_only(kw):
+            continue
+        w = kw.lower().strip()
+        if " " in w:
+            # Multi-word from TF-IDF: keep if all tokens meaningful
+            tokens = w.split()
+            if all(_is_meaningful(t) for t in tokens):
+                root = " ".join(_singularize(t) for t in tokens)
+                if root not in seen_singles:
+                    seen_singles.add(root)
+                    cleaned_singles.append(w)
+            continue
+
+        # Single word
+        if not _is_meaningful(w):
+            continue
+        root = _singularize(w)
+        if root in seen_singles:
+            continue
+        seen_singles.add(root)
+        cleaned_singles.append(w)
+
+    # Step 2: merge known bigram pairs found in singles
+    merged_phrases = []
+    consumed = set()
+    for i, w1 in enumerate(cleaned_singles):
+        if i in consumed:
+            continue
+        for j, w2 in enumerate(cleaned_singles):
+            if j <= i or j in consumed:
+                continue
+            key1 = (_singularize(w1), _singularize(w2))
+            key2 = (_singularize(w2), _singularize(w1))
+            if key1 in PHRASE_MERGES:
+                merged_phrases.append(PHRASE_MERGES[key1])
+                consumed.add(i)
+                consumed.add(j)
+                break
+            elif key2 in PHRASE_MERGES:
+                merged_phrases.append(PHRASE_MERGES[key2])
+                consumed.add(i)
+                consumed.add(j)
+                break
+
+    # Remaining singles (not consumed) that aren't part of a merged phrase
+    remaining = [w for i, w in enumerate(cleaned_singles) if i not in consumed]
+    # Also add any multi-word phrases that were already clean
+    remaining = [w for w in remaining if " " in w] + [w for w in remaining if " " not in w]
+
+    return {"phrases": merged_phrases, "singles": remaining}
+
+
+class OpportunityIntelligenceAgent:
+    WEIGHTS = {
+        "demand": 0.23,
+        "research_gap": 0.18,
+        "trend": 0.14,
+        "innovation": 0.08,
+        "competition": 0.09,
+        "feasibility": 0.14,
+        "market_readiness": 0.09,
+        "confidence": 0.05,
+    }
+
+    def _generate_title(self, cluster: dict, gap: dict = None) -> str:
+        kw = _clean_keywords(cluster.get("keywords", []))
+        phrases = kw["phrases"]
+        singles = kw["singles"]
+
+        # 1. Two phrases → "P1 for P2"
+        if len(phrases) >= 2:
+            return f"{_title_case(phrases[0])} for {_title_case(phrases[1])}"
+
+        # 2. One phrase + one single → "Phrase for Single"
+        if len(phrases) == 1 and len(singles) >= 1:
+            return f"{_title_case(phrases[0])} for {_title_case(singles[0])}"
+
+        # 3. One phrase only → "Phrase Innovation"
+        if len(phrases) == 1:
+            return f"{_title_case(phrases[0])} Innovations"
+
+        # 4. Three or more singles → "S1, S2 & S3"
+        if len(singles) >= 3:
+            s1, s2, s3 = [_title_case(s) for s in singles[:3]]
+            return f"{s1}, {s2} & {s3}"
+
+        # 5. Two singles → "S1 & S2"
+        if len(singles) == 2:
+            return f"{_title_case(singles[0])} & {_title_case(singles[1])}"
+
+        # 6. One single
+        if len(singles) == 1:
+            return f"{_title_case(singles[0])} Innovations"
+
+        return "Emerging Innovation Opportunity"
+
+    def _generate_description(self, cluster: dict, gap: dict = None) -> str:
+        kw = _clean_keywords(cluster.get("keywords", []))
+        all_kws = kw["phrases"] + kw["singles"]
+        if not all_kws:
+            return cluster.get("description", "Emerging opportunity.")
+
+        focus = ", ".join(_title_case(k) for k in all_kws[:4])
+        gap_note = ""
+        if gap and gap.get("gap_score", 0) > 0.5:
+            gap_note = " with significant research coverage gaps"
+        return f"Opportunity focused on {focus}{gap_note}."
+
+
+    def _derive_competition_score(self, keywords: list, github_items: list) -> float:
+        """More matching repos → more competition → HIGHER score (harder)."""
+        if not keywords or not github_items:
+            return 0.3
+        text = " ".join([
+            (r.get("name", "") + " " + (r.get("description", "") or "")).lower()
+            for r in github_items
+        ])
+        matches = sum(1 for kw in keywords if kw.lower() in text)
+        density = matches / max(len(keywords), 1)
+        return round(min(1.0, 0.2 + density * 0.8), 3)
+
+    def _derive_feasibility_score(self, keywords: list, github_items: list, arxiv_items: list) -> float:
+        """Repo stars + paper count → higher technical feasibility."""
+        stars = sum(r.get("stargazers_count", 0) or 0 for r in (github_items or []))
+        papers = len(arxiv_items or [])
+        # Normalize: 20k stars + 10 papers → max feasibility
+        star_component = min(1.0, stars / 20000.0)
+        paper_component = min(1.0, papers / 10.0)
+        return round(0.3 + 0.5 * star_component + 0.2 * paper_component, 3)
+
+    def _item_text(self, item: dict) -> str:
+        """Concatenate every text-bearing field on a raw item, lowercased."""
+        parts = [
+            item.get("title") or "",
+            item.get("name") or "",
+            item.get("description") or "",
+            item.get("summary") or "",
+            item.get("selftext") or "",
+        ]
+        return " ".join(p for p in parts if p).lower()
+
+    def _derive_innovation_score(self, keywords: list, raw_items: dict) -> float:
+        """
+        Novelty/diversity of the signal around *this* cluster.
+
+        - diversity (0.5): how many of the 4 sources have docs matching this cluster
+        - balance   (0.3): 1 - dominant_source_share  (penalizes single-source clusters)
+        - breadth   (0.2): min(1, len(keywords) / 8)
+
+        Ranges from 0.15 (only one source touches the topic) to ~0.93 (evenly spread).
+        """
+        if not keywords or not raw_items:
+            return 0.3
+
+        keywords_lower = [str(k).lower() for k in keywords if k]
+        if not keywords_lower:
+            return 0.3
+
+        source_matches = {}
+        for src in ("github", "arxiv", "news", "reddit"):
+            items = raw_items.get(src) or []
+            count = 0
+            for item in items:
+                text = self._item_text(item)
+                if any(kw in text for kw in keywords_lower):
+                    count += 1
+            if count > 0:
+                source_matches[src] = count
+
+        if not source_matches:
+            return 0.15
+
+        diversity = len(source_matches) / 4.0
+        total = sum(source_matches.values())
+        max_share = max(source_matches.values()) / total
+        balance = 1.0 - max_share
+        breadth = min(1.0, len(keywords) / 8.0)
+
+        score = 0.5 * diversity + 0.3 * balance + 0.2 * breadth
+        return round(score, 3)
+
+    def _derive_market_readiness_score(self, keywords: list, news_items: list) -> float:
+        """More news coverage → higher market readiness."""
+        if not keywords or not news_items:
+            return 0.4
+        text = " ".join([
+            (n.get("title", "") + " " + (n.get("summary", ""))).lower()
+            for n in news_items
+        ])
+        matches = sum(1 for kw in keywords if kw.lower() in text)
+        density = matches / max(len(keywords), 1)
+        return round(min(1.0, 0.3 + density * 0.7), 3)
+
+    def score(self, problem_cluster: dict, research_gap: dict = None, trend: dict = None,
+              github_items: list = None, arxiv_items: list = None, news_items: list = None,
+              raw_items: dict = None, avg_sentiment: float = None) -> dict:
+        demand = problem_cluster.get("demand_score", 0.5)
+        gap = research_gap.get("gap_score", 0.5) if research_gap else 0.5
+        trend_score = trend.get("trend_score", 0.5) if trend else 0.5
+        keywords = problem_cluster.get("keywords", [])
+        competition = self._derive_competition_score(keywords, github_items or [])
+        feasibility = self._derive_feasibility_score(keywords, github_items or [], arxiv_items or [])
+
+        # Market readiness: base score from news coverage, then modulated by
+        # aggregate sentiment. avg_sentiment ∈ [-1, 1] (VADER compound).
+        # Positive buzz → readiness amplified up to +15%. Negative → dampened
+        # to −15%. Clamped to [0, 1] after modulation.
+        market_readiness_raw = self._derive_market_readiness_score(keywords, news_items or [])
+        if avg_sentiment is not None:
+            modifier = 1.0 + 0.15 * max(-1.0, min(1.0, float(avg_sentiment)))
+            market_readiness = max(0.0, min(1.0, market_readiness_raw * modifier))
+        else:
+            market_readiness = market_readiness_raw
+
+        innovation = self._derive_innovation_score(keywords, raw_items or {})
+        confidence = 0.8
+
+        opportunity_score = (
+            self.WEIGHTS["demand"] * demand +
+            self.WEIGHTS["research_gap"] * gap +
+            self.WEIGHTS["trend"] * trend_score +
+            self.WEIGHTS["innovation"] * innovation +
+            self.WEIGHTS["competition"] * (1 - competition) +
+            self.WEIGHTS["feasibility"] * feasibility +
+            self.WEIGHTS["market_readiness"] * market_readiness +
+            self.WEIGHTS["confidence"] * confidence
+        )
+
+        title = self._generate_title(problem_cluster, research_gap)
+        description = self._generate_description(problem_cluster, research_gap)
+
+        raw_title = problem_cluster.get("title", "")
+        if raw_title and _is_latin_only(raw_title):
+            description += f" Source cluster: {raw_title[:120]}"
+
+        return {
+            "title": title,
+            "description": description,
+            "demand_score": round(demand, 3),
+            "research_gap_score": round(gap, 3),
+            "trend_score": round(trend_score, 3),
+            "innovation_score": innovation,
+            "competition_score": competition,
+            "feasibility_score": feasibility,
+            "market_readiness_score": market_readiness,
+            "confidence_score": confidence,
+            "opportunity_score": round(opportunity_score, 3),
+        }
+
+===== FILE: ./backend/app/agents/orchestrator.py =====
+from app.agents.data_collection import DataCollectionAgent
+from app.agents.nlp_agent import NLPAgent
+from app.agents.knowledge_graph import KnowledgeGraphAgent
+from app.agents.problem_discovery import ProblemDiscoveryAgent
+from app.agents.research_gap import ResearchGapAgent
+from app.agents.innovation_monitor import InnovationMonitorAgent
+from app.agents.opportunity_intelligence import OpportunityIntelligenceAgent
+from app.agents.explainable_ai import ExplainableAIAgent
+from app.services.embedding_service import EmbeddingService
+from app.database import SessionLocal
+from app import models
+from sqlalchemy import select
+from app.logger import logger
+from app.services.notification_service import generate_pipeline_notifications
+from app.services.challenge_portal_service import ChallengePortalService
+from app.agents.problem_extractor import ProblemExtractorAgent
+from app.agents.problem_agent import ProblemAgent
+from app.agents.technology_agent import TechnologyAgent
+from app.agents.research_discovery_agent import ResearchDiscoveryAgent
+from app.agents.evidence_agent import EvidenceAgent
+from app.agents.research_direction_agent import ResearchDirectionAgent
+
+from sqlalchemy import inspect as _sa_inspect
+
+import threading
+
+# Global lock — only one pipeline can run at a time, across all OrchestratorAgent instances.
+# Prevents scheduler + user-triggered runs from colliding (ChromaDB writes, KG persists).
+_PIPELINE_LOCK = threading.Lock()
+
+
+class OrchestratorAgent:
+    def __init__(self):
+        self.data_collection = DataCollectionAgent()
+        self.nlp = NLPAgent()
+        self.kg = KnowledgeGraphAgent()
+        self.problem_discovery = ProblemDiscoveryAgent()
+        self.research_gap = ResearchGapAgent()
+        self.innovation_monitor = InnovationMonitorAgent()
+        self.opportunity = OpportunityIntelligenceAgent()
+        self.explainable = ExplainableAIAgent()
+        self.embedding = EmbeddingService()
+        self.challenge_portal = ChallengePortalService()
+        self.problem_extractor = ProblemExtractorAgent()
+        self.problem_agent = ProblemAgent()
+        self.technology_agent = TechnologyAgent()
+        self.research_discovery_agent = ResearchDiscoveryAgent()
+        self.evidence_agent = EvidenceAgent()
+        self.research_direction_agent = ResearchDirectionAgent()
+
+    def _save_problem_profiles(self, profiles: list):
+        """Persist extracted ProblemProfile rows.
+
+        Dedup layers (first match short-circuits):
+          1. Intra-batch: ProblemAgent.dedup() collapses near-dupes by
+             canonical_hash before any DB lookups.
+          2. Exact source_url match (strongest provenance signal).
+          3. canonical_hash match (catches title variants across runs/sources).
+          4. Exact problem_title fallback (for legacy rows without a hash).
+        """
+        if not profiles:
+            return 0
+        from app.database import SessionLocal as _SL
+        db = _SL()
+        inserted = 0
+        skipped = 0
+        merged = 0
+        try:
+            # Layer 1: intra-batch dedup
+            before = len(profiles)
+            profiles = self.problem_agent.dedup(profiles)
+            intra_batch_skipped = before - len(profiles)
+
+            for pr in profiles:
+                key_url = (pr.get("source_url") or "").strip()
+                key_title = (pr.get("problem_title") or "").strip()[:200]
+                canonical_hash = pr.get("_canonical_hash") or self.problem_agent.compute_hash(key_title)
+
+                # Look up the existing row (if any) via the four-layer chain
+                existing_row = None
+                # Layer 2: exact source_url
+                if key_url:
+                    existing_row = db.query(models.ProblemProfile).filter(
+                        models.ProblemProfile.source_url == key_url
+                    ).first()
+                # Layer 3: canonical_hash
+                if not existing_row and canonical_hash:
+                    existing_row = db.query(models.ProblemProfile).filter(
+                        models.ProblemProfile.canonical_hash == canonical_hash
+                    ).first()
+                # Layer 4: exact title (legacy fallback)
+                if not existing_row and key_title:
+                    existing_row = db.query(models.ProblemProfile).filter(
+                        models.ProblemProfile.problem_title == key_title
+                    ).first()
+
+                if existing_row:
+                    # Cross-source merge: enrich the existing row with the
+                    # new source's provenance, keywords, and technologies.
+                    if self.problem_agent.merge_provenance(existing_row, pr):
+                        merged += 1
+                    else:
+                        skipped += 1
+                    continue
+
+                db.add(models.ProblemProfile(
+                    organization=pr.get("organization", "")[:500],
+                    problem_title=pr.get("problem_title", "")[:500],
+                    canonical_hash=canonical_hash or None,
+                    problem_description=pr.get("problem_description", ""),
+                    industry_domain=pr.get("industry_domain", "Other"),
+                    problem_type=pr.get("problem_type", "Other"),
+                    technology_stage=pr.get("technology_stage", "potential"),
+                    required_technology=pr.get("required_technology", []),
+                    current_approach=pr.get("current_approach", ""),
+                    known_limitations=pr.get("known_limitations", ""),
+                    expected_outcome=pr.get("expected_outcome", ""),
+                    source=pr.get("source", "unknown"),
+                    source_url=pr.get("source_url", ""),
+                    keywords=pr.get("keywords", []),
+                    problem_status=pr.get("problem_status", "unknown"),
+                    student_suitability=pr.get("student_suitability", "medium"),
+                    extracted_by=pr.get("extracted_by", "unknown"),
+                ))
+                inserted += 1
+            db.commit()
+            logger.info(
+                f"Saved {inserted} new ProblemProfile rows "
+                f"({merged} cross-source merged, {skipped} exact dupes, "
+                f"{intra_batch_skipped} intra-batch dupes skipped)"
+            )
+            return inserted
+        except Exception as e:
+            db.rollback()
+            logger.error(f"ProblemProfile save error: {e}")
+            return 0
+        finally:
+            db.close()
+
+    @staticmethod
+    def _row_id(obj):
+        """Return the PK of a possibly-detached ORM instance without
+        triggering a lazy refresh. Falls back to __dict__ lookup."""
+        ident = _sa_inspect(obj).identity
+        if ident:
+            return ident[0]
+        return obj.__dict__.get("id")
+
+    def _save_technologies(self, profile_rows_with_techs: list):
+        """Persist problem_technologies rows. Skips exact (profile, name) dups."""
+        if not profile_rows_with_techs:
+            return 0
+        from app.database import SessionLocal as _SL
+        db = _SL()
+        inserted = 0
+        try:
+            # Collect existing (profile_id, lower(name)) to avoid dup inserts
+            existing = set()
+            for pid, name in db.query(
+                models.ProblemTechnology.problem_profile_id,
+                models.ProblemTechnology.technology_name,
+            ).all():
+                existing.add((pid, (name or "").lower()))
+
+            for row, techs in profile_rows_with_techs:
+                pid = self._row_id(row)
+                if pid is None:
+                    continue
+                for t in techs:
+                    key = (pid, (t["name"] or "").lower())
+                    if key in existing:
+                        continue
+                    db.add(models.ProblemTechnology(
+                        problem_profile_id=pid,
+                        technology_name=t["name"],
+                        stage=t["stage"],
+                        confidence=t["confidence"],
+                        evidence=t.get("evidence") or "",
+                    ))
+                    existing.add(key)
+                    inserted += 1
+            db.commit()
+            logger.info(f"Saved {inserted} new ProblemTechnology rows")
+            return inserted
+        except Exception as e:
+            db.rollback()
+            logger.error(f"ProblemTechnology save error: {e}")
+            return 0
+        finally:
+            db.close()
+
+    def _save_problem_papers(self, profile_rows_with_papers: list):
+        """Persist problem_papers rows. Skips exact (profile_id, arxiv_id) dups."""
+        if not profile_rows_with_papers:
+            return 0
+        from app.database import SessionLocal as _SL
+        db = _SL()
+        inserted = 0
+        try:
+            existing = set()
+            for pid, ax in db.query(
+                models.ProblemPaper.problem_profile_id,
+                models.ProblemPaper.arxiv_id,
+            ).all():
+                existing.add((pid, ax or ""))
+
+            for row, papers in profile_rows_with_papers:
+                pid = self._row_id(row)
+                if pid is None:
+                    continue
+                for p in papers:
+                    key = (pid, p.get("arxiv_id") or "")
+                    if not key[1] or key in existing:
+                        continue
+                    db.add(models.ProblemPaper(
+                        problem_profile_id=pid,
+                        arxiv_id=p["arxiv_id"],
+                        title=p.get("title") or "",
+                        authors=p.get("authors") or [],
+                        abstract=p.get("abstract") or "",
+                        url=p.get("url") or "",
+                        relevance_score=p.get("relevance_score") or 0.5,
+                        limitations=p.get("limitations") or [],
+                        published=p.get("published") or "",
+                    ))
+                    existing.add(key)
+                    inserted += 1
+            db.commit()
+            logger.info(f"Saved {inserted} new ProblemPaper rows")
+            return inserted
+        except Exception as e:
+            db.rollback()
+            logger.error(f"ProblemPaper save error: {e}")
+            return 0
+        finally:
+            db.close()
+
+    def _save_evidence(self, opportunity_rows_with_evidence: list):
+        """Persist opportunity_evidence rows. Skips exact (opp_id, url) dups."""
+        if not opportunity_rows_with_evidence:
+            return 0
+        from app.database import SessionLocal as _SL
+        db = _SL()
+        inserted = 0
+        try:
+            existing = set()
+            for oid, url in db.query(
+                models.OpportunityEvidence.opportunity_id,
+                models.OpportunityEvidence.url,
+            ).all():
+                existing.add((oid, url or ""))
+
+            for opp, items in opportunity_rows_with_evidence:
+                opp_id = self._row_id(opp)
+                if opp_id is None:
+                    continue
+                for e in items:
+                    key = (opp_id, e.get("url") or "")
+                    if not key[1] or key in existing:
+                        continue
+                    db.add(models.OpportunityEvidence(
+                        opportunity_id=opp_id,
+                        source=e["source"],
+                        title=e.get("title") or "",
+                        url=key[1],
+                        relevance_score=e.get("relevance_score") or 0.0,
+                        snippet=e.get("snippet") or "",
+                    ))
+                    existing.add(key)
+                    inserted += 1
+            db.commit()
+            logger.info(f"Saved {inserted} new OpportunityEvidence rows")
+            return inserted
+        except Exception as e:
+            db.rollback()
+            logger.error(f"OpportunityEvidence save error: {e}")
+            return 0
+        finally:
+            db.close()
+
+    def _enrich_opportunities(self):
+        """Populate the 10 Phase-6 enrichment columns for recent opportunities.
+
+        Data-derived fields (technologies, papers, approaches, limitations,
+        trend, evidence sources, domain, industry) come from Phase 2/3/4
+        tables. Two LLM-derived fields (suggested_research_direction and
+        suggested_project_direction) are generated by ResearchDirectionAgent.
+        Idempotent — recomputes values each run.
+        """
+        from app.database import SessionLocal as _SL
+
+        db = _SL()
+        try:
+            opps = (
+                db.query(models.Opportunity)
+                .order_by(models.Opportunity.id.desc())
+                .limit(10)
+                .all()
+            )
+            if not opps:
+                return {"updated": 0}
+
+            # Preload tables we need
+            all_profiles = db.query(models.ProblemProfile).all()
+            all_techs = db.query(models.ProblemTechnology).all()
+            all_papers = db.query(models.ProblemPaper).all()
+            all_evidence = db.query(models.OpportunityEvidence).all()
+            all_trends = db.query(models.Trend).all()
+            clusters_by_id = {c.id: c for c in db.query(models.ProblemCluster).all()}
+
+            techs_by_profile = {}
+            for t in all_techs:
+                techs_by_profile.setdefault(t.problem_profile_id, []).append(t)
+            papers_by_profile = {}
+            for p in all_papers:
+                papers_by_profile.setdefault(p.problem_profile_id, []).append(p)
+            evidence_by_opp = {}
+            for e in all_evidence:
+                evidence_by_opp.setdefault(e.opportunity_id, []).append(e)
+
+            # Map cluster -> best matching profile (via keyword overlap).
+            # Threshold lowered to >= 1 after observing that many real
+            # clusters share only one meaningful keyword with any profile.
+            # Fallback: if no profile clears the threshold, use the
+            # best-scoring one as long as it has at least one keyword.
+            def best_profile_for_cluster(cluster):
+                if not cluster or not cluster.keywords:
+                    return None
+                ck = {str(k).lower() for k in cluster.keywords[:10] if k}
+                if not ck:
+                    return None
+                best, best_n = None, 0
+                for p in all_profiles:
+                    pk = {str(k).lower() for k in (p.keywords or [])[:10] if k}
+                    n = len(ck & pk)
+                    if n > best_n:
+                        best, best_n = p, n
+                return best
+
+            snapshots = []
+            for opp in opps:
+                cluster = clusters_by_id.get(opp.problem_cluster_id)
+                profile = best_profile_for_cluster(cluster)
+                techs = techs_by_profile.get(profile.id, []) if profile else []
+                papers = papers_by_profile.get(profile.id, []) if profile else []
+                evs = evidence_by_opp.get(opp.id, [])
+
+                # Data-derived
+                opp.domain = (profile.industry_domain if profile else None) or opp.domain
+                opp.industry = opp.domain
+                opp.related_technologies = [t.technology_name for t in techs][:12]
+                opp.existing_research = [p.title for p in papers][:10]
+                approaches = " | ".join(
+                    (p.abstract or "")[:220] for p in papers[:3] if p.abstract
+                )
+                opp.existing_approaches = approaches[:2000]
+                # Limitations: union of all papers' limitations
+                lims = []
+                for p in papers:
+                    for L in (p.limitations or []):
+                        s = str(L).strip()
+                        if s and s not in lims:
+                            lims.append(s)
+                opp.known_limitations = " | ".join(lims[:10])[:2000]
+                # Emerging trend: pick best matching trend by name keyword
+                tnames = [t.technology_name.lower() for t in techs]
+                best_trend = None
+                for tr in all_trends:
+                    trn = (tr.name or "").lower()
+                    if not trn:
+                        continue
+                    if any(trn in t or t in trn for t in tnames):
+                        if best_trend is None or (tr.trend_score or 0) > (best_trend.trend_score or 0):
+                            best_trend = tr
+                opp.emerging_trend = (best_trend.name if best_trend else None) or opp.emerging_trend
+                opp.evidence_sources = [
+                    {"source": e.source, "url": e.url, "title": e.title}
+                    for e in evs[:12]
+                ]
+
+                snapshots.append({
+                    "opportunity_row": opp,
+                    "title": opp.title,
+                    "description": opp.description,
+                    "domain": opp.domain,
+                    "technologies": opp.related_technologies,
+                    "papers": opp.existing_research,
+                    "limitations": lims[:5],
+                    "trend": opp.emerging_trend,
+                })
+
+            # LLM-derived directions
+            direction_results = self.research_direction_agent.generate_batch(snapshots)
+            for row, out in direction_results:
+                if out.get("suggested_research_direction"):
+                    row.suggested_research_direction = out["suggested_research_direction"][:1500]
+                if out.get("suggested_project_direction"):
+                    row.suggested_project_direction = out["suggested_project_direction"][:1500]
+
+            db.commit()
+            logger.info(
+                f"Enriched {len(opps)} opportunities "
+                f"({len(direction_results)} with LLM directions)"
+            )
+            return {"updated": len(opps), "llm_directions": len(direction_results)}
+        except Exception as e:
+            db.rollback()
+            logger.error(f"Opportunity enrichment error: {e}")
+            return {"updated": 0, "error": str(e)}
+        finally:
+            db.close()
+
+    def _snapshot_and_notify(self):
+        """Phase 8.2/8.3: snapshot top-N opportunity scores + emit rank alerts.
+
+        For the top 100 opportunities by current score:
+          - Insert a new row into opportunity_score_history.
+          - Compare to the previous snapshot; if the rank jumped by
+            RANK_DELTA_THRESHOLD or more places, create a Notification
+            for the user's attention.
+        Returns a small stats dict.
+        """
+        from app.database import SessionLocal as _SL
+        from app.services.notification_service import create_notification
+
+        RANK_DELTA_THRESHOLD = 5
+        TOP_N = 100
+
+        db = _SL()
+        try:
+            opps = (
+                db.query(models.Opportunity)
+                .order_by(models.Opportunity.opportunity_score.desc())
+                .limit(TOP_N)
+                .all()
+            )
+            if not opps:
+                return {"snapshots": 0, "rank_changes": 0}
+
+            # Fetch previous snapshot ranks (latest per opportunity)
+            opp_ids = [o.id for o in opps]
+            prev_ranks = {}
+            prev_rows = (
+                db.query(models.OpportunityScoreHistory)
+                .filter(models.OpportunityScoreHistory.opportunity_id.in_(opp_ids))
+                .order_by(models.OpportunityScoreHistory.recorded_at.desc())
+                .all()
+            )
+            for r in prev_rows:
+                if r.opportunity_id not in prev_ranks:
+                    prev_ranks[r.opportunity_id] = r.rank
+
+            snapshots = 0
+            rank_changes = 0
+            for i, o in enumerate(opps, start=1):
+                db.add(models.OpportunityScoreHistory(
+                    opportunity_id=o.id,
+                    opportunity_score=o.opportunity_score or 0.0,
+                    rank=i,
+                ))
+                snapshots += 1
+
+                prev = prev_ranks.get(o.id)
+                if prev is None:
+                    continue
+                delta = prev - i   # positive = moved up
+                if abs(delta) >= RANK_DELTA_THRESHOLD:
+                    direction = "up" if delta > 0 else "down"
+                    try:
+                        create_notification(
+                            "rank_change",
+                            f"Opportunity {direction} {abs(delta)} places: {(o.title or '')[:80]}",
+                            f"Now ranked #{i} (was #{prev}). Score {o.opportunity_score:.2f}.",
+                            link=f"/opportunities/{o.id}",
+                            severity="success" if direction == "up" else "warning",
+                        )
+                        rank_changes += 1
+                    except Exception as e:
+                        logger.warning(f"[ScoreSnapshot] notification failed: {e}")
+
+            db.commit()
+            logger.info(
+                f"[ScoreSnapshot] snapshots={snapshots} rank_changes={rank_changes}"
+            )
+            return {"snapshots": snapshots, "rank_changes": rank_changes}
+        except Exception as e:
+            db.rollback()
+            logger.error(f"[ScoreSnapshot] error: {e}")
+            return {"snapshots": 0, "rank_changes": 0, "error": str(e)}
+        finally:
+            db.close()
+
+    def _save_to_db(self, query, raw, processed, clusters, gaps, trends, opportunities, user_id=None):
+        db = SessionLocal()
+        try:
+            # 1. Save raw documents with dedup — track new docs for embedding
+            inserted = 0
+            newly_inserted_docs = []
+            for source_name, items in raw.items():
+                for item in items:
+                    title = item.get("title") or item.get("name") or ""
+                    content = item.get("summary") or item.get("selftext") or item.get("description") or ""
+
+                    # Stable external_id: prefer source id, fall back to URL, then title hash.
+                    # This makes dedup work for every source (news/RSS has no id field).
+                    ext_id = str(item.get("id", "") or "")
+                    if not ext_id:
+                        ext_id = str(item.get("url", "") or item.get("html_url", "") or "")
+                    if not ext_id:
+                        import hashlib as _hl
+                        ext_id = "title:" + _hl.sha1(title.encode("utf-8")).hexdigest()[:16]
+
+                    exists = db.execute(
+                        select(models.RawDocument.id).where(
+                            models.RawDocument.source == source_name,
+                            models.RawDocument.external_id == ext_id,
+                        )
+                    ).first()
+                    if exists:
+                        continue
+
+                    url = item.get("url", item.get("html_url", ""))
+                    metadata = {"keys": list(item.keys())}
+                    if source_name == "rd_cells":
+                        metadata["lab"] = item.get("lab", "unknown")
+                    raw_doc = models.RawDocument(
+                        source=source_name,
+                        external_id=ext_id,
+                        title=title,
+                        content=content[:5000],
+                        url=url,
+                        metadata_json=metadata,
+                    )
+                    db.add(raw_doc)
+                    inserted += 1
+
+                    text = (title + " " + content)[:1000]
+                    if text.strip():
+                        newly_inserted_docs.append((text, {"source": source_name}))
+            logger.info(f"Inserted {inserted} new raw documents")
+
+            if newly_inserted_docs:
+                try:
+                    texts = [t for t, _ in newly_inserted_docs]
+                    metas = [m for _, m in newly_inserted_docs]
+                    self.embedding.add_documents(texts, metadatas=metas)
+                    logger.info(f"Embedded {len(texts)} NEW docs (skipped duplicates)")
+                except Exception as e:
+                    logger.error(f"Embedding error: {e}")
+            else:
+                logger.info("No new documents to embed")
+
+            # 1b. Save ProcessedDocument rows linked to their RawDocument
+            processed_inserted = 0
+            if processed:
+                # Force pending raw_doc inserts into the transaction's view before
+                # querying them back. SessionLocal is configured with autoflush=False,
+                # so without this the query below cannot see raw documents added
+                # earlier in this same call — the result is that processed documents
+                # for brand-new sources are silently dropped.
+                db.flush()
+                all_raw = db.query(models.RawDocument).all()
+                raw_index = {}
+                for rd in all_raw:
+                    key = (rd.source or "", (rd.title or "").strip()[:200])
+                    if key not in raw_index:
+                        raw_index[key] = rd.id
+
+                existing_pd_raw_ids = {
+                    row[0] for row in db.query(models.ProcessedDocument.raw_document_id).all()
+                }
+
+                for pdoc in processed:
+                    src_name = pdoc.get("source") or "unknown"
+                    title = (pdoc.get("title") or "").strip()[:200]
+                    raw_id = raw_index.get((src_name, title))
+                    if raw_id is None:
+                        continue
+                    if raw_id in existing_pd_raw_ids:
+                        continue
+
+                    db.add(models.ProcessedDocument(
+                        raw_document_id=raw_id,
+                        cleaned_text=(pdoc.get("cleaned_text") or "")[:10000],
+                        keywords=pdoc.get("keywords") or [],
+                        entities=pdoc.get("entities") or [],
+                        topics=pdoc.get("topics") or [],
+                        sentiment_score=float(pdoc.get("sentiment_score") or 0.0),
+                        embedding_id=None,
+                    ))
+                    processed_inserted += 1
+
+                logger.info(f"Inserted {processed_inserted} new processed documents")
+
+            # 2. Save problem clusters
+            cluster_ids = []
+            for cluster in clusters:
+                pc = models.ProblemCluster(
+                    title=cluster.get("title", ""),
+                    description=cluster.get("description", ""),
+                    keywords=cluster.get("keywords", []),
+                    source_count=cluster.get("source_count", 0),
+                    demand_score=cluster.get("demand_score", 0.0),
+                )
+                db.add(pc)
+                db.flush()
+                cluster_ids.append(pc.id)
+
+            # 3. Save research gaps
+            gap_ids = []
+            for i, gap in enumerate(gaps):
+                rg = models.ResearchGap(
+                    title=gap.get("title", ""),
+                    description=gap.get("description", ""),
+                    problem_cluster_id=cluster_ids[i] if i < len(cluster_ids) else None,
+                    gap_score=gap.get("gap_score", 0.0),
+                    evidence=gap.get("evidence", {}),
+                )
+                db.add(rg)
+                db.flush()
+                gap_ids.append(rg.id)
+
+            # 4. Save trends + snapshot them for time-series analysis
+            for trend in trends:
+                name = trend.get("name", "")
+                if not name:
+                    continue
+                source_data = trend.get("source_data", {}) or {}
+                db.add(models.Trend(
+                    name=name,
+                    category=trend.get("category", "general"),
+                    trend_score=trend.get("trend_score", 0.0),
+                    source_data=source_data,
+                ))
+                # Snapshot for growth-rate computation
+                db.add(models.TrendSnapshot(
+                    trend_name=name[:200],
+                    mention_count=int(source_data.get("mentions", 0) or 0),
+                    source_count=len(source_data.get("sources", {}) or {}),
+                ))
+
+            # 5. Save opportunities
+            for i, opp in enumerate(opportunities):
+                db.add(models.Opportunity(
+                    title=opp.get("title", ""),
+                    description=opp.get("description", ""),
+                    problem_cluster_id=cluster_ids[i] if i < len(cluster_ids) else None,
+                    research_gap_id=gap_ids[i] if i < len(gap_ids) else None,
+                    demand_score=opp.get("demand_score", 0.0),
+                    research_gap_score=opp.get("research_gap_score", 0.0),
+                    trend_score=opp.get("trend_score", 0.0),
+                    innovation_score=opp.get("innovation_score", 0.0),
+                    competition_score=opp.get("competition_score", 0.0),
+                    feasibility_score=opp.get("feasibility_score", 0.0),
+                    market_readiness_score=opp.get("market_readiness_score", 0.0),
+                    confidence_score=opp.get("confidence_score", 0.0),
+                    opportunity_score=opp.get("opportunity_score", 0.0),
+                    explanation=opp.get("explanation", ""),
+                ))
+
+            # 6. Log search history
+            logger.debug(f"DB operation: insert_search_history query={query[:40]}")
+            db.add(models.SearchHistory(
+                user_id=user_id,
+                query=query,
+                results_count=len(opportunities),
+            ))
+
+            import time as _t
+            _t0 = _t.time()
+            db.commit()
+            _ms = int((_t.time() - _t0) * 1000)
+            logger.info(f"DB operation: commit_pipeline ({_ms}ms)")
+
+            generate_pipeline_notifications(opportunities, gaps, trends, query)
+            logger.info(f"Saved: {len(clusters)} clusters, {len(gaps)} gaps, {len(trends)} trends, {len(opportunities)} opps")
+        except Exception as e:
+            db.rollback()
+            logger.error(f"DB save error: {e}")
+        finally:
+            db.close()
+
+    def run_full_pipeline(self, query: str, user_id: int = None, mode: str = "quick") -> dict:
+        # Refuse to start if another pipeline is already running
+        acquired = _PIPELINE_LOCK.acquire(blocking=False)
+        if not acquired:
+            logger.warning(f"[Orchestrator] Pipeline already running — refusing concurrent run for '{query}'")
+            raise RuntimeError("Another pipeline is already running. Please wait for it to finish.")
+
+        try:
+            return self._run_full_pipeline_inner(query, user_id=user_id, mode=mode)
+        finally:
+            _PIPELINE_LOCK.release()
+
+    def _run_full_pipeline_inner(self, query: str, user_id: int = None, mode: str = "quick") -> dict:
+        logger.info(f"Starting pipeline for: {query} (mode={mode})")
+        raw = self.data_collection.collect_all(query, mode=mode)
+
+        # ---- Challenge portals (industry/gov problem statements) ----
+        challenge_items = []
+        try:
+            from app.config import settings as _s
+            if _s.ENABLE_CHALLENGE_PORTALS:
+                challenge_items = self.challenge_portal.fetch_all(query, limit=_s.CHALLENGE_PORTAL_CAP)
+                raw["challenge_portal"] = challenge_items
+        except Exception as e:
+            logger.warning(f"Challenge portal fetch failed: {e}")
+
+        documents = []
+        for repo in raw.get("github", [])[:200]:
+            documents.append({"source": "github", "title": repo.get("name", ""), "content": repo.get("description", "") or ""})
+        for issue in raw.get("github_issues", [])[:200]:
+            documents.append({"source": "github_issues", "title": issue.get("title", ""), "content": issue.get("summary", "")})
+        for post in raw.get("reddit", [])[:200]:
+            documents.append({"source": "reddit", "title": post.get("title", ""), "content": post.get("selftext", "")})
+        for paper in raw.get("arxiv", [])[:200]:
+            documents.append({"source": "arxiv", "title": paper.get("title", ""), "content": paper.get("summary", "")})
+        for article in raw.get("news", [])[:200]:
+            documents.append({"source": "news", "title": article.get("title", ""), "content": article.get("summary", "")})
+        for post in raw.get("rd_cells", [])[:200]:
+            documents.append({"source": "rd_cells", "title": post.get("title", ""), "content": post.get("summary", "")})
+        for patent in raw.get("patents", [])[:200]:
+            documents.append({"source": "patents", "title": patent.get("title", ""), "content": patent.get("summary", "")})
+        for post in raw.get("challenge_portal", [])[:200]:
+            documents.append({"source": "challenge_portal", "title": post.get("title", ""), "content": post.get("raw_text", "") or post.get("description", "")})
+
+        logger.info(f"Processing {len(documents)} documents")
+        processed = []
+        for doc in documents:
+            nlp_result = self.nlp.process(doc.get("title", "") + " " + doc.get("content", ""))
+            processed.append({**doc, **nlp_result})
+
+        # Global topic modeling across all documents
+        try:
+            all_texts = [d.get("title", "") + " " + (d.get("content", "") or "")[:500] for d in processed]
+            global_topics = self.nlp.extract_topics_nmf(all_texts, n_topics=5)
+            logger.info(f"Topic modeling found {len(global_topics)} topics")
+        except Exception as e:
+            global_topics = []
+            logger.error(f"Topic modeling error: {e}")
+
+        # Assign each document to its closest global NMF topic by keyword overlap.
+        # This turns the fake per-doc `topics` (which used to duplicate keywords)
+        # into a real topic label from the corpus-wide model.
+        if global_topics:
+            topic_keyword_sets = [
+                set(k.lower() for k in (t.get("keywords") or []))
+                for t in global_topics
+            ]
+            for doc in processed:
+                doc_kws = set(k.lower() for k in (doc.get("keywords") or []))
+                best_idx, best_overlap = -1, 0
+                for idx, tset in enumerate(topic_keyword_sets):
+                    overlap = len(doc_kws & tset)
+                    if overlap > best_overlap:
+                        best_overlap = overlap
+                        best_idx = idx
+                if best_idx >= 0 and best_overlap > 0:
+                    topic = global_topics[best_idx]
+                    label = topic.get("label") or ", ".join(topic.get("keywords", [])[:2])
+                    if label:
+                        doc["primary_topic"] = label
+                        doc["topics"] = [label]
+            assigned = sum(1 for d in processed if d.get("primary_topic"))
+            logger.info(f"Assigned {assigned}/{len(processed)} docs to NMF topics")
+
+        clusters = self.problem_discovery.discover(processed)
+        gaps = self.research_gap.detect_gaps(clusters, raw.get("arxiv", []))
+        trends = self.innovation_monitor.monitor(processed)
+
+        # Per-cluster average sentiment (VADER compound in [-1, 1])
+        for cluster in clusters:
+            doc_indices = cluster.get("_doc_indices", [])
+            sents = [
+                float(processed[i].get("sentiment_score") or 0.0)
+                for i in doc_indices if 0 <= i < len(processed)
+            ]
+            cluster["_avg_sentiment"] = (sum(sents) / len(sents)) if sents else 0.0
+
+        opportunities = []
+        for i, cluster in enumerate(clusters):
+            gap = gaps[i] if i < len(gaps) else None
+            trend = trends[i] if i < len(trends) else None
+            opp = self.opportunity.score(
+                cluster, gap, trend,
+                github_items=raw.get("github", []),
+                arxiv_items=raw.get("arxiv", []),
+                news_items=raw.get("news", []),
+                raw_items=raw,
+                avg_sentiment=cluster.get("_avg_sentiment"),
+            )
+            opp["explanation"] = self.explainable.explain(opp)
+            opp["_cluster_title"] = (cluster.get("title") or "").replace("Problem Cluster:", "").strip()
+            opp["_gap_title"] = gap.get("title") if gap else None
+            opportunities.append(opp)
+
+        # Build + persist knowledge graph (Document + NER + Topic + semantic layers)
+        self.kg.build_from_documents(processed)
+        kg_stats = self.kg.build_semantic_graph(raw, clusters, gaps, opportunities, global_topics)
+        self.kg.persist()
+
+        self._save_to_db(query, raw, processed, clusters, gaps, trends, opportunities, user_id=user_id)
+
+        # ---- Extract structured Problem Profiles from ALL sources ----
+        # Each extraction = 1 LLM call. Caps are per-source so one noisy
+        # source cannot monopolize the extraction budget. Sources with
+        # empty results, or disabled sources (patents with no key), skip.
+        problem_profiles = []
+        try:
+            from app.config import settings as _s
+            extraction_targets = [
+                ("challenge_portal", challenge_items,               _s.PROBLEM_EXTRACTION_CAP),
+                ("github_issues",    raw.get("github_issues", []), _s.PROBLEM_EXTRACTION_CAP_GITHUB),
+                ("arxiv",            raw.get("arxiv", []),         _s.PROBLEM_EXTRACTION_CAP_ARXIV),
+                ("news",             raw.get("news", []),          _s.PROBLEM_EXTRACTION_CAP_NEWS),
+                ("patents",          raw.get("patents", []),       _s.PROBLEM_EXTRACTION_CAP_PATENTS),
+            ]
+            for src_name, items, cap in extraction_targets:
+                if not items or cap <= 0:
+                    continue
+                try:
+                    profiles = self.problem_extractor.extract_batch(
+                        items, cap=cap, source_type=src_name
+                    )
+                    if profiles:
+                        self._save_problem_profiles(profiles)
+                        problem_profiles.extend(profiles)
+                except Exception as e:
+                    logger.warning(f"ProblemProfile extraction failed for {src_name}: {e}")
+        except Exception as e:
+            logger.error(f"ProblemProfile extraction setup failed: {e}")
+
+        # ---- Phase 2.1: technology extraction for the profiles just saved ----
+        try:
+            from app.database import SessionLocal as _SL2
+            db2 = _SL2()
+            try:
+                rows = (
+                    db2.query(models.ProblemProfile)
+                    .order_by(models.ProblemProfile.id.desc())
+                    .limit(10)
+                    .all()
+                )
+            finally:
+                db2.close()
+            if rows:
+                tech_results = self.technology_agent.extract_batch(rows)
+                if tech_results:
+                    self._save_technologies(tech_results)
+        except Exception as e:
+            logger.error(f"Technology extraction failed: {e}")
+
+        # ---- Phase 3.1: research discovery for the same recent profiles ----
+        try:
+            from app.database import SessionLocal as _SL3
+            db3 = _SL3()
+            try:
+                rows = (
+                    db3.query(models.ProblemProfile)
+                    .order_by(models.ProblemProfile.id.desc())
+                    .limit(10)
+                    .all()
+                )
+            finally:
+                db3.close()
+            if rows:
+                paper_results = self.research_discovery_agent.extract_batch(rows)
+                if paper_results:
+                    self._save_problem_papers(paper_results)
+        except Exception as e:
+            logger.error(f"Research discovery failed: {e}")
+
+        # ---- Phase 4.1: evidence aggregation for recent opportunities ----
+        # CPU-only (keyword match against raw_documents). No LLM calls.
+        try:
+            from app.database import SessionLocal as _SL4
+            db4 = _SL4()
+            try:
+                opp_rows = (
+                    db4.query(models.Opportunity)
+                    .order_by(models.Opportunity.id.desc())
+                    .limit(15)
+                    .all()
+                )
+            finally:
+                db4.close()
+            if opp_rows:
+                evidence_results = self.evidence_agent.aggregate_batch(opp_rows)
+                if evidence_results:
+                    self._save_evidence(evidence_results)
+        except Exception as e:
+            logger.error(f"Evidence aggregation failed: {e}")
+
+        # ---- Phase 5.1/5.2: build canonical KG edges from Phase 2/3/4 tables ----
+        try:
+            kg_enriched = self.kg.build_enriched_graph()
+            self.kg.persist()
+            logger.info(f"KG enriched: {kg_enriched}")
+        except Exception as e:
+            logger.error(f"Enriched KG build failed: {e}")
+
+        # ---- Phase 6.1/6.2: enrichment of recent opportunities ----
+        try:
+            enriched_stats = self._enrich_opportunities()
+            logger.info(f"Opportunity enrichment: {enriched_stats}")
+        except Exception as e:
+            logger.error(f"Opportunity enrichment block failed: {e}")
+
+        # ---- Phase 8.2/8.3: score snapshots + rank-change alerts ----
+        try:
+            snap_stats = self._snapshot_and_notify()
+            logger.info(f"Score snapshot: {snap_stats}")
+        except Exception as e:
+            logger.error(f"Score snapshot block failed: {e}")
+
+        # Strip private helper keys before returning to API
+        for c in clusters:
+            c.pop("_doc_indices", None)
+            c.pop("_avg_sentiment", None)
+
+        return {
+            "query": query,
+            "documents_count": len(documents),
+            "clusters": clusters,
+            "research_gaps": gaps,
+            "trends": trends,
+            "opportunities": opportunities,
+            "knowledge_graph": kg_stats,
+            "topics": global_topics,
+            "problem_profiles": problem_profiles,
+        }
+
+===== FILE: ./backend/app/agents/problem_agent.py =====
+"""ProblemAgent — dedup + canonicalization for structured problem profiles.
+
+Canonicalizes problem_title to a stable hash so profiles describing the
+same underlying problem (differing only in punctuation, word order, or
+stopwords) collapse to the same key.
+
+Design goals:
+  - Deterministic: same input -> same hash, always.
+  - Conservative: prefers false negatives (miss a dup) over false positives
+    (merge two genuinely different problems).
+  - No LLM calls: pure CPU, safe to run inside the save path.
+"""
+import hashlib
+import re
+
+
+# Short function words. Dropped before hashing so "the memory leak" and
+# "memory leak" produce identical canonical forms. Kept deliberately small —
+# dropping too many words risks collapsing distinct problems.
+_STOPWORDS = {
+    "a", "an", "and", "are", "as", "at", "be", "by", "for", "from",
+    "has", "have", "in", "is", "it", "its", "of", "on", "or", "that",
+    "the", "this", "to", "via", "was", "were", "will", "with",
+    "using", "based", "into", "onto", "over", "under",
+}
+
+_TOKEN_RE = re.compile(r"[a-z0-9]+")
+
+
+class ProblemAgent:
+    """Canonicalization + dedup wrapper for problem profiles."""
+
+    @staticmethod
+    def canonicalize(title: str) -> str:
+        """Lowercase, tokenize, drop stopwords, sort tokens, join."""
+        if not title:
+            return ""
+        low = title.lower()
+        tokens = _TOKEN_RE.findall(low)
+        filtered = [t for t in tokens if t and t not in _STOPWORDS]
+        if not filtered:
+            # If stopword removal stripped everything, fall back to raw tokens.
+            # Hash is still deterministic for the same input.
+            filtered = tokens
+        filtered.sort()
+        return " ".join(filtered)
+
+    @classmethod
+    def compute_hash(cls, title: str) -> str:
+        """16-char hex hash of the canonical form. Empty string if title is blank."""
+        canonical = cls.canonicalize(title)
+        if not canonical:
+            return ""
+        return hashlib.sha1(canonical.encode("utf-8")).hexdigest()[:16]
+
+    def dedup(self, profiles: list) -> list:
+        """Intra-batch dedup: keep first occurrence per canonical hash.
+
+        Profiles without a computable hash are passed through unchanged
+        (we would rather store an unhashable row than silently drop it).
+        Adds a private '_canonical_hash' key to each kept profile.
+        """
+        seen = set()
+        out = []
+        for p in profiles:
+            h = self.compute_hash(p.get("problem_title") or "")
+            if not h:
+                out.append(p)
+                continue
+            if h in seen:
+                continue
+            seen.add(h)
+            p["_canonical_hash"] = h
+            out.append(p)
+        return out
+
+    def merge_provenance(self, existing_row, new_profile: dict) -> bool:
+        """Cross-source merge: append new provenance to an existing row.
+
+        Called when a new profile matches an existing DB row by canonical_hash
+        or source_url. Records where else this same problem was seen, unions
+        keywords and required_technology. Returns True if anything changed.
+        """
+        new_source = (new_profile.get("source") or "").strip()
+        new_url = (new_profile.get("source_url") or "").strip()
+        new_org = (new_profile.get("organization") or "").strip()[:500]
+
+        # No-op if the new profile is the row's own primary source
+        if new_source == (existing_row.source or "") and new_url == (existing_row.source_url or ""):
+            return False
+
+        current = existing_row.additional_sources or []
+        if not isinstance(current, list):
+            current = []
+
+        for entry in current:
+            if (isinstance(entry, dict)
+                    and entry.get("source") == new_source
+                    and entry.get("source_url") == new_url):
+                return False
+
+        current = list(current)
+        current.append({
+            "source": new_source,
+            "source_url": new_url,
+            "organization": new_org,
+        })
+        existing_row.additional_sources = current
+
+        # Union keywords
+        if isinstance(new_profile.get("keywords"), list):
+            seen_kw = set()
+            merged_kw = []
+            for kw in list(existing_row.keywords or []) + list(new_profile["keywords"]):
+                if kw and kw not in seen_kw:
+                    seen_kw.add(kw)
+                    merged_kw.append(kw)
+            existing_row.keywords = merged_kw
+
+        # Union required_technology
+        if isinstance(new_profile.get("required_technology"), list):
+            seen_tech = set()
+            merged_tech = []
+            for t in list(existing_row.required_technology or []) + list(new_profile["required_technology"]):
+                if t and t not in seen_tech:
+                    seen_tech.add(t)
+                    merged_tech.append(t)
+            existing_row.required_technology = merged_tech
+
+        return True

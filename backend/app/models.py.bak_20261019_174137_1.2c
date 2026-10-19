@@ -1,0 +1,521 @@
+from sqlalchemy import Column, Integer, String, Text, Float, DateTime, ForeignKey, JSON, Boolean
+from sqlalchemy.sql import func
+from app.database import Base
+
+class User(Base):
+    __tablename__ = "users"
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, nullable=False)
+    email = Column(String, unique=True, index=True, nullable=False)
+    password_hash = Column(String, nullable=False)
+    role = Column(String, default="student")
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+class Source(Base):
+    """Registered data source for the pipeline (SRS FR-01 + SRS 30 'Source').
+
+    Table name is data_sources for backwards compatibility with earlier
+    migrations. Seeded once, toggled from Admin. is_active=False makes
+    the pipeline skip this source's fetchers without removing historical rows.
+    """
+    __tablename__ = "data_sources"
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, unique=True, nullable=False)
+    source_type = Column(String)
+    last_fetched = Column(DateTime(timezone=True))
+    is_active = Column(Boolean, default=True)
+
+
+# Backwards-compat alias -- older code imports models.DataSource
+DataSource = Source
+
+
+class RawDocument(Base):
+    __tablename__ = "raw_documents"
+    id = Column(Integer, primary_key=True, index=True)
+    source = Column(String, index=True)
+    external_id = Column(String, index=True)
+    title = Column(Text)
+    content = Column(Text)
+    url = Column(Text)
+    author = Column(String)
+    metadata_json = Column(JSON)
+    collected_at = Column(DateTime(timezone=True), server_default=func.now())
+    processed = Column(Boolean, default=False)
+
+class ProcessedDocument(Base):
+    __tablename__ = "processed_documents"
+    id = Column(Integer, primary_key=True, index=True)
+    raw_document_id = Column(Integer, ForeignKey("raw_documents.id"))
+    cleaned_text = Column(Text)
+    keywords = Column(JSON)
+    entities = Column(JSON)
+    topics = Column(JSON)
+    sentiment_score = Column(Float)
+    embedding_id = Column(String)
+    processed_at = Column(DateTime(timezone=True), server_default=func.now())
+
+class ProblemCluster(Base):
+    __tablename__ = "problem_clusters"
+    id = Column(Integer, primary_key=True, index=True)
+    title = Column(String)
+    description = Column(Text)
+    keywords = Column(JSON)
+    source_count = Column(Integer, default=0)
+    demand_score = Column(Float, default=0.0)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+class ResearchGap(Base):
+    __tablename__ = "research_gaps"
+    id = Column(Integer, primary_key=True, index=True)
+    title = Column(String)
+    description = Column(Text)
+    problem_cluster_id = Column(Integer, ForeignKey("problem_clusters.id"))
+    gap_score = Column(Float, default=0.0)
+    evidence = Column(JSON)
+
+    kind = Column(String(16), default="COVERAGE")
+    gap_status = Column(String(32), default="PROPOSED")
+    gap_confidence = Column(Integer, default=0)
+    supporting_limitations = Column(JSON, default=list)
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+class Trend(Base):
+    __tablename__ = "trends"
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, index=True)
+    category = Column(String)
+    trend_score = Column(Float, default=0.0)
+    source_data = Column(JSON)
+    detected_at = Column(DateTime(timezone=True), server_default=func.now())
+
+class Opportunity(Base):
+    __tablename__ = "opportunities"
+    id = Column(Integer, primary_key=True, index=True)
+    title = Column(String)
+    description = Column(Text)
+    problem_cluster_id = Column(Integer, ForeignKey("problem_clusters.id"))
+    research_gap_id = Column(Integer, ForeignKey("research_gaps.id"))
+    demand_score = Column(Float, default=0.0)
+    research_gap_score = Column(Float, default=0.0)
+    trend_score = Column(Float, default=0.0)
+    innovation_score = Column(Float, default=0.0)
+    competition_score = Column(Float, default=0.0)
+    feasibility_score = Column(Float, default=0.0)
+    market_readiness_score = Column(Float, default=0.0)
+    confidence_score = Column(Float, default=0.0)
+    opportunity_score = Column(Float, default=0.0)
+    evidence = Column(JSON)
+    explanation = Column(Text)
+
+    # ---- Phase 6.1: Opportunity Card enrichment (SRS §34) ----
+    domain = Column(String(120))
+    problem_type = Column(String(80))  # SRS §11 / §22 filter
+    industry = Column(String(120))
+    related_technologies = Column(JSON, default=list)
+    existing_research = Column(JSON, default=list)
+    existing_approaches = Column(Text)
+    known_limitations = Column(Text)
+    suggested_research_direction = Column(Text)
+    suggested_project_direction = Column(Text)
+    emerging_trend = Column(String(200))
+    evidence_sources = Column(JSON, default=list)
+
+    # ---- Phase 10.3: SRS 21 scoring factors ----
+    technology_suitability_score = Column(Float, default=0.0)
+    evidence_strength_score = Column(Float, default=0.0)
+    recency_score = Column(Float, default=0.0)
+
+    opportunity_score_spec = Column(Float, default=0.0)
+    confidence_spec = Column(Integer, default=0)
+    weights_version = Column(String(32), default="v1.0.0")
+    confidence_version = Column(String(32), default="v1.0.0")
+    trend_window = Column(Integer, default=90)
+    status = Column(String(32), default="PROPOSED")
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class OpportunityScoreHistory(Base):
+    """Time-series snapshot of opportunity scores and ranks (Phase 8.2).
+
+    One row per opportunity per pipeline run (top-N only). Enables
+    trend charts on the opportunity detail page and rank-change
+    notifications (Phase 8.3).
+    """
+    __tablename__ = "opportunity_score_history"
+    id = Column(Integer, primary_key=True, index=True)
+    opportunity_id = Column(
+        Integer, ForeignKey("opportunities.id", ondelete="CASCADE"),
+        index=True, nullable=False,
+    )
+    opportunity_score = Column(Float, default=0.0)
+    rank = Column(Integer)
+    recorded_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
+
+class Recommendation(Base):
+    """Per-opportunity recommendation (SRS 30).
+
+    One row per opportunity per pipeline run that produced a direction.
+    Stores a snapshot of the AI-generated directions at that moment so
+    the recommendation is auditable / trailable even if the opp later
+    changes.
+    """
+    __tablename__ = "recommendations"
+    id = Column(Integer, primary_key=True, index=True)
+    opportunity_id = Column(
+        Integer, ForeignKey("opportunities.id", ondelete="CASCADE"),
+        index=True, nullable=False,
+    )
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
+    suggested_research_direction = Column(Text)
+    suggested_project_direction = Column(Text)
+    rationale = Column(Text)
+    score_at_time = Column(Float)
+    rank_at_time = Column(Integer)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
+
+
+class SearchHistory(Base):
+    __tablename__ = "search_history"
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"))
+    query = Column(Text)
+    results_count = Column(Integer, default=0)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+class ChatSession(Base):
+    __tablename__ = "chat_sessions"
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"))
+    title = Column(String)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+class ChatMessage(Base):
+    __tablename__ = "chat_messages"
+    id = Column(Integer, primary_key=True, index=True)
+    session_id = Column(Integer, ForeignKey("chat_sessions.id"))
+    role = Column(String)
+    content = Column(Text)
+    sources = Column(JSON)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+class AgentLog(Base):
+    __tablename__ = "agent_logs"
+    id = Column(Integer, primary_key=True, index=True)
+    agent_name = Column(String, index=True)
+    action = Column(String)
+    status = Column(String)
+    details = Column(JSON)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+class Report(Base):
+    __tablename__ = "reports"
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"))
+    title = Column(String)
+    report_type = Column(String)
+    content = Column(JSON)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class PasswordResetToken(Base):
+    __tablename__ = "password_reset_tokens"
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    token = Column(String, unique=True, index=True, nullable=False)
+    expires_at = Column(DateTime(timezone=True), nullable=False)
+    used = Column(Boolean, default=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class Notification(Base):
+    __tablename__ = "notifications"
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    type = Column(String, index=True)  # research_opportunity, emerging_tech, startup_opportunity, innovation_alert, research_gap_alert
+    title = Column(String, nullable=False)
+    message = Column(Text)
+    link = Column(String)
+    severity = Column(String, default="info")  # info, warning, success
+    read = Column(Boolean, default=False, index=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class KnowledgeGraphNode(Base):
+    __tablename__ = "kg_nodes"
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, index=True, nullable=False)
+    entity_type = Column(String, index=True)
+    metadata_json = Column(JSON)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class KnowledgeGraphEdge(Base):
+    __tablename__ = "kg_edges"
+    id = Column(Integer, primary_key=True, index=True)
+    source = Column(String, index=True, nullable=False)
+    target = Column(String, index=True, nullable=False)
+    relation = Column(String, index=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class TrendSnapshot(Base):
+    __tablename__ = "trend_snapshots"
+    id = Column(Integer, primary_key=True, index=True)
+    trend_name = Column(String, index=True, nullable=False)
+    mention_count = Column(Integer, default=0)
+    source_count = Column(Integer, default=0)
+    snapshot_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
+
+
+class RefreshToken(Base):
+    __tablename__ = "refresh_tokens"
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    token = Column(String, unique=True, index=True, nullable=False)
+    expires_at = Column(DateTime(timezone=True), nullable=False)
+    revoked = Column(Boolean, default=False, index=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class Organization(Base):
+    """First-class organization entity (SRS 30).
+
+    Populated from ProblemProfile.organization strings via
+    backfill_d3b_organizations.py; kept in sync by the extractor pipeline.
+    """
+    __tablename__ = "organizations"
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(300), nullable=False)
+    canonical_name = Column(String(200), nullable=False, unique=True, index=True)
+    industry_domain = Column(String(120))
+    source = Column(String(64))
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class ProblemProfile(Base):
+    """Structured problem statement extracted from industry/R&D/gov challenge portals.
+
+    Populated by ProblemExtractorAgent (LLM) from raw challenge documents
+    (SBIR solicitations, XPRIZE challenges, NIST innovation calls, etc).
+    """
+    __tablename__ = "problem_profiles"
+
+    id = Column(Integer, primary_key=True, index=True)
+    organization = Column(String)
+    organization_id = Column(Integer, ForeignKey("organizations.id", ondelete="SET NULL"), index=True)
+    problem_title = Column(String, index=True)
+    # Canonical hash of the normalized problem_title (ProblemAgent.compute_hash).
+    # Used to collapse near-duplicate titles across sources. See problem_agent.py.
+    canonical_hash = Column(String(16), index=True)
+    # Cross-source provenance. Each entry: {source, source_url, organization}.
+    # Populated when a near-duplicate profile is seen from a different source.
+    additional_sources = Column(JSON, default=list)
+    problem_description = Column(Text)
+    industry_domain = Column(String, index=True)
+    problem_type = Column(String, index=True)
+    technology_stage = Column(String, default="potential")
+    required_technology = Column(JSON)
+    current_approach = Column(Text)
+    known_limitations = Column(Text)
+    expected_outcome = Column(Text)
+    published_date = Column(DateTime(timezone=True))
+    source = Column(String, index=True)
+    source_url = Column(Text)
+    keywords = Column(JSON)
+    problem_status = Column(String, default="unknown")
+    student_suitability = Column(String, default="medium")
+    raw_document_id = Column(Integer, ForeignKey("raw_documents.id"))
+    extracted_by = Column(String)
+    # ---- Phase 10.2: SRS §11 completion ----
+    affected_stakeholders = Column(JSON, default=list)
+    evidence = Column(JSON, default=list)
+    confidence = Column(Float, default=0.5)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class ProblemTechnology(Base):
+    """Technology associated with a ProblemProfile (SRS Module 5 / §12).
+
+    Stage taxonomy (uppercase in code, lowercase in DB values):
+      used / proposed / emerging / potentially_applicable
+    Populated by TechnologyAgent (Phase 2.1). KG wiring is deferred to
+    Phase 5 (relations: Problem -RELATED_TO-> Technology per spec §31).
+    """
+    __tablename__ = "problem_technologies"
+
+    id = Column(Integer, primary_key=True, index=True)
+    problem_profile_id = Column(
+        Integer, ForeignKey("problem_profiles.id", ondelete="CASCADE"),
+        index=True, nullable=False,
+    )
+    technology_name = Column(String(200), index=True, nullable=False)
+    stage = Column(String(32), default="potentially_applicable")
+    confidence = Column(Float, default=0.5)
+    evidence = Column(Text)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class ProblemPaper(Base):
+    """arXiv paper linked to a ProblemProfile (SRS Module 6 / §13).
+
+    Populated by ResearchDiscoveryAgent (Phase 3.1). Each row carries
+    an LLM-derived relevance_score for the problem and a JSON list of
+    limitations that the paper itself surfaces relative to the problem.
+    KG edges (STUDIED_BY / HAS_LIMITATION / HAS_POTENTIAL_GAP per SRS
+    §31) are deferred to Phase 5.
+    """
+    __tablename__ = "problem_papers"
+
+    id = Column(Integer, primary_key=True, index=True)
+    problem_profile_id = Column(
+        Integer, ForeignKey("problem_profiles.id", ondelete="CASCADE"),
+        index=True, nullable=False,
+    )
+    arxiv_id = Column(String(200), index=True)
+    title = Column(String(500))
+    authors = Column(JSON, default=list)
+    abstract = Column(Text)
+    url = Column(String(500))
+    relevance_score = Column(Float, default=0.5)
+    limitations = Column(JSON, default=list)
+    published = Column(String(100))
+    # ---- Phase 10.2: SRS §13 completion ----
+    research_methods = Column(JSON, default=list)
+    results_summary = Column(Text)
+    research_areas = Column(JSON, default=list)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class OpportunityEvidence(Base):
+    """Supporting evidence for an opportunity (SRS Module 11 / §18).
+
+    Populated by EvidenceAgent (Phase 4.1) via keyword matching against
+    the raw_documents table. Each row is one source doc supporting one
+    opportunity. KG edges (Opportunity -SUPPORTED_BY-> Evidence per
+    SRS §31) are deferred to Phase 5 (KG schema alignment).
+    """
+    __tablename__ = "opportunity_evidence"
+
+    id = Column(Integer, primary_key=True, index=True)
+    opportunity_id = Column(
+        Integer, ForeignKey("opportunities.id", ondelete="CASCADE"),
+        index=True, nullable=False,
+    )
+    source = Column(String(64), index=True, nullable=False)
+    title = Column(String(500))
+    url = Column(String(500))
+    relevance_score = Column(Float, default=0.0)
+    snippet = Column(Text)
+
+    polarity = Column(String(16), default="SUPPORTS")
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class WeightConfig(Base):
+    __tablename__ = "weight_configs"
+    id = Column(Integer, primary_key=True)
+    version = Column(String(32), unique=True, nullable=False)
+    w_problem = Column(Float, default=0.20)
+    w_tech = Column(Float, default=0.15)
+    w_gap = Column(Float, default=0.20)
+    w_trend = Column(Float, default=0.15)
+    w_evidence = Column(Float, default=0.15)
+    w_feasibility = Column(Float, default=0.10)
+    w_recency = Column(Float, default=0.05)
+    is_active = Column(Boolean, default=True)
+    published_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class ConfidenceConfig(Base):
+    __tablename__ = "confidence_configs"
+    id = Column(Integer, primary_key=True)
+    version = Column(String(32), unique=True, nullable=False)
+    beta1 = Column(Float, default=0.30)
+    beta2 = Column(Float, default=0.25)
+    beta3 = Column(Float, default=0.25)
+    beta4 = Column(Float, default=0.20)
+    n_max = Column(Integer, default=5)
+    d_max = Column(Integer, default=6)
+    conflict_penalty = Column(Float, default=0.50)
+    is_active = Column(Boolean, default=True)
+    published_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class TrendConfig(Base):
+    __tablename__ = "trend_configs"
+    id = Column(Integer, primary_key=True)
+    version = Column(String(32), unique=True, nullable=False)
+    window_short = Column(Integer, default=30)
+    window_mid = Column(Integer, default=90)
+    window_long = Column(Integer, default=365)
+    emerging_threshold = Column(Float, default=0.5)
+    growing_threshold = Column(Float, default=0.2)
+    declining_threshold = Column(Float, default=-0.2)
+    default_window = Column(Integer, default=90)
+    is_active = Column(Boolean, default=True)
+    published_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class ConflictFlag(Base):
+    __tablename__ = "conflict_flags"
+    id = Column(Integer, primary_key=True)
+    target_type = Column(String(32), nullable=False)
+    target_id = Column(String(64), nullable=False)
+    severity = Column(String(16), nullable=False, default="MINOR")
+    rule_applied = Column(String(16), nullable=False, default="UNRESOLVED")
+    evidence_ids = Column(JSON, default=list)
+    raised_at = Column(DateTime(timezone=True), server_default=func.now())
+    resolved_at = Column(DateTime(timezone=True), nullable=True)
+    resolution = Column(Text, nullable=True)
+
+
+class Feedback(Base):
+    __tablename__ = "feedback"
+    id = Column(Integer, primary_key=True)
+    target_type = Column(String(32), nullable=False)
+    target_id = Column(String(64), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    rating = Column(Integer, nullable=True)
+    comment = Column(Text, nullable=True)
+    decision = Column(String(32), nullable=True)
+    rationale = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class LicenseRecord(Base):
+    __tablename__ = "license_records"
+    id = Column(Integer, primary_key=True)
+    source_name = Column(String(64), unique=True, nullable=False)
+    status = Column(String(16), nullable=False, default="PENDING")
+    terms_url = Column(String(500), nullable=True)
+    robots_policy = Column(String(64), nullable=True)
+    redistribution = Column(String(64), nullable=True)
+    pii_rules = Column(Text, nullable=True)
+    retention_days = Column(Integer, nullable=True)
+    legal_basis = Column(String(200), nullable=True)
+    next_review_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class ChangeEvent(Base):
+    __tablename__ = "change_events"
+    id = Column(Integer, primary_key=True)
+    entity_type = Column(String(32), nullable=False)
+    entity_id = Column(String(64), nullable=False)
+    change_type = Column(String(64), nullable=False)
+    detected_at = Column(DateTime(timezone=True), server_default=func.now())
+    significance = Column(String(16), nullable=False, default="MINOR")
+
+
+class Limitation(Base):
+    __tablename__ = "limitations"
+    id = Column(Integer, primary_key=True)
+    paper_id = Column(Integer, ForeignKey("problem_papers.id"), nullable=False, index=True)
+    description = Column(Text, nullable=False)
+    category = Column(String(64), nullable=True)
+    limitation_source = Column(String(16), nullable=False, default="EXPLICIT")
+    created_at = Column(DateTime(timezone=True), server_default=func.now())

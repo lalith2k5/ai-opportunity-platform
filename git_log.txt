@@ -1,0 +1,50 @@
+a119548 fix: PROVIDER_ORDER includes freelm as fallback provider
+4f84d1d fix: remove undefined GroqProvider reference (Block K regression)
+a228156 fix: LLM fallback chain fast-fails on 429 + returns graceful UX
+7dcfb0f spec 35.4/FR-24: notification delivery job (finally committed)
+c60cdf0 fix: import json/datetime in reproducibility manifest
+fd657ff spec 6.7/FR-27: license gate enforcement + admin endpoints
+f93e9f0 handoff: refresh HANDOFF_NOTES for post-spec-compliance state
+a8fd46f docs + test: README rewrite + e2e spec test suite
+264d341 polish: loading skeletons on 5 pages
+6da20eb spec 28.3/35.2: periodic conflict sweep + ChangeEvent via scheduler
+f37aa8e spec 28.3/FR-30: conflict detection + evaluation metrics (surgical)
+9dabfd9 spec 25/FR-22: Module 18 expert review queue (API + UI)
+e329da9 spec 17/31/24: gap honesty + 5 spec tables + reviewer role
+e68462f spec 33.2/33.3: 7-factor scoring + confidence formula + versioned configs
+e388ecd tasks 1A-1D: contextual PDF + DetailActions + rich chat markdown + entity-focused chat
+18380b3 task 2+3: richer idea statements + full-width cards; drop problem-type filter
+45bac8a phase P.5: visible polish -- motion + segmented sort
+fcd338b phase P.4: unify Section + EmptyNote across detail pages
+3a9f804 phase P.3: wire PageHeader + Toolbar into list pages
+9ef57d1 phase P.1: motion + elevation design tokens
+6f3150d landing: / is public welcome; /dashboard is the logged-in home
+09bcaaf cleanup: delete 5 dead workflow pages
+40147e9 nav: consolidate sidebar to 3 sections + redirect old routes
+8718c37 phase B: content polish -- motion + focus ring
+03a74ec phase C: data pass -- arxiv dates + opp enrichment recompute
+a7a3590 phase D: add Discover section to sidebar
+d9fbb16 phase N.10: tests + shared components for SRS labels
+f387d07 phase N.9: SRS labeling pass + robust error formatter
+c56c2f6 phase N.8: Screen 5 R&D list + 12-section problem detail
+b5c69f3 phase N.7: Screen 2 real-time ideas list + detail
+19d5612 phase N.6: Screen 4 research analysis list + detail
+20ab259 phase N.5: Screen 3 technology list + detail
+21f9c24 phase N.4: Screen 1 entrance dashboard (Apple style)
+cf013d0 phase N.3: research paper + R&D problem endpoints
+684ec29 phase N.2: technology endpoints for Screen 3
+2d07ef5 phase N.1: neon design tokens + primitives
+1ba4d13 cleanup: remove 3 non-SRS backend endpoints
+8b4ac2e cleanup: remove features not stated in SRS
+02d5e59 phase 14: close 4 remaining SRS gaps
+62b1bd9 phase 13: OpenRouter provider support
+5587bd4 ui: remove brand icon mark from sidebar / topbar / auth shell
+2ca7f33 fix: scheduler reports pipeline-busy as 'skipped', not 'error'
+bf1281c fix: pipeline-busy returns 409 not 500; live pipeline status
+7d81b51 cleanup: remove dead _problem_node_alias registration
+63b7e73 fix: unhashable dict crash in build_semantic_graph (Phase 10.13 regression)
+f9ae1dd phase 12: Facebook blue accent + Apple polish across all remaining pages
+7667e2a phase 11.1: Apple-grade page headers
+0a69249 phase 11: Apple-grade design system + component refresh
+c2d9448 phase 10.19: Alembic migration framework (baseline only, no schema change)
+ea81377 phase 10.18: Phase 10 endpoint tests + pagination polish
