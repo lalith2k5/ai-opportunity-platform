@@ -13,6 +13,7 @@ from app.auth.dependencies import require_role
 from app.config import settings
 from app.logger import logger
 from app.auth.dependencies import get_current_user
+from app.services.api_keys import get_key, set_key, delete_key, list_all_slots
 from app.models import User
 
 router = APIRouter(prefix="/admin", tags=["admin-config"])
@@ -352,19 +353,15 @@ def llm_status(
 
 
 # ---- API key management endpoints (admin only) ----
-def _require_admin(user: User = Depends(get_current_user)):
-    if not user or getattr(user, "role", None) != "admin":
-        raise HTTPException(status_code=403, detail="Admin only")
-    return user
 
 
 @router.get("/keys")
-def list_api_keys(_user: User = Depends(_require_admin)):
+def list_api_keys(_user: User = Depends(require_role("admin"))):
     return {"slots": list_all_slots()}
 
 
 @router.post("/keys/{name}")
-async def set_api_key_endpoint(name: str, request: Request, user: User = Depends(_require_admin)):
+async def set_api_key_endpoint(name: str, request: Request, user: User = Depends(require_role("admin"))):
     body = await request.json()
     value = (body.get("value") or "").strip()
     if not value:
@@ -379,7 +376,7 @@ async def set_api_key_endpoint(name: str, request: Request, user: User = Depends
 
 
 @router.delete("/keys/{name}")
-def delete_api_key_endpoint(name: str, user: User = Depends(_require_admin)):
+def delete_api_key_endpoint(name: str, user: User = Depends(require_role("admin"))):
     delete_key(name)
     try:
         from app.services.llm_service import LLMService
@@ -390,7 +387,7 @@ def delete_api_key_endpoint(name: str, user: User = Depends(_require_admin)):
 
 
 @router.post("/keys/{name}/test")
-def test_api_key_endpoint(name: str, _user: User = Depends(_require_admin)):
+def test_api_key_endpoint(name: str, _user: User = Depends(require_role("admin"))):
     import requests as _req
     val = get_key(name)
     if not val:
