@@ -53,20 +53,21 @@ def get_opportunities(
 ):
     from sqlalchemy import func
     # Show only the highest-scoring row per unique title
-    subq = (
-        db.query(
-            models.Opportunity.title,
-            func.max(models.Opportunity.opportunity_score).label("max_score"),
-        )
-        .group_by(models.Opportunity.title)
-        .subquery()
+    subq_q = db.query(
+        models.Opportunity.title,
+        func.max(models.Opportunity.opportunity_score).label("max_score"),
+        func.min(models.Opportunity.id).label("keep_id"),
     )
+    if status:
+        subq_q = subq_q.filter(models.Opportunity.status == status)
+    subq = subq_q.group_by(models.Opportunity.title).subquery()
     q = (
         db.query(models.Opportunity)
         .join(
             subq,
             (models.Opportunity.title == subq.c.title)
-            & (models.Opportunity.opportunity_score == subq.c.max_score),
+            & (models.Opportunity.opportunity_score == subq.c.max_score)
+            & (models.Opportunity.id == subq.c.keep_id),
         )
     )
     if status:
