@@ -39,8 +39,6 @@ class OpportunityResponse(BaseModel):
     feasibility_score: float = 0.0
     market_readiness_score: float = 0.0
     explanation: Optional[str] = None
-    class Config:
-        from_attributes = True
     status: Optional[str] = None
     domain: Optional[str] = None
     industry: Optional[str] = None
