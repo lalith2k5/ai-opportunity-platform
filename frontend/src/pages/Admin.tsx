@@ -14,10 +14,12 @@ import {
 } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
 import { useConfirm } from '../context/ConfirmContext';
+import { Key } from 'lucide-react';
+import ApiKeysTab from './admin/ApiKeysTab';
 
 const ROLE_OPTIONS = ['student', 'researcher', 'entrepreneur', 'investor', 'reviewer', 'admin'];
 
-type Tab = 'overview' | 'users' | 'logs' | 'scheduler' | 'config' | 'sync';
+type Tab = 'overview' | 'users' | 'logs' | 'scheduler' | 'config' | 'sync' | 'keys';
 
 export default function Admin() {
   const [stats, setStats] = useState<any>(null);
@@ -101,6 +103,7 @@ export default function Admin() {
     { id: 'users',     label: 'Users',     icon: Users },
     { id: 'config',    label: 'Config',    icon: SettingsIcon },
     { id: 'sync',      label: 'Sync',      icon: Database },
+    { id: 'keys',     label: 'API Keys', icon: Key },
     { id: 'logs',      label: 'Logs',      icon: Activity },
     { id: 'scheduler', label: 'Scheduler', icon: Clock },
   ] as const;
@@ -205,6 +208,7 @@ export default function Admin() {
 
       {/* SYNC */}
       {tab === 'sync' && <SyncTab status={syncStatus} reload={load} />}
+      {tab === 'keys' && <ApiKeysTab />}
 
       {/* LOGS */}
       {tab === 'logs' && (
