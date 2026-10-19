@@ -1,350 +1,141 @@
-# AI Opportunity Platform — Implementation Plan to National Deployment
-**Version 1.0 · 19 October 2026 · Post-diagnostic baseline**
+# AI Opportunity Platform — Implementation Plan v2.0
 
-Scale target: 100 concurrent users / 100,000 documents
-Source policy: 100% free sources only
-Deployment target: National India launch (evidence-quality, compliance, security, and load-test gates)
+**Version 2.0 · 19 October 2026**
+**Supersedes v1.0. Architecture pivot to evidence-first, topic-scoped, no hardcoded values.**
 
----
+## 1. What this plan produces
 
-## 1. Verified current state (as of 2026-10-19)
+A system where every pipeline run is scoped to one topic query, every claim traces to a live source document, every field is populated from real evidence, every score recomputes, and every source clickthrough works. Realistic output per run: 3-10 verified opportunities.
 
-### Database contents
-- opportunities: 378 rows
-- opportunity_evidence: 3,163 rows (all now with doc_id, source_type, credibility_weight after Block 1.2b)
-- trends: 546, research_gaps: 375, problem_clusters: 375
-- raw_documents: 1,942 (URL-verified against all 3,163 evidence items)
-- limitations: 0 (blocked gap analysis)
-- conflict_flags: 0 (detector never fires)
-- opportunity_score_history: 4,152
-- weight_configs: 1 (v1.0.0), confidence_configs: 1 (v1.0.0), trend_configs: 1 (v1.0.0)
+## 2. The 6 governing requirements
 
-### What works
-- Schema: 34 tables, spec-compliant, migrations clean
-- Plumbing: 29/29 E2E tests pass, endpoints return 200
-- Evidence storage: 3,163 items, 100% URL-matched to raw_documents
-- Source connectors for 6 raw types: arxiv(808), github(768), github_issues(722), news(650), rd_cells(212), challenge_portal(3)
+**R1 — Topic scoping**: every pipeline invocation creates a run with a topic query. Every entity carries run_id. API and UI scoped by run.
 
-### What is broken (diagnosed, not fixed yet)
-1. Orchestrator passes the wrong data to the confidence formula
-   - source_type = raw string ("github" vs "github_issues") — counts one class as two
-   - credibility_weight = relevance_score (mean 0.28) — that measures topical match, not trustworthiness
-   - doc_id = oe.id (row id), not linked to raw_documents
-   - RESULT: confidence_spec is inflated or wrong on the 263 opps that have evidence
-2. 115 opportunities have ZERO evidence rows (score a hard 0 on confidence)
-3. Titles are keyword bags ("Machine Learning, Signals & Measures")
-4. Descriptions are templates ("Opportunity focused on X, Y, Z")
-5. Three conflicting scores per card (0.54 / 48.0 / "0.56" in explanation)
-6. limitations table empty — gap analysis is ungrounded
-7. conflict_flags empty — CR-1..CR-6 never fires
-8. All 378 cards are status=PROPOSED (spec §17 forbids publication in this state)
-9. Controlled vocabularies leak free text (domain='Other', problem_type='Other')
-10. No Reddit (dead API), no patents source active
+**R2 — Evidence-first**: problems, technologies, gaps extracted FROM source content. LLM structures what is written; it does not invent claims.
 
-### What was fixed today (Block 1.2b — PASSED)
-- Added columns to opportunity_evidence: doc_id, source_type, credibility_weight
-- Backfilled all 3,163 rows:
-  - doc_id: 100% matched to raw_documents via URL
-  - source_type: canonicalized (GITHUB / RESEARCH / NEWS / RND; patents/reddit dormant)
-  - credibility_weight: source-based defaults (RESEARCH=0.90, RND=0.80, NEWS=0.60, GITHUB=0.50)
-- Verification: 3163/3163/3163/3163 (total = doc_id = source_type = credibility_weight)
+**R3 — No empty fields**: every published card has every required field populated. Any missing field -> card discarded.
 
----
+**R4 — Source clickthrough verified**: every evidence item fetched, parsed, verified before attach. URL returns 200, content hash matches, LLM confirms claim support.
 
-## 2. Decision log — resolved ambiguities
+**R5 — Every field has a verifiable source**: every displayed field traces to a source document, quote, or deterministic computation. Weekly audit re-runs field tests.
 
-These are the 7 ambiguities the source spec leaves open. Each is resolved for this plan:
+**R6 — No cross-run aggregation**: trend counts computed only from same-run documents.
 
-| # | Ambiguity | Resolution for this plan |
+## 3. Field-by-field source map
+
+| Field | Real source | Rejection |
 |---|---|---|
-| 1 | Trend formula (§33.5 vs Appendix C.3) | Use §33.5: base × (0.5 + 0.5×growth) for EMERGING/GROWING; base × confidence otherwise |
-| 2 | CR-5 penalty (fixed -25 vs multiplicative) | Use multiplicative 0.50 × severity (matches code) |
-| 3 | Missing factor behavior | Cannot publish an opportunity if any of the 7 spec factors is NULL |
-| 4 | N dedup semantics | Distinct doc_id (not row id) — updated in Block 1.2c |
-| 5 | Source-type taxonomy | 6 canonical: GITHUB, REDDIT, RESEARCH, NEWS, RND, PATENT |
-| 6 | Min-max normalization population | 365-day rolling window per domain |
-| 7 | Credibility weights | Defaults above; override via SourceCredibilityProfile table in Phase 2 |
+| Title | Noun phrases from quotes | Noun not in source |
+| Description | 3 sentences, each cites evidence | No evidence ID |
+| Confidence | compute_confidence(N, D, M, A, C) | Recomputed != stored |
+| Score | compute_score(7 factors) | Recomputed != stored |
+| Domain | Vocab match from source | "Other" / NULL / not in source |
+| Problem type | Vocab match from source | Same |
+| Industry | Org metadata or source | NULL / "Other" / not in source |
+| Stakeholders | Named entities from problem.quote | Empty / generic / not in quote |
+| Technologies | Co-mentioned in same source | Not in evidence / catch-all |
+| Existing research | Papers with problem AND tech terms | Not containing both |
+| Known limitations | Verbatim quotes from papers | Non-verbatim |
+| Gap (CAPABILITY) | Limitation + unmet requirement | Unconnected limitations |
+| Gap (COVERAGE) | Search scope + zero results | "No research" without scope |
+| Emerging trend | Time-windowed mention count | State without counts |
+| Trend signal | Actual 30d/90d/365d counts + growth | Missing / mismatched |
+| Suggested research direction | LLM composing from quotes only | Phrase not in evidence |
+| Suggested project direction | LLM composing from quotes only | Phrase not in evidence |
+| Explanation | Structured from factors + evidence | Free text adds claims |
+| Weights version | weight_configs.version | Nonexistent / wrong |
+| Confidence version | confidence_configs.version | Nonexistent / wrong |
+| Trend window | 30 / 90 / 365 | Value not matching signal |
+| Status | UNDER_REVIEW / VALIDATED | PROPOSED / DRAFT / null |
+| Last verified at | Timestamp of URL check | NULL / >7d old |
+| Evidence sources | URL 200 + hash match + claim verified | Any item failing |
 
----
+## 4. New architecture
 
-## 3. Phase 1 — Content correctness (blocks 1.2c – 1.13)
+**runs table**: run_id UUID PK, topic_query TEXT, topic_variants JSONB, created_at, completed_at, status ENUM(RUNNING/COMPLETED/FAILED/EMPTY), config_versions JSONB, source_ids JSONB, documents_fetched, documents_gated, candidates_generated, opportunities_published, failure_log JSONB.
 
-**Goal:** every card visible to a user is verifiable, useful, and honest.
+**Foreign keys**: opportunities, opportunity_evidence, research_gaps, problem_clusters, problem_technologies, trends, limitations, problem_papers — all gain run_id UUID FK (indexed).
 
-### Block 1.2c — Fix orchestrator to use the new columns
-- Rewrite lines ~560-568 of app/agents/orchestrator.py
-- _ev_items construction reads source_type, credibility_weight, doc_id from the new columns
-- PASS: internal confidence formula receives correct inputs; recomputation on opp 1069 matches expected
+**Verification columns** on opportunity_evidence: verified_at, http_status, content_hash_at_attach, claim_match, claim_match_reason, topic_match.
 
-### Block 1.2d — Recompute confidence for all 378 opportunities
-- Single transactional run, backup first
-- PASS: no card with evidence has confidence=0; no card displays 0.8 fake
-- PASS: 5 sampled opportunities recompute to stored value ±1
+**Display gate**: verified_at > now()-7d AND http_status=200 AND claim_match=true AND topic_match=true.
 
-### Block 1.2e — Handle the 115 zero-evidence opportunities
-- Options: (a) fetch evidence for them in Phase 2, (b) hide from public until evidenced
-- Decision: hide from public list, keep in admin queue
-- PASS: public API returns only opps with ≥1 evidence item
+## 5. Pipeline — 8 stages
 
-### Block 1.2f — Score reconciliation
-- Retire legacy opportunity_score (0-1) as display value; make opportunity_score_spec (0-100) canonical
-- Rewrite explanation text from seven factor contributions
-- PASS: every card shows one score; explanation matches stored value
+1. **Topic resolution**: split query into 2-4 variants
+2. **Source-scoped search**: query all sources, apply topic-relevance gate
+3. **Problem extraction**: LLM extracts {problem, stakeholder, description, VERBATIM quote}. Non-verbatim -> discard
+4. **Technology extraction**: LLM reads same source, extracts techs with own verbatim quotes. Problem quote + tech quote from same document
+5. **Gap extraction**: search papers for stated limitations. CAPABILITY = problem+limitation quotes. COVERAGE = search-scope record
+6. **Opportunity composition**: requires 1+ problem, 1+ tech, 1+ gap, 1+ stakeholder, 2+ evidence items, controlled vocab, trend state. Any missing -> discard
+7. **Title/description**: spaCy extracts noun phrases from quotes -> LLM orders them (no invention) -> validate every noun traces to source. Description = 3 sentences citing evidence IDs
+8. **5 verification gates**: topic match, completeness, source clickthrough, score reproducibility, no hardcoded values
 
-### Block 1.2g — Limitation extraction backfill
-- Parse existing_approaches and known_limitations text fields into limitations rows (INFERRED)
-- Wire research agent to extract limitations from paper abstracts (EXPLICIT)
-- PASS: ≥80% of research_gaps have ≥1 linked limitation
+## 6. Source coverage — 8 free sources
 
-### Block 1.2h — Conflict detection verification
-- Diagnose why conflict_flags=0 (never ran? never received conflicting evidence? exceptions swallowed?)
-- Seeded test: two contradictory evidence items → flag must appear
-- PASS: seeded conflict produces flag with correct severity, rule, evidence_ids
+| Source | Status | Auth |
+|---|---|---|
+| Hacker News | Working | None |
+| GDELT | Working | None |
+| Crossref | Working | None (mailto polite) |
+| OpenAlex | Working | Free key optional (100k/day) |
+| Stack Exchange | Working | Keyless 300/day, key 10k/day |
+| Dev.to | Working | None |
+| USPTO ODP | Built | Free key needed |
+| EPO OPS | Built | Free OAuth2 needed |
 
-### Block 1.2i — Card title and description rewrite (pilot 5 first)
-- New prompt: "Title names one specific problem-technology opportunity, ≤90 chars, no comma lists"
-- New prompt: "Description states problem, technology, gap in prose, cites evidence IDs"
-- Validate generated output: title mentions ≥1 linked technology; description references ≥1 evidence ID
-- PASS on pilot: 5 cards reviewed by user, deemed useful
+**Skipped**: Reddit (API closed).
 
-### Block 1.2j — Full regeneration (all 378)
-- Only after 1.2i passes
-- Transactional, backup, rollback
-- Preserve IDs; write opportunity_score_history rows
-- PASS: audit report shows 9/9 accuracy checks PASS on 30 sampled cards
+**User action** (each 2 min):
+- OpenAlex: openalex.org/action/register
+- Stack Exchange: stackapps.com/apps/oauth/register
+- USPTO: data.uspto.gov/myodp
+- EPO OPS: developers.epo.org (non-paying tier)
 
-### Block 1.2k — Status workflow
-- Generation writes PROPOSED, auto-transitions to UNDER_REVIEW after evidence validation
-- Public API filters status IN (UNDER_REVIEW, VALIDATED)
-- PASS: zero PROPOSED cards visible publicly
+## 7. Phase-by-phase implementation
 
-### Block 1.2l — Controlled vocabularies
-- Populate problem_types, domains, industries tables from spec §1.2
-- Constrain generation to choose from controlled list
-- PASS: zero cards with domain='Other' or problem_type='Other'
-
-### Block 1.2m — Human spot-check (user's time, not a code block)
-- User reviews 30 cards across domains
-- PASS: user confirms all 30 are useful and accurate
-- This is the Phase 1 exit criterion
-
-**Phase 1 total: 11 blocks (1.2c through 1.2l, plus 1.2m is user review)**
-
----
-
-## 4. Phase 2 — Source expansion (all free)
-
-**Goal:** 6 canonical source classes fully active, patent class replaces dormant PatentsView, community class replaces dead Reddit.
-
-Each new connector is its own block, must pass: license gate → evidence schema → dedup → accuracy audit re-run.
-
-| Source | Key | Class | Block |
+| Phase | Blocks | Description | Exit |
 |---|---|---|---|
-| Hacker News | none | Community | 2.1 |
-| Stack Exchange | free key | Community | 2.2 |
-| GDELT | none | News | 2.3 |
-| OpenAlex | none | Research | 2.4 |
-| Crossref | none | Research | 2.5 |
-| USPTO PatentsView | none | Patents | 2.6 |
-| EPO OPS | free account | Patents | 2.7 |
-| Dev.to | free key | Community | 2.8 |
+| 0 Backup | 1 | pg_dump + verify restore | Restore works |
+| 1 Migration | 2 | Alembic: runs table, run_id columns, verification columns | No data lost |
+| 2 Erase | 1 | Truncate opportunities, evidence, gaps, trends, limitations, profiles, papers. Preserve raw_documents/users/configs | Counts verified |
+| 3 Verification | 2 | EvidenceVerifier: fetch, hash, LLM claim match | 10/10 good PASS |
+| 4 Topic search | 2 | TopicResolver + SourceScoper with gate | Returns 5-40 gated docs |
+| 5 Extraction | 4-6 | Problem, tech, gap extraction with verbatim quotes | 5-15 problems from 20 docs |
+| 6 Titles | 2 | PhraseExtractor + TitleComposer + provenance validator | 10/10 trace to source |
+| 7 Gates | 2 | CardGatekeeper: 5 gates | Correct on test cases |
+| 8 First run | 2 | Pipeline wired, run "drone delivery system" | 3-8 cards or honest EMPTY |
+| 9 API scoping | 2 | /api/runs/*, deprecate /api/opportunities | Scoped return |
+| 10 Frontend | 2 | Home shows runs, click scoped | Two runs isolated |
+| 11 Human review | 1 | You read 3 cards, click evidence | Judge as 100% real |
+| 12 Second topic | 1 | Run different topic | Isolation verified |
+| 13 Corpus | 2 | New connectors at scale, re-run | Yield increases |
 
-**Phase 2 total: 8 blocks**
-**Exit criterion:** all 6 canonical classes active, all license-gated, Phase 1 accuracy checks still PASS on the expanded corpus
+**Total: 30 blocks, 15 sessions, ~7 weeks at 2 sessions/week.**
 
----
+## 8. What only the user can do
 
-## 5. Phase 3 — Realtime and reliability (6-8 blocks)
+Legal review (DPDP, IT Rules, licensing) - Cloud account + India region + DNS + TLS - Free API registrations - Independent security audit - Support staffing - Budget - Legal sign-off on Terms/Privacy.
 
-### Block 3.1 — LLM primary provider fix
-- Restore the Groq integration that was reverted (commit 4f84d1d) correctly
-- Fallback chain: Groq → Gemini → freelm → openrouter → openai
-- PASS: median chat latency <3s across 20 live queries
+## 9. Success criteria
 
-### Block 3.2 — Streaming chat responses
-- First-token <500ms; full response complete within 5s
-- PASS: measured on 20 queries
+**Per run**: 5/5 gates PASS - every URL returns 200 with content matching claim - every field non-empty - every score recomputes - every title phrase traces to source - every description sentence cites evidence.
 
-### Block 3.3 — Durable job execution
-- Wrap APScheduler with crash-safe mechanism (Redis-backed queue or equivalent)
-- PASS: forced crash loses no queued jobs
+**Cross-runs**: zero shared opportunities - "drone" query returns 0 healthcare cards.
 
-### Block 3.4 — Reproducibility manifest file writer
-- Every published score gets downloadable JSON that replays to the same number
-- PASS: re-run on 10 sampled scores yields identical output
+**Human**: 10 random cards per run, all judged real by user - every click works.
 
-### Block 3.5 — Per-user notification subscriptions
-- Currently broadcast; make subscriptions per-user
-- PASS: two test users receive different notification sets for same change
+**System**: zero empty required fields - zero "Other" domain/type - zero score mismatches - zero cards with <2 verified evidence.
 
-### Block 3.6 — Observability
-- Structured logs (partly done), metrics, alerts on error rate, queue depth, cost
-- PASS: alert fires when error rate exceeds threshold in staged test
+## 10. Honest yield expectations
 
-**Phase 3 total: 6 blocks**
+- "drone delivery system": 3-8 cards
+- "quantum computing": 5-10 cards
+- "federated learning healthcare": 3-6 cards
+- niche/emerging topic: 0-2 cards (honest EMPTY is valid)
+
+**30-80 verified cards across 10 topics.** Every field traces to source. Every click works. That is the honest product.
 
 ---
 
-## 6. Phase 4 — UX and API (6-8 blocks)
-
-### Block 4.1 — API versioning (/api/v1 with backward-compatible alias)
-### Block 4.2 — Export (JSON + PDF, preserving citations)
-### Block 4.3 — Review UX polish (keyboard, no double-submit, before/after diff)
-### Block 4.4 — Search UX (zero-result explanation, safe suggestions)
-### Block 4.5 — WCAG 2.2 AA audit on 5 primary screens
-### Block 4.6 — Mobile-first layout verification
-
-**Phase 4 total: 6 blocks**
-**Exit criterion:** external user completes 5 core workflows on desktop and mobile without assistance
-
----
-
-## 7. Phase 5 — Evaluation harness (4-6 blocks)
-
-### Block 5.1 — Gold sets (start small: 100 problems, 50 problem-tech pairs, 100 search queries, 50 gaps)
-### Block 5.2 — Metrics runner (precision/recall, nDCG@10, MRR, gap acceptance, conflict recall, grounded-citation correctness, unsupported-claim rate)
-### Block 5.3 — CI integration (metrics run on every release)
-### Block 5.4 — Evaluation dashboard surfaced
-
-**Phase 5 total: 4 blocks**
-**Exit criterion:** every metric has a number, confidence interval, and dataset version
-
----
-
-## 8. Phase 6 — Security and compliance (6-8 blocks)
-
-### Block 6.1 — Threat model document
-### Block 6.2 — Prompt-injection defense (untrusted source text, tool allow-listing, network restriction, adversarial tests)
-### Block 6.3 — Auth hardening (email verification, MFA scaffolding, session revocation)
-### Block 6.4 — RBAC enforcement tests on every sensitive endpoint
-### Block 6.5 — Retention and deletion jobs (per source, tested)
-### Block 6.6 — Source compliance matrix (terms, retention, display, review dates)
-
-**Phase 6 total: 6 blocks**
-**Exit criterion:** blueprint Gates A and F claimable
-
----
-
-## 9. Phase 7 — Launch gates (4-6 blocks)
-
-### Block 7.1 — Load test at 100 concurrent users / 100k documents (k6 or Locust)
-### Block 7.2 — Restore drill (backup, restore, integrity check)
-### Block 7.3 — Incident exercise (source outage, model-provider outage)
-### Block 7.4 — Status page wiring
-### Block 7.5 — Go/no-go checklist populated with real results
-
-**Phase 7 total: 5 blocks**
-**Exit criterion:** blueprint Gates B, D, E passed
-
----
-
-## 10. Timeline summary
-
-| Phase | Blocks | Sessions (2 blocks each) | Calendar (at 2/session/week) |
-|---|---|---|---|
-| 1 — Content correctness | 11 | 5-6 | 5-6 weeks |
-| 2 — Source expansion | 8 | 4 | 4 weeks |
-| 3 — Realtime | 6 | 3 | 3 weeks |
-| 4 — UX/API | 6 | 3 | 3 weeks |
-| 5 — Evaluation | 4 | 2 | 2 weeks |
-| 6 — Security/compliance | 6 | 3 | 3 weeks |
-| 7 — Launch gates | 5 | 2-3 | 2-3 weeks |
-| **Total** | **46** | **22-24** | **22-24 weeks** |
-
-At 2 blocks per week, honest estimate is **6 months of code work** to national-deployment-ready. At 4 blocks per week, ~3 months. Some phases will run faster (source connectors are mechanical), some slower (regeneration depends on LLM quality).
-
----
-
-## 11. What only the user can do (I cannot deliver these from chat)
-
-These must be in motion in parallel with the code work:
-
-1. **Legal review (India)** — DPDP Act applicability, IT Rules, intermediary obligations, licensing terms. Requires a lawyer.
-2. **Cloud account + India region + DNS + TLS** — commercial vendor selection.
-3. **Free source registrations** — Stack Exchange, EPO OPS, Dev.to need ~5 minutes each to register.
-4. **Independent security audit / penetration test** — before public launch.
-5. **Support staffing** — someone must answer user reports and reviewer questions.
-6. **On-call rotation and incident response team.**
-7. **Budget** — LLM API spend, hosting, support.
-
-The code can be national-ready; the service cannot launch without these seven.
-
----
-
-## 12. Success criteria (measurable, testable)
-
-### Content correctness (Phase 1)
-- [ ] Every published opportunity has ≥1 evidence item with live URL, hash, license
-- [ ] Every published score recomputes bit-identically from stored factor values and config version
-- [ ] Every published confidence recomputes bit-identically from stored N, D, M, A components
-- [ ] Every published gap stores search scope + retrieval limitations
-- [ ] Every trend state stores the signals JSON that produced it
-- [ ] Zero cards in PROPOSED status visible publicly
-- [ ] Zero cards with domain='Other' or problem_type='Other'
-- [ ] Zero duplicate opportunities in the public list
-- [ ] User personally reviews 30 cards and confirms all are useful
-
-### Source coverage (Phase 2)
-- [ ] All 6 canonical source classes active
-- [ ] Every source has an approved, current license record
-- [ ] Zero fetch attempts against unapproved sources
-
-### Realtime (Phase 3)
-- [ ] Median chat latency <3s across 20 queries
-- [ ] First token rendered within 500ms
-- [ ] Forced crash loses no queued jobs
-
-### UX (Phase 4)
-- [ ] External user completes 5 core workflows without assistance
-- [ ] WCAG 2.2 AA passed on 5 primary screens
-- [ ] Mobile layout verified on mid-range device viewport
-
-### Evaluation (Phase 5)
-- [ ] Every metric has a number, CI, and dataset version
-- [ ] CI runs metrics on every release
-
-### Security/compliance (Phase 6)
-- [ ] Threat model documented
-- [ ] Prompt-injection adversarial tests pass
-- [ ] RBAC verified on every sensitive endpoint
-
-### Launch gates (Phase 7)
-- [ ] Load test passes at 100 concurrent / 100k documents
-- [ ] Restore drill passes
-- [ ] Incident exercise passes
-- [ ] Go/no-go checklist complete
-
-### Honest definition of "100% accurate"
-Not "every AI sentence is perfect." Yes:
-Every claim on every card traces to a Document with a live URL, valid hash, and approved LicenseRecord. Every score and confidence recomputes bit-identically from stored inputs and a named config version. Every gap records what was searched and what was not found. Every trend state stores the signals that produced it. No card is shown with a validation status it has not earned. Every suggested direction is grounded in retrieved evidence.
-
----
-
-## 13. Immediate next block
-
-**Block 1.2c — Fix orchestrator to use the new columns (Block 1.2b added)**
-
-File: `backend/app/agents/orchestrator.py`, lines ~560-568
-
-Change:
-- `"source_type": _ev.source or "unknown"` → `"source_type": _ev.source_type or "UNKNOWN"`
-- `"credibility_weight": float(_ev.relevance_score or 0.5)` → `"credibility_weight": float(_ev.credibility_weight or 0.5)`
-- `"doc_id": str(_ev.id)` → `"doc_id": str(_ev.doc_id) if _ev.doc_id else str(_ev.id)`
-
-PASS: after patch, run a manual recompute on opportunity 1069 and confirm the confidence matches the formula's expected output. If yes, proceed to Block 1.2d (recompute all 378).
-
----
-
-## 14. How to use this document
-
-- This is the reference plan. Every block referenced here will be executed as a transactional patch with backup, ast.parse gate, and PASS criterion.
-- No block is complete until it prints RESULT: PASS.
-- No phase is complete until its exit criterion is met.
-- No launch happens until Phase 7 passes.
-- The user reviews each block's output before the next begins.
-
-Every conversation going forward starts from this file. If a block is added, removed, or resequenced, this file is edited.
-
----
-
-*End of plan. Written 2026-10-19, after diagnostic session confirmed the evidence pipeline was disconnected from the confidence formula and Block 1.2b fixed the evidence columns.*
+*End of plan. Tonight: backup. Tomorrow: Phase 1 migration + Phase 2 erase + start Phase 3.*
