@@ -235,16 +235,6 @@ export default function ApiKeysTab() {
         )}
       </div>
 
-      <div className="rounded-lg border border-line p-4 bg-surface-2">
-        <h3 className="text-sm font-medium text-ink mb-3">Where to get free keys</h3>
-        <ul className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm text-ink-3">
-          <li><a href="https://openalex.org/action/register" className="text-accent hover:underline" target="_blank" rel="noreferrer">OpenAlex</a> — openalex.org/action/register</li>
-          <li><a href="https://stackapps.com/apps/oauth/register" className="text-accent hover:underline" target="_blank" rel="noreferrer">Stack Exchange</a> — stackapps.com/apps/oauth/register</li>
-          <li><a href="https://data.uspto.gov/myodp" className="text-accent hover:underline" target="_blank" rel="noreferrer">USPTO ODP</a> — data.uspto.gov/myodp</li>
-          <li><a href="https://developers.epo.org" className="text-accent hover:underline" target="_blank" rel="noreferrer">EPO OPS</a> — developers.epo.org (Non-paying access)</li>
-          <li><a href="https://dev.to/settings/extensions" className="text-accent hover:underline" target="_blank" rel="noreferrer">Dev.to</a> — dev.to/settings/extensions</li>
-        </ul>
-      </div>
     </div>
   );
 }
