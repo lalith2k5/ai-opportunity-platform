@@ -12,8 +12,8 @@ Session shipped: Phase 1 (content correctness) + Phase 2 (batch 1+2)
 - freelm serve: running on http://127.0.0.1:4000 (log: /tmp/freelm_serve.log)
 - Postgres: ai_opportunity_db
 - Login: test@example.com / test1234 (admin) — endpoint uses FORM data (username=...&password=...)
-- DB: 387 total opportunities (84 UNDER_REVIEW, 303 DRAFT)
-- Evidence: 883 verified (cos>=0.35) of 3527 total
+- DB: 392 total (68 UNDER_REVIEW, 324 DRAFT)
+- Evidence: 883 verified (cos>=0.35)
 - Limitations: 507 backfilled
 - Raw docs: 2315
 
