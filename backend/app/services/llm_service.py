@@ -11,6 +11,38 @@ from app.config import settings
 from app.logger import logger
 
 
+import time as _time_mod
+
+_CIRCUIT_STATE = {}
+
+
+def _in_cooldown(name):
+    until = _CIRCUIT_STATE.get(name)
+    if until is None:
+        return False
+    if _time_mod.time() >= until:
+        del _CIRCUIT_STATE[name]
+        return False
+    return True
+
+
+def _mark_cooldown(name, seconds):
+    _CIRCUIT_STATE[name] = _time_mod.time() + seconds
+
+
+def _clear_cooldown(name):
+    _CIRCUIT_STATE.pop(name, None)
+
+
+def _classify_error(msg):
+    low = (msg or "").lower()
+    if "429" in msg or "resource_exhausted" in low or "quota" in low or "rate limit" in low or "rate_limit" in low:
+        return "rate_limited", 900
+    if "503" in msg or "unavailable" in low or "502" in msg or "timeout" in low:
+        return "transient", 120
+    return "error", 300
+
+
 class BaseProvider:
     name = "base"
 
@@ -53,8 +85,9 @@ class GeminiProvider(BaseProvider):
             "- If neither section answers the question, say so clearly instead of guessing.\n"
             "- Be concise. Use bullet points for lists."
         )
-        # Retry up to 3 times on 5xx / UNAVAILABLE — Google's Gemini commonly
-        # returns transient 503 during traffic spikes.
+        # NO retries on 429 / quota -- daily quota will not recover in 2s.
+        # Only retry transient 5xx / UNAVAILABLE (2 extra attempts max).
+        import time as _t
         last_err = None
         for attempt in range(3):
             try:
@@ -66,10 +99,10 @@ class GeminiProvider(BaseProvider):
             except Exception as e:
                 last_err = e
                 msg = str(e)
-                if "503" in msg or "UNAVAILABLE" in msg or "429" in msg or "RESOURCE_EXHAUSTED" in msg:
-                    if attempt < 2:
-                        time.sleep(2 ** attempt)   # 1s, 2s
-                        continue
+                kind, _ = _classify_error(msg)
+                if kind == "transient" and attempt < 2:
+                    _t.sleep(2 ** attempt)
+                    continue
                 raise
         raise last_err
 
@@ -233,6 +266,7 @@ class LLMService:
             "anthropic":  AnthropicProvider(),
         }
         self._last_used: str | None = None
+        self._last_error: str | None = None
         self._initialized = True
 
     @property
@@ -247,14 +281,22 @@ class LLMService:
         return [name for name, p in self.providers.items() if p.is_configured()]
 
     def _chain(self) -> list[BaseProvider]:
-        """Primary first, then remaining configured providers."""
+        """Primary first, then remaining configured providers.
+        Skips providers currently in circuit-breaker cooldown. If ALL
+        providers are cooling down, falls back to the ordered list so
+        something is always tried (avoids hard-fail on cold cache)."""
         primary = (settings.LLM_PRIMARY_PROVIDER or "gemini").lower()
         ordered_names = [primary] + [n for n in self.PROVIDER_ORDER if n != primary]
         chain = []
         for name in ordered_names:
             p = self.providers.get(name)
-            if p and p.is_configured():
+            if p and p.is_configured() and not _in_cooldown(name):
                 chain.append(p)
+        if not chain:
+            for name in ordered_names:
+                p = self.providers.get(name)
+                if p and p.is_configured():
+                    chain.append(p)
         return chain
 
     def generate(self, prompt: str, context: str = "") -> str:
@@ -370,11 +412,21 @@ Provide a concise 3-4 sentence explanation."""
             )
 
     def status(self) -> dict:
+        cooldown = {}
+        now = _time_mod.time()
+        for name, until in list(_CIRCUIT_STATE.items()):
+            remaining = int(until - now)
+            if remaining > 0:
+                cooldown[name] = f"{remaining}s"
+            else:
+                del _CIRCUIT_STATE[name]
         return {
             "enabled": self.enabled,
             "primary": settings.LLM_PRIMARY_PROVIDER,
-            "available": self.available_providers(),
+            "available": [n for n in self.available_providers() if n not in cooldown],
+            "cooldown": cooldown,
             "last_used": self._last_used,
+            "last_error": getattr(self, "_last_error", None),
             "models": {
                 "gemini": settings.GEMINI_MODEL,
                 "openrouter": settings.OPENROUTER_MODEL,

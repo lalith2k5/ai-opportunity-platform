@@ -384,4 +384,15 @@ class AIChatAgent:
         )
 
         response = self.llm.generate(full_prompt, "")
+        if not response or response.startswith("All LLM providers failed") or response.startswith("AI service not configured"):
+            logger.warning(f"[AIChat] LLM unavailable, returning graceful message. Detail: {(response or 'empty')[:200]}")
+            return {
+                "response": (
+                    "The AI assistant is temporarily unavailable due to provider rate limits. "
+                    "Please try again in a few minutes. If this keeps happening, ask your admin "
+                    "to add another LLM provider key (Admin -> Config)."
+                ),
+                "sources": context_docs,
+                "error": True,
+            }
         return {"response": response, "sources": context_docs}
