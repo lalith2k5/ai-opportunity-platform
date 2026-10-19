@@ -5,6 +5,7 @@ import {
   type Opportunity, type ProblemCluster, type Trend,
 } from '../services/api';
 import StatCard from '../components/StatCard';
+import { StatSkeleton, CardSkeleton } from '../components/LoadingSkeleton';
 import OpportunityCard from '../components/OpportunityCard';
 import InnovationTimeline from '../components/InnovationTimeline';
 import AlertsPanel from '../components/AlertsPanel';
@@ -12,7 +13,7 @@ import ResearchGapSummary from '../components/ResearchGapSummary';
 import AIRecommendationsPanel from '../components/AIRecommendationsPanel';
 import { useAuth } from '../context/AuthContext';
 import {
-  Loader2, Zap, TrendingUp, FileText, Database, Search as SearchIcon,
+  Zap, TrendingUp, FileText, Database, Search as SearchIcon,
   ArrowRight, Sparkles, Clock, Bell,
 } from 'lucide-react';
 
@@ -74,8 +75,17 @@ export default function Dashboard() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-screen">
-        <Loader2 className="animate-spin text-accent" size={32} />
+      <div className="p-6 lg:p-8 max-w-[1500px] mx-auto">
+        <div className="mb-8">
+          <div className="h-9 bg-overlay rounded w-64 mb-2 animate-pulse" />
+          <div className="h-4 bg-overlay rounded w-80 animate-pulse" />
+        </div>
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
+          <StatSkeleton /><StatSkeleton /><StatSkeleton /><StatSkeleton />
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <CardSkeleton /><CardSkeleton /><CardSkeleton /><CardSkeleton />
+        </div>
       </div>
     );
   }

@@ -1,7 +1,8 @@
 import { useEffect, useState, useMemo } from 'react';
 import { getOpportunities, getOpportunityFilters, type Opportunity } from '../services/api';
 import OpportunityCard from '../components/OpportunityCard';
-import { Loader2, Zap, ArrowUpDown, Search, SlidersHorizontal } from 'lucide-react';
+import { CardSkeleton } from '../components/LoadingSkeleton';
+import { Zap, ArrowUpDown, Search, SlidersHorizontal } from 'lucide-react';
 
 type SortKey = 'opportunity_score' | 'demand_score' | 'research_gap_score' | 'trend_score' | 'feasibility_score' | 'title';
 
@@ -56,8 +57,12 @@ export default function Opportunities() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-screen">
-        <Loader2 className="animate-spin text-accent" size={32} />
+      <div className="p-6 lg:p-8 max-w-[1500px] mx-auto">
+        <div className="h-9 bg-overlay rounded w-64 mb-3 animate-pulse" />
+        <div className="h-4 bg-overlay rounded w-80 mb-6 animate-pulse" />
+        <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-3">
+          {[1,2,3,4,5,6].map(i => <CardSkeleton key={i} />)}
+        </div>
       </div>
     );
   }

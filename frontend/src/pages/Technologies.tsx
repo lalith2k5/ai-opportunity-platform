@@ -2,9 +2,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
-  Cpu, Search, TrendingUp, TrendingDown, Minus, Loader2, ArrowUpRight,
+  Cpu, Search, TrendingUp, TrendingDown, Minus, ArrowUpRight,
 } from 'lucide-react';
 import PageHeader from '../components/ui/PageHeader';
+import { CardSkeleton } from '../components/LoadingSkeleton';
 import Toolbar from '../components/ui/Toolbar';
 import { getTechnologies, type TechnologyListItem } from '../services/api';
 
@@ -169,8 +170,8 @@ export default function Technologies() {
       </Toolbar>
 
       {loading ? (
-        <div className="flex items-center justify-center py-20">
-          <Loader2 className="animate-spin text-accent" size={28} />
+        <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-3">
+          {[1,2,3,4,5,6].map(i => <CardSkeleton key={i} />)}
         </div>
       ) : items.length === 0 ? (
         <div className="bg-surface border border-edge border-dashed rounded-lg p-12 text-center">

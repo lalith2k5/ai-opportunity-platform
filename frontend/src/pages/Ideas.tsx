@@ -2,10 +2,11 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
-  Lightbulb, Search, Loader2, TrendingUp, TrendingDown, Minus, ArrowUpRight,
+  Lightbulb, Search, TrendingUp, TrendingDown, Minus, ArrowUpRight,
 } from 'lucide-react';
 import { getIdeas, type IdeaListItem } from '../services/api';
 import PageHeader from '../components/ui/PageHeader';
+import { CardSkeleton } from '../components/LoadingSkeleton';
 import Toolbar from '../components/ui/Toolbar';
 
 function TrendGlyph({ label }: { label: string | null }) {
@@ -164,8 +165,8 @@ export default function Ideas() {
       </Toolbar>
 
       {loading ? (
-        <div className="flex items-center justify-center py-20">
-          <Loader2 className="animate-spin text-accent" size={28} />
+        <div className="space-y-4">
+          {[1,2,3].map(i => <CardSkeleton key={i} />)}
         </div>
       ) : items.length === 0 ? (
         <div className="bg-surface border border-edge border-dashed rounded-lg p-12 text-center">
