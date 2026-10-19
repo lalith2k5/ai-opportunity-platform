@@ -69,6 +69,8 @@ def get_opportunities(
             & (models.Opportunity.opportunity_score == subq.c.max_score),
         )
     )
+    if status:
+        q = q.filter(models.Opportunity.status == status)
     # ---- Phase 10.6: SRS 22 filters ----
     if domain:
         q = q.filter(models.Opportunity.domain == domain)
