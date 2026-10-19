@@ -1,7 +1,21 @@
 # AI Opportunity Platform — Implementation Plan v2.0
 
 **Version 2.0 · 19 October 2026**
-**Supersedes v1.0. Architecture pivot to evidence-first, topic-scoped, no hardcoded values.**
+**Supersedes v1.0. Architecture pivot to evidence-first, topic-scoped, no hardcoded values.*
+
+---
+
+## STATUS TRACKER (As of 19 Oct 2026)
+
+- [x] **Infrastructure**: 8 sources built, Groq LLM live, Admin panel key management.
+- [x] **Database Wipe**: 387 contaminated opportunities and all derived tables erased. Backup safely stored.
+- [ ] **Phase 1 — Migration**: Add `runs` table + `run_id` columns + verification columns.
+- [ ] **Phase 2 — Pipeline**: EvidenceVerifier + TopicScoper + Evidence-first extraction.
+- [ ] **Phase 3 — First Run**: Target "drone delivery system". Yield: 3-10 100% defensible cards.
+- [ ] **Phase 4 — API/UI**: Update endpoints to `/api/runs/...` and add run selector to frontend.
+
+---
+*
 
 ## 1. What this plan produces
 
