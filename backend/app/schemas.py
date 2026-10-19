@@ -14,6 +14,10 @@ class UserLogin(BaseModel):
 class ChatQuery(BaseModel):
     question: str
     session_id: Optional[int] = None
+    context_kind: Optional[str] = None
+    context_id: Optional[str] = None
+    context_title: Optional[str] = None
+    context_summary: Optional[str] = None
 
 class SearchQuery(BaseModel):
     query: str

@@ -306,7 +306,23 @@ def chat(
     db: Session = Depends(get_db),
     user: Optional[models.User] = Depends(optional_user),
 ):
-    result = chat_agent.answer(query.question)
+    entity_context = ""
+    if query.context_title:
+        bits = [
+            f"The user is asking about a {query.context_kind or 'topic'} "
+            f"titled '{query.context_title}'.",
+            "Focus your answer on this item and its related evidence.",
+        ]
+        if query.context_summary:
+            bits.append("Context summary: " + query.context_summary[:2000])
+        entity_context = " ".join(bits)
+
+    result = chat_agent.answer(
+        query.question,
+        entity_context=entity_context,
+        entity_kind=query.context_kind or "",
+        entity_id=query.context_id or "",
+    )
 
     # Persist chat session + messages
     try:

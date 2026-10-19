@@ -137,3 +137,42 @@ class PDFReportService:
         doc.build(elements)
         buf.seek(0)
         return buf
+
+    def generate_sectioned_report(self, title, subtitle, sections, username="User"):
+        """Generic PDF for a single entity.
+
+        sections: list of (heading, items) where items is a list of strings.
+        Used by the contextual /api/reports/pdf/{kind}/{id} endpoint.
+        """
+        buf = BytesIO()
+        doc = SimpleDocTemplate(
+            buf, pagesize=A4,
+            rightMargin=2*cm, leftMargin=2*cm,
+            topMargin=2*cm, bottomMargin=2*cm,
+            title=title,
+        )
+        elements = []
+        elements.append(Paragraph(title, self.styles['CustomTitle']))
+        elements.append(Paragraph(
+            f"For: <b>{username}</b> &middot; {datetime.now().strftime('%Y-%m-%d %H:%M')}",
+            self.styles['BodyText2'],
+        ))
+        if subtitle:
+            elements.append(Paragraph(subtitle, self.styles['BodyText2']))
+        elements.append(Spacer(1, 0.5*cm))
+
+        for heading, items in sections:
+            elements.append(Paragraph(heading, self.styles['SectionHeading']))
+            if not items:
+                elements.append(Paragraph('(none)', self.styles['BodyText2']))
+            else:
+                for it in items:
+                    s = str(it).strip()
+                    if not s:
+                        continue
+                    elements.append(Paragraph(s, self.styles['BodyText2']))
+            elements.append(Spacer(1, 0.3*cm))
+
+        doc.build(elements)
+        buf.seek(0)
+        return buf

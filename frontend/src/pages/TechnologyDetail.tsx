@@ -7,6 +7,7 @@ import {
   Target, FileText,
 } from 'lucide-react';
 import { getTechnologyDetail, type TechnologyDetailData } from '../services/api';
+import DetailActions from '../components/DetailActions';
 import SectionCard, { EmptyNote as SharedEmptyNote } from '../components/ui/SectionCard';
 
 const ACCENT_MAP: Record<string, 'accent' | 'purple' | 'sky' | 'success' | 'warning' | 'orange' | 'muted'> = {
@@ -129,6 +130,13 @@ export default function TechnologyDetail() {
         <ArrowLeft size={13} className="transition-transform group-hover:-translate-x-0.5" />
         Back to technologies
       </Link>
+
+      <DetailActions
+        kind="technology"
+        id={tech.name}
+        title={tech.name}
+        summary={tech.description}
+      />
 
       {/* Hero */}
       <div className="card p-6 mb-5 relative overflow-hidden">

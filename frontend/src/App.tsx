@@ -6,7 +6,6 @@ import ProtectedRoute from './components/ProtectedRoute';
 import Dashboard from './pages/Dashboard';
 import Search from './pages/Search';
 import Chat from './pages/Chat';
-import Reports from './pages/Reports';
 import Login from './pages/Login';
 import Register from './pages/Register';
 import OpportunityDetail from './pages/OpportunityDetail';
@@ -58,7 +57,7 @@ export default function App() {
       <Route path="/dashboard" element={wrap(<Dashboard />)} />
       <Route path="/search" element={wrap(<Search />)} />
       <Route path="/chat" element={wrap(<Chat />)} />
-      <Route path="/reports" element={wrap(<Reports />)} />
+      <Route path="/reports" element={<Navigate to="/dashboard" replace />} />
       <Route path="/profile" element={wrap(<Profile />)} />
       <Route path="/admin" element={wrap(<Admin />)} />
       <Route path="/opportunities" element={wrap(<Opportunities />)} />

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { getOpportunityDetail, getOpportunityRecommendations } from '../services/api';
+import DetailActions from '../components/DetailActions';
 import SectionCard from '../components/ui/SectionCard';
 
 const ACCENT_MAP: Record<string, 'accent' | 'purple' | 'sky' | 'success' | 'warning' | 'orange' | 'muted'> = {
@@ -136,6 +137,13 @@ export default function OpportunityDetail() {
       >
         <ArrowLeft size={13} className="transition-transform group-hover:-translate-x-0.5" /> {backLabel}
       </Link>
+
+      <DetailActions
+        kind="opportunity"
+        id={String(opp.id)}
+        title={opp.title}
+        summary={opp.description}
+      />
 
       {/* Hero */}
       <div className="card p-6 mb-5 relative overflow-hidden">
@@ -643,14 +651,6 @@ export default function OpportunityDetail() {
               Validate this opportunity with {cluster?.source_count || 'multiple'} real-world data points and run the AI chat for follow-up questions.
             </p>
           </div>
-        </div>
-        <div className="flex items-center gap-2">
-          <Link to="/chat" className="btn-secondary text-xs">
-            <Sparkles size={13} /> Ask AI
-          </Link>
-          <Link to="/reports" className="btn-primary text-xs">
-            <ExternalLink size={13} /> Add to report
-          </Link>
         </div>
       </div>
 

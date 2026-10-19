@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import {
-  LayoutDashboard, Search, MessageSquare, FileText,
+  LayoutDashboard, Search, MessageSquare,
   Zap, Shield, Menu, X, Sparkles, Network,
   Lightbulb, Cpu, BookOpen, Factory,
 } from 'lucide-react';
@@ -33,7 +33,6 @@ const sections = [
     label: 'Insights',
     items: [
       { path: '/search',          label: 'Search',          icon: Search },
-      { path: '/reports',         label: 'Reports',         icon: FileText },
       { path: '/knowledge-graph', label: 'Knowledge Graph', icon: Network },
     ],
   },

@@ -8,6 +8,7 @@ import {
   Compass, ExternalLink, ShieldAlert, Sparkles,
 } from 'lucide-react';
 import { getRDProblemDetail, type RDProblemDetail } from '../services/api';
+import DetailActions from '../components/DetailActions';
 import SectionCard from '../components/ui/SectionCard';
 
 const ACCENT_MAP: Record<string, 'accent' | 'purple' | 'sky' | 'success' | 'warning' | 'orange' | 'muted'> = {
@@ -150,6 +151,13 @@ export default function RDProblemDetail() {
         <ArrowLeft size={13} className="transition-transform group-hover:-translate-x-0.5" />
         Back to R&D
       </Link>
+
+      <DetailActions
+        kind="rd"
+        id={String(p.id)}
+        title={p.problem_title}
+        summary={p.problem_description ?? undefined}
+      />
 
       {/* Hero */}
       <div className="card p-6 mb-5 relative overflow-hidden">

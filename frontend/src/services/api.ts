@@ -150,8 +150,17 @@ export const getTrendHistory = (name: string, days: number = 30) =>
 export const runPipeline = (query: string) =>
   api.post('/pipeline/run', { query }).then(r => r.data);
 
-export const askAI = (question: string) =>
-  api.post('/chat', { question }).then(r => r.data);
+export const askAI = (
+  question: string,
+  context?: { kind?: string; id?: string; title?: string; summary?: string },
+) =>
+  api.post('/chat', {
+    question,
+    context_kind: context?.kind,
+    context_id: context?.id,
+    context_title: context?.title,
+    context_summary: context?.summary,
+  }).then(r => r.data);
 
 export const semanticSearch = (query: string) =>
   api.post('/search', { query }).then(r => r.data);
@@ -297,6 +306,25 @@ export const downloadGapsJSON = () =>
   downloadFile('/export/research-gaps.json', `research_gaps_${new Date().toISOString().slice(0,10)}.json`);
 export const downloadFullJSON = () =>
   downloadFile('/export/full.json', `full_export_${new Date().toISOString().slice(0,10)}.json`);
+
+export const downloadContextualPdf = async (kind: string, id: string, title?: string) => {
+  const token = localStorage.getItem('aod_token');
+  const res = await fetch(`/api/reports/pdf/${kind}/${encodeURIComponent(id)}`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+  if (!res.ok) throw new Error(`PDF export failed (${res.status})`);
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  const safe = (title || 'report').replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 60);
+  a.download = `${kind}_${safe}_${new Date().toISOString().slice(0,10)}.pdf`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+};
+
 
 export const adminGetLLMStatus = () => api.get('/admin/llm/status').then(r => r.data);
 

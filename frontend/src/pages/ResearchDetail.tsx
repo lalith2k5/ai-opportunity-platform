@@ -7,6 +7,7 @@ import {
   Award, AlertTriangle, Network, Cpu, FileText, ExternalLink,
 } from 'lucide-react';
 import { getResearchPaperDetail, type ResearchPaperDetail } from '../services/api';
+import DetailActions from '../components/DetailActions';
 import SectionCard from '../components/ui/SectionCard';
 
 const ACCENT_MAP: Record<string, 'accent' | 'purple' | 'sky' | 'success' | 'warning' | 'orange' | 'muted'> = {
@@ -95,6 +96,13 @@ export default function ResearchDetail() {
         <ArrowLeft size={13} className="transition-transform group-hover:-translate-x-0.5" />
         Back to research
       </Link>
+
+      <DetailActions
+        kind="research"
+        id={p.arxiv_id}
+        title={p.title}
+        summary={p.abstract}
+      />
 
       {/* Hero */}
       <div className="card p-6 mb-5 relative overflow-hidden">

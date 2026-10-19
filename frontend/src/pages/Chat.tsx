@@ -1,9 +1,20 @@
+
 import { useState, useRef, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { askAI, getChatHistory, getChatSession } from '../services/api';
-import { Send, Loader2, Bot, User, History, Plus, MessageSquare, X } from 'lucide-react';
+import ChatMarkdown from '../components/ChatMarkdown';
+import {
+  Send, Loader2, Bot, User, History, Plus, MessageSquare, X, Sparkles,
+} from 'lucide-react';
 
 interface Message { role: 'user' | 'assistant'; content: string; }
 interface Session { id: number; title: string; created_at: string; messages?: Message[]; }
+interface ChatContext {
+  kind: string;
+  id: string;
+  title: string;
+  summary: string;
+}
 
 const SUGGESTIONS = [
   'What are the most promising AI opportunities in healthcare?',
@@ -19,7 +30,22 @@ export default function Chat() {
   const [sessionId, setSessionId] = useState<number | undefined>(undefined);
   const [sessions, setSessions] = useState<Session[]>([]);
   const [showHistory, setShowHistory] = useState(false);
+  const [context, setContext] = useState<ChatContext | null>(null);
+  const [params, setParams] = useSearchParams();
   const bottomRef = useRef<HTMLDivElement>(null);
+
+  // Read context from URL params on mount
+  useEffect(() => {
+    const kind = params.get('kind');
+    const id = params.get('id');
+    const title = params.get('title');
+    const summary = params.get('summary');
+    if (kind && id && title) {
+      setContext({ kind, id, title, summary: summary || '' });
+    } else {
+      setContext(null);
+    }
+  }, [params]);
 
   const loadHistory = () => {
     getChatHistory().then((d: Session[]) => setSessions(d)).catch(() => {});
@@ -34,7 +60,12 @@ export default function Chat() {
     setMessages(m => [...m, { role: 'user', content: question }]);
     setInput(''); setLoading(true);
     try {
-      const data = await askAI(question);
+      const data = await askAI(question, context ? {
+        kind: context.kind,
+        id: context.id,
+        title: context.title,
+        summary: context.summary,
+      } : undefined);
       setMessages(m => [...m, { role: 'assistant', content: data.response || 'No response' }]);
       if (data.session_id) setSessionId(data.session_id);
       loadHistory();
@@ -56,12 +87,18 @@ export default function Chat() {
     setMessages([]);
     setSessionId(undefined);
     setShowHistory(false);
+    setParams({});
+    setContext(null);
+  };
+
+  const clearContext = () => {
+    setParams({});
+    setContext(null);
   };
 
   return (
     <div className="flex h-screen bg-canvas">
 
-      {/* History sidebar */}
       {showHistory && (
         <>
           <div className="fixed inset-0 bg-black/40 z-30 md:hidden" onClick={() => setShowHistory(false)} />
@@ -110,10 +147,8 @@ export default function Chat() {
         </>
       )}
 
-      {/* Main chat */}
       <div className="flex flex-col flex-1 min-w-0">
 
-        {/* Header */}
         <div className="border-b border-edge/60 px-6 py-4 glass flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-accent/10 flex items-center justify-center shadow-[inset_0_1px_0_0_rgb(255_255_255/0.05)]">
@@ -121,7 +156,9 @@ export default function Chat() {
             </div>
             <div>
               <h1 className="text-lg font-bold text-ink tracking-tight">AI Chat</h1>
-              <p className="text-2xs text-ink-4 mt-0.5">Ask about opportunities, gaps, or trends</p>
+              <p className="text-2xs text-ink-4 mt-0.5">
+                {context ? 'Focused on: ' + context.title : 'Ask about opportunities, gaps, or trends'}
+              </p>
             </div>
           </div>
           <button
@@ -132,7 +169,25 @@ export default function Chat() {
           </button>
         </div>
 
-        {/* Messages */}
+        {context && (
+          <div className="border-b border-edge/60 bg-accent/[0.06] px-6 py-3 flex items-start gap-3">
+            <Sparkles size={14} className="text-accent flex-shrink-0 mt-0.5" />
+            <div className="flex-1 min-w-0">
+              <p className="text-2xs text-ink-4 uppercase tracking-wider mb-0.5">
+                Discussing {context.kind}
+              </p>
+              <p className="text-sm text-ink font-medium truncate">{context.title}</p>
+            </div>
+            <button
+              onClick={clearContext}
+              className="p-1.5 rounded-md text-ink-4 hover:text-ink hover:bg-overlay transition-colors flex-shrink-0"
+              title="Clear context -- ask about anything"
+            >
+              <X size={14} />
+            </button>
+          </div>
+        )}
+
         <div className="flex-1 overflow-auto p-6">
           {messages.length === 0 ? (
             <div className="max-w-2xl mx-auto mt-8 lg:mt-16">
@@ -140,20 +195,28 @@ export default function Chat() {
                 <div className="w-14 h-14 rounded-2xl bg-accent/10 flex items-center justify-center mx-auto mb-5 shadow-[inset_0_1px_0_0_rgb(255_255_255/0.05),0_8px_24px_-8px_rgb(var(--accent)/0.4)]">
                   <Bot className="text-accent" size={26} />
                 </div>
-                <h2 className="text-lg font-semibold text-ink tracking-tight">How can I help?</h2>
-                <p className="text-sm text-ink-3 mt-1">Try one of these prompts to get started:</p>
+                <h2 className="text-lg font-semibold text-ink tracking-tight">
+                  {context ? 'Ask about this ' + context.kind : 'How can I help?'}
+                </h2>
+                <p className="text-sm text-ink-3 mt-1">
+                  {context
+                    ? 'Every answer will focus on "' + context.title + '".'
+                    : 'Try one of these prompts to get started:'}
+                </p>
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
-                {SUGGESTIONS.map(s => (
-                  <button
-                    key={s}
-                    onClick={() => send(s)}
-                    className="text-left card card-hover p-4 text-sm text-ink-2"
-                  >
-                    {s}
-                  </button>
-                ))}
-              </div>
+              {!context && (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
+                  {SUGGESTIONS.map(s => (
+                    <button
+                      key={s}
+                      onClick={() => send(s)}
+                      className="text-left card card-hover p-4 text-sm text-ink-2"
+                    >
+                      {s}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           ) : (
             <div className="max-w-3xl mx-auto space-y-5">
@@ -164,12 +227,14 @@ export default function Chat() {
                       <Bot size={15} />
                     </div>
                   )}
-                  <div className={`max-w-[80%] px-4 py-3 text-sm leading-relaxed ${
+                  <div className={`px-4 py-3 ${
                     m.role === 'user'
-                      ? 'bg-accent text-accent-fg rounded-2xl rounded-tr-md shadow-[0_4px_16px_-4px_rgb(var(--accent)/0.4)]'
-                      : 'glass rounded-2xl rounded-tl-md text-ink-2'
+                      ? 'max-w-[80%] bg-accent text-accent-fg rounded-2xl rounded-tr-md shadow-[0_4px_16px_-4px_rgb(var(--accent)/0.4)] text-sm leading-relaxed'
+                      : 'flex-1 glass rounded-2xl rounded-tl-md'
                   }`}>
-                    <p className="whitespace-pre-wrap">{m.content}</p>
+                    {m.role === 'assistant'
+                      ? <ChatMarkdown content={m.content} />
+                      : <p className="whitespace-pre-wrap">{m.content}</p>}
                   </div>
                   {m.role === 'user' && (
                     <div className="w-7 h-7 rounded-md bg-overlay border border-edge flex items-center justify-center flex-shrink-0 text-ink-3">
@@ -193,7 +258,6 @@ export default function Chat() {
           )}
         </div>
 
-        {/* Composer */}
         <div className="border-t border-edge/60 p-4 glass">
           <div className="max-w-3xl mx-auto flex gap-2">
             <input
@@ -201,7 +265,7 @@ export default function Chat() {
               value={input}
               onChange={e => setInput(e.target.value)}
               onKeyDown={e => e.key === 'Enter' && send()}
-              placeholder="Ask anything…"
+              placeholder={context ? 'Ask about "' + context.title + '"…' : 'Ask anything…'}
               disabled={loading}
               className="input flex-1"
             />

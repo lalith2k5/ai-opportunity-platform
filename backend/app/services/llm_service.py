@@ -200,7 +200,7 @@ class AnthropicProvider(BaseProvider):
         )
         response = self.client.messages.create(
             model=settings.ANTHROPIC_MODEL,
-            max_tokens=1024,
+            max_tokens=2048,
             system=system,
             messages=[{"role": "user", "content": user_msg}],
         )
