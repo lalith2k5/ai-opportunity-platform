@@ -290,7 +290,7 @@ class LLMService:
     across requests. Every caller gets the same object.
     """
 
-    PROVIDER_ORDER = ["gemini", "openrouter", "openai", "anthropic"]
+    PROVIDER_ORDER = ["freelm", "gemini", "openrouter", "openai", "anthropic"]
     _instance = None
 
     def __new__(cls):
