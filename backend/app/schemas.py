@@ -40,7 +40,21 @@ class OpportunityResponse(BaseModel):
     explanation: Optional[str] = None
     class Config:
         from_attributes = True
-
+    status: Optional[str] = None
+    domain: Optional[str] = None
+    industry: Optional[str] = None
+    problem_type: Optional[str] = None
+    opportunity_score_spec: Optional[float] = None
+    confidence_spec: Optional[int] = None
+    weights_version: Optional[str] = None
+    confidence_version: Optional[str] = None
+    trend_window: Optional[int] = None
+    evidence_sources: Optional[list] = None
+    related_technologies: Optional[list] = None
+    existing_research: Optional[list] = None
+    suggested_research_direction: Optional[str] = None
+    suggested_project_direction: Optional[str] = None
+    known_limitations: Optional[str] = None
 class ProblemClusterResponse(BaseModel):
     id: int
     title: str
